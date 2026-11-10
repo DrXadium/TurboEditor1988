@@ -40,6 +40,8 @@ add_library(crt-shell STATIC
   src/shell/MenuBar.h
   src/shell/TabStrip.cpp
   src/shell/TabStrip.h
+  src/shell/Minimap.cpp
+  src/shell/Minimap.h
   src/shell/FKeyStatusBar.cpp
   src/shell/FKeyStatusBar.h
 )
@@ -123,6 +125,16 @@ add_test(NAME tst_session COMMAND tst_session)
 add_executable(tst_autosave tests/tst_autosave.cpp)
 target_link_libraries(tst_autosave PRIVATE crt-autosave Qt6::Test)
 add_test(NAME tst_autosave COMMAND tst_autosave)
+
+# Task 9A test: ctest -R tst_minimap
+add_executable(tst_minimap tests/tst_minimap.cpp)
+target_link_libraries(tst_minimap PRIVATE crt-shell Qt6::Test)
+add_test(NAME tst_minimap COMMAND tst_minimap)
+
+# Task 9B test: ctest -R tst_menus
+add_executable(tst_menus tests/tst_menus.cpp)
+target_link_libraries(tst_menus PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
+add_test(NAME tst_menus COMMAND tst_menus)
 
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)

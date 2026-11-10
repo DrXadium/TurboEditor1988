@@ -4,6 +4,8 @@
 // CRT effects cover the entire display per the design spec.
 #include <QApplication>
 #include <QMessageBox>
+#include <QMenu>
+#include <QEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -78,6 +80,28 @@ int main(int argc, char** argv)
     ContentBridge bridge;
     bridge.setShellWindow(&shell);
 
+    // CRT'd popup menus (Task 9): a QMenu opens as its own native top-level
+    // window, which would sit ABOVE the CRT scene. Register it with the bridge
+    // so its pixels are composited into the same texture the CRT samples.
+    class PopupRegistrar : public QObject {
+    public:
+        explicit PopupRegistrar(ContentBridge* b, QObject* parent) : QObject(parent), m_b(b) {}
+    protected:
+        bool eventFilter(QObject* obj, QEvent* ev) override {
+            if (auto* menu = qobject_cast<QMenu*>(obj)) {
+                if (ev->type() == QEvent::Show)
+                    m_b->registerPopup(menu);
+                else if (ev->type() == QEvent::Hide)
+                    m_b->unregisterPopup(menu);
+            }
+            return QObject::eventFilter(obj, ev);
+        }
+    private:
+        ContentBridge* m_b;
+    };
+    auto* registrar = new PopupRegistrar(&bridge, &app);
+    app.installEventFilter(registrar);
+
     // CRT settings (QSettings-backed single source of truth for effect knobs).
     // Loaded at startup; persisted on quit so the dialog's changes survive restart.
     CrtSettings crtSettings;
@@ -129,6 +153,22 @@ int main(int argc, char** argv)
         QStringLiteral(CRT_KATE_SOURCE_DIR "/src/main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
+
+    // Dev aid (unset in normal runs): CRT_KATE_MENU=<title> opens a probe menu
+    // over the shell before CRT_KATE_SHOT captures, proving a real popup gets
+    // registered + composited into the CRT texture (Task 9 E2E). Opened via a
+    // queued timer so the PopupRegistrar's event filter sees its Show event.
+    if (const QByteArray menuTitle = qgetenv("CRT_KATE_MENU"); !menuTitle.isEmpty()) {
+        QTimer::singleShot(700, &app, [&app, menuTitle]() {
+            auto* probe = new QMenu(QString::fromUtf8(menuTitle));
+            probe->addAction(QStringLiteral("First action"));
+            probe->addAction(QStringLiteral("Second action"));
+            probe->addAction(QStringLiteral("Third action"));
+            probe->setObjectName(QStringLiteral("crtProbeMenu"));
+            probe->move(40, 60);           // over the shell's top-left area
+            probe->show();
+        });
+    }
 
     // Dev aid (unset in normal runs): CRT_KATE_SHOT=/tmp/x.png grabs the CRT
     // window after 1.5s and exits - used for headless visual verification.

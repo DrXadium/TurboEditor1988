@@ -3,10 +3,12 @@
 #include "BorlandStyle.h"
 #include "MenuBar.h"
 #include "TabStrip.h"
+#include "Minimap.h"
 #include "FKeyStatusBar.h"
 #include <QApplication>
 #include <QFile>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QWidget>
 #include <QLayout>
@@ -58,15 +60,30 @@ void ShellWindow::setEditorWidget(QWidget* w)
 {
     if (!m_editorLayout || !w)
         return;
-    // Remove the current placeholder (or prior editor) and insert \p w in its
-    // place, stretching it, without touching the TabStrip above.
-    QLayoutItem* old = m_editorLayout->takeAt(1);   // index 0 = TabStrip
-    if (old) {
-        if (old->widget() && old->widget() != w)
-            old->widget()->deleteLater();
-        delete old;
+    // Remove the current placeholder/editor row (everything below the TabStrip)
+    // and replace it with an editor+minimap row. Index 0 is always the TabStrip.
+    while (m_editorLayout->count() > 1) {
+        QLayoutItem* old = m_editorLayout->takeAt(1);
+        if (old) {
+            if (old->widget() && old->widget() != w && !qobject_cast<Minimap*>(old->widget()))
+                old->widget()->deleteLater();
+            delete old;
+        }
     }
-    m_editorLayout->addWidget(w);
+
+    // Editor (stretch) + Minimap (fixed strip) side by side.
+    auto* row = new QWidget;
+    row->setObjectName(QStringLiteral("editorRow"));
+    auto* h = new QHBoxLayout(row);
+    h->setContentsMargins(0, 0, 0, 0);
+    h->setSpacing(0);
+    w->setParent(row);
+    h->addWidget(w, 1);
+    auto* mini = new Minimap(row);
+    mini->setObjectName(QStringLiteral("minimap"));
+    h->addWidget(mini, 0);
+    m_minimap = mini;
+    m_editorLayout->addWidget(row);
 }
 
 void ShellWindow::setCentralWidget(QWidget* w)

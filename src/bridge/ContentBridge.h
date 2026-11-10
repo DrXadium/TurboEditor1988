@@ -25,6 +25,13 @@ public:
     // Keeps the shell sized to the visible QML window (spec: view fits window).
     Q_INVOKABLE void resizeShell(int w, int h);
 
+    // Popup bridging (Task 9): an open QMenu/QWidget popup is captured into the
+    // same composited frame so CRT effects cover it (instead of leaving it a
+    // separate native window above the CRT scene).
+    void registerPopup(QWidget* popup);
+    void unregisterPopup(QWidget* popup);
+    QList<QWidget*> registeredPopups() const { return m_popups; }
+
     QImage frame() const { return m_frame; }
     int frameSerial() const { return m_frameSerial; }
     QQuickItem* sourceItem() const { return m_sourceItem; }
@@ -39,6 +46,7 @@ private:
     QImage m_frame;
     int m_frameSerial = 0;
     QQuickItem* m_sourceItem = nullptr;
+    QList<QWidget*> m_popups;
 };
 
 // Serves ContentBridge::frame() to QML as "image://bridge/<id>".

@@ -22,6 +22,9 @@ public:
     void setEditorWidget(QWidget* w);
     TabStrip* tabStrip() const;
     FKeyStatusBar* fkeyStatusBar() const;
+    // The code minimap shown beside the editor (Task 9), or nullptr before
+    // setEditorWidget() installs the editor row.
+    class Minimap* minimap() const { return m_minimap; }
     // The Borland style this window installed (QSS wrapping hides it from
     // w.style(), so the test asserts on this directly).
     BorlandStyle* borlandStyle() const { return m_borland; }
@@ -29,5 +32,6 @@ protected:
     void paintEvent(QPaintEvent*) override;
 private:
     BorlandStyle* m_borland = nullptr;
-    QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editor]
+    QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
+    Minimap* m_minimap = nullptr;
 };
