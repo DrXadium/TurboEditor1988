@@ -130,6 +130,13 @@ int main(int argc, char** argv)
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
                      [&crtSettings] { crtSettings.save(); });
 
+    // Task 12: apply the editor font size (Turbo Vision default 16px,
+    // user-changeable via Settings > Editor/Appearance) to every view, now and
+    // whenever it changes. Zoom remains a relative offset on top.
+    tabs.setFontSize(crtSettings.fontSize());
+    QObject::connect(&crtSettings, &CrtSettings::fontSizeChanged, &tabs,
+                     [&tabs, &crtSettings] { tabs.setFontSize(crtSettings.fontSize()); });
+
     // Task 10: wire Kate-option menus (MenuBar builds the structure and the
     // Borland palette; here the actions get their real features). The session
     // collect/restore helpers above are reused so menu, quit and launch paths

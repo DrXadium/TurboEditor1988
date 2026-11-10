@@ -22,6 +22,8 @@ constexpr double kFlickering = 0.1;
 constexpr double kRgbShift = 0.0;
 constexpr double kRasterIntensity = 0.5;
 const auto kFontColor = QColor(QStringLiteral("#ff8100"));
+// TV default editor font (spec: 16px DOS-cell proportions).
+const int kFontSize = 16;
 const auto kBackgroundColor = QColor(QStringLiteral("#000000"));
 
 // Non-zero values used when re-enabling an effect toggle.
@@ -53,6 +55,7 @@ void CrtSettings::resetToDefaults()
     m_rasterization = ScanlineRasterization;
     m_rasterizationIntensity = kRasterIntensity;
     m_fontColor = kFontColor;
+    m_fontSize = kFontSize;
     m_backgroundColor = kBackgroundColor;
 }
 
@@ -87,6 +90,7 @@ CRT_SET(double, RgbShift, m_rgbShift, rgbShiftChanged)
 CRT_SET(Rasterization, Rasterization, m_rasterization, rasterizationChanged)
 CRT_SET(double, RasterizationIntensity, m_rasterizationIntensity, rasterizationIntensityChanged)
 CRT_SET(QColor, FontColor, m_fontColor, fontColorChanged)
+CRT_SET(int, FontSize, m_fontSize, fontSizeChanged)
 CRT_SET(QColor, BackgroundColor, m_backgroundColor, backgroundColorChanged)
 #undef CRT_SET
 
@@ -147,6 +151,7 @@ bool CrtSettings::load()
         s.value(QStringLiteral("rasterization"), ScanlineRasterization).toInt());
     m_rasterizationIntensity = s.value(QStringLiteral("rasterizationIntensity"), kRasterIntensity).toDouble();
     m_fontColor = s.value(QStringLiteral("fontColor"), kFontColor).value<QColor>();
+    m_fontSize = s.value(QStringLiteral("fontSize"), kFontSize).toInt();
     m_backgroundColor = s.value(QStringLiteral("backgroundColor"), kBackgroundColor).value<QColor>();
     s.endGroup();
 
@@ -168,6 +173,7 @@ bool CrtSettings::load()
     emit rasterizationChanged();
     emit rasterizationIntensityChanged();
     emit fontColorChanged();
+    emit fontSizeChanged();
     emit backgroundColorChanged();
     emit scanlinesEnabledChanged();
     return true;
@@ -194,6 +200,7 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("rasterization"), static_cast<int>(m_rasterization));
     s.setValue(QStringLiteral("rasterizationIntensity"), m_rasterizationIntensity);
     s.setValue(QStringLiteral("fontColor"), m_fontColor);
+    s.setValue(QStringLiteral("fontSize"), m_fontSize);
     s.setValue(QStringLiteral("backgroundColor"), m_backgroundColor);
     s.endGroup();
     s.sync();

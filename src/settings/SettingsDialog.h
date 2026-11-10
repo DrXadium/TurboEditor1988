@@ -19,4 +19,7 @@ private:
     CrtSettings* m_settings = nullptr;
     QWidget* buildCrtTab();
     QWidget* buildAppearanceTab();
+
+protected:
+    void paintEvent(QPaintEvent* ev) override;
 };

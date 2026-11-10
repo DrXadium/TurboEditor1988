@@ -42,6 +42,9 @@ public:
     // Zoom: +1 in / -1 out / 0 reset, applied to the active view's "font"
     // config key (KTextEditor::View::configValue/setConfigValue).
     void setZoom(int delta);
+    // Task 12: apply an absolute editor font size (px) to every view (the
+    // Turbo Vision default 16px, user-changeable via the settings dialog).
+    void setFontSize(int pixelSize);
 
     // Task 12: Turbo Vision editor styling (window-blue field, yellow text)
     // applied to a freshly created KTextEditor::View.

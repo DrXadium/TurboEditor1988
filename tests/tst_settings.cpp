@@ -35,6 +35,36 @@ private slots:
         QCOMPARE(s.fontColor(), QColor("#ff8100"));
     }
 
+    // Task 12: Turbo Vision default editor font is 16px and persists.
+    void font_size_defaults_to_16_and_roundtrips() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        {
+            CrtSettings s;
+            QCOMPARE(s.fontSize(), 16);            // TV default
+            s.setStorePath(store);
+            s.setFontSize(20);
+            QCOMPARE(s.fontSize(), 20);
+            QVERIFY2(s.save(), "save() returned false");
+        }
+        {
+            CrtSettings s;                          // fresh instance
+            s.setStorePath(store);
+            QVERIFY2(s.load(), "load() returned false");
+            QCOMPARE(s.fontSize(), 20);             // persisted
+        }
+        // NOTIFY signal fires on real change only.
+        CrtSettings s;
+        QSignalSpy spy(&s, &CrtSettings::fontSizeChanged);
+        s.setFontSize(s.fontSize());                // no change -> no emit
+        const int before = spy.count();
+        s.setFontSize(24);
+        QVERIFY2(spy.count() > before,
+                 "fontSizeChanged did not emit on a real change");
+    }
+
     void save_load_roundtrip_persists_scanlines_enabled_false() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

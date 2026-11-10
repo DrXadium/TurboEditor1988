@@ -130,6 +130,21 @@ void EditorTabManager::setZoom(int delta)
     applyZoom(delta);
 }
 
+void EditorTabManager::setFontSize(int pixelSize)
+{
+    if (pixelSize < 4)
+        pixelSize = 4;
+    if (pixelSize > 96)
+        pixelSize = 96;
+    for (KTextEditor::View* v : std::as_const(m_views)) {
+        if (!v)
+            continue;
+        QFont f = v->configValue(QStringLiteral("font")).value<QFont>();
+        f.setPixelSize(pixelSize);
+        v->setConfigValue(QStringLiteral("font"), f);
+    }
+}
+
 void EditorTabManager::applyZoom(int delta)
 {
     KTextEditor::View* v = activeView();

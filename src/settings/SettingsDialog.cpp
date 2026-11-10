@@ -8,7 +8,11 @@
 #include <QDoubleSpinBox>
 #include <QLabel>
 #include <QFormLayout>
+#include <QSpinBox>
 #include <QDialogButtonBox>
+#include <QPushButton>
+#include <QPainter>
+#include <QPaintEvent>
 
 namespace {
 // A slider+spin row bound to a CrtSettings double property, with an optional
@@ -38,10 +42,44 @@ SettingsDialog::SettingsDialog(CrtSettings* settings, QWidget* parent)
 
     auto* buttonBox = new QHBoxLayout;
     auto* closeBtn = new QDialogButtonBox(QDialogButtonBox::Close);
+    // Turbo Vision green buttons (the app-wide QSS rule doesn't reach
+    // QDialogButtonBox's themed buttons, so style them explicitly here).
+    if (QPushButton* pb = closeBtn->button(QDialogButtonBox::Close)) {
+        pb->setObjectName(QStringLiteral("tvButton"));
+        pb->setStyleSheet(QStringLiteral(
+            "QPushButton { background-color: #19A819; color: #FFFFFF; "
+            "border: 1px solid #000000; padding: 3px 18px; min-width: 60px; } "
+            "QPushButton:hover { background-color: #1FBE1F; } "
+            "QPushButton:pressed { background-color: #148A14; }"));
+    }
     connect(closeBtn, &QDialogButtonBox::rejected, this, &QDialog::reject);
     buttonBox->addStretch();
     buttonBox->addWidget(closeBtn);
     outer->addLayout(buttonBox);
+
+    // Turbo Vision drop-shadow band: reserve a 2-col/1-row gutter at the
+    // right/bottom so paintEvent can draw the black offset shadow over the
+    // gray panel (QSS can't translate a shadow, so we paint it ourselves).
+    outer->setContentsMargins(2, 2, 14, 12);
+    setAutoFillBackground(false);   // paintEvent fills the gray panel itself
+}
+
+// Turbo Vision modal: fill the gray panel, draw the white double-line frame
+// and the black drop shadow along the right + bottom edges (offset 2px).
+void SettingsDialog::paintEvent(QPaintEvent* ev)
+{
+    QPainter p(this);
+    const QRect r = rect();
+    p.fillRect(r, QColor(0xAA, 0xAA, 0xAA));            // gray panel
+    // Black drop shadow: right column + bottom row, offset 2px in.
+    p.fillRect(QRect(r.right() - 10, r.top() + 4, 10, r.height() - 6), Qt::black);
+    p.fillRect(QRect(r.left() + 4, r.bottom() - 8, r.width() - 6, 8), Qt::black);
+    // White double-line frame (inset to sit inside the shadow gutter).
+    const QRect fr = r.adjusted(2, 2, -12, -10);
+    p.setPen(QColor(0xFF, 0xFF, 0xFF));
+    p.drawRect(fr);
+    p.drawRect(fr.adjusted(1, 1, -1, -1));
+    QDialog::paintEvent(ev);                             // children on top
 }
 
 QWidget* SettingsDialog::buildCrtTab()
@@ -128,8 +166,17 @@ QWidget* SettingsDialog::buildAppearanceTab()
 {
     auto* w = new QWidget;
     auto* form = new QFormLayout(w);
+
+    // Editor font size (Task 12: Turbo Vision default 16px, user-changeable).
+    auto* sizeSpin = new QSpinBox;
+    sizeSpin->setObjectName(QStringLiteral("fontSizeSpin"));
+    sizeSpin->setRange(8, 48);
+    sizeSpin->setValue(m_settings->fontSize());
+    connect(sizeSpin, &QSpinBox::valueChanged, m_settings, &CrtSettings::setFontSize);
+    form->addRow(tr("Editor font size (px):"), sizeSpin);
+
     form->addRow(new QLabel(
-        tr("Editor scheme, font, chrome theme and minimap options are wired "
+        tr("Editor scheme, chrome theme and minimap options are wired "
            "in later tasks (KTextEditor / theming).")));
     return w;
 }

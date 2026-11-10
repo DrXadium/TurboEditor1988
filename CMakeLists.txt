@@ -206,3 +206,7 @@ target_link_libraries(probe_shell PRIVATE
   crt-bridge crt-editor Qt6::Gui Qt6::Widgets Qt6::Quick KF6::TextEditor)
 target_compile_definitions(probe_shell PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Task 12 scratch probe: renders SettingsDialog to verify the TV modal treatment.
+add_executable(probe_settings .relay/probe_settings.cpp)
+target_link_libraries(probe_settings PRIVATE crt-settings Qt6::Widgets)

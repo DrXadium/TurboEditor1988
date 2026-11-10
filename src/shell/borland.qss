@@ -76,3 +76,34 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
     background: #19A819;
 }
+/* Turbo Vision modal dialogs (Settings/About/recovery): gray panel, white
+ * double-line frame (approximated as a 2px white border), black text.
+ * The offset drop shadow is added by the dialog paint overlay (QSS can't do
+ * a translated shadow). */
+QDialog, QMessageBox, QInputDialog {
+    background-color: #AAAAAA;
+    color: #000000;
+    border: 2px solid #FFFFFF;
+}
+QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel {
+    background: transparent;
+    color: #000000;
+}
+/* TV push buttons: green field, white/black label (raised bevel via style). */
+QPushButton {
+    background-color: #19A819;
+    color: #FFFFFF;
+    border: 1px solid #000000;
+    padding: 3px 14px;
+    min-width: 60px;
+}
+QPushButton:hover { background-color: #1FBE1F; }
+QPushButton:pressed { background-color: #148A14; }
+/* Dialog input fields: TV blue field, white text, yellow selection. */
+QLineEdit, QSpinBox, QComboBox {
+    background-color: #0000AA;
+    color: #FFFFFF;
+    border: 1px solid #000000;
+    selection-background-color: #FFFF55;
+    selection-color: #1A1AAA;
+}
