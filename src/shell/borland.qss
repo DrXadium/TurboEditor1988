@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * CRT-Kate Borland chrome — navy desktop, cyan hotkeys, beveled panels.
+ * Turbo C++ / Turbo Pascal aesthetic. No bezel (CRT effects apply over all).
+ */
+QWidget {
+    background-color: #0000aa;          /* Borland navy desktop */
+    color: #ffffff;
+    font-family: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
+    font-size: 13px;
+}
+QMenuBar {
+    background-color: #0000aa;
+    color: #ffffff;
+    border-bottom: 1px solid #5555ff;
+}
+QMenuBar::item:selected { background-color: #0000aa; color: #ffff55; }
+QMenu {
+    background-color: #0000aa;
+    color: #ffffff;
+    border: 1px solid #ffffff;
+}
+QMenu::item:selected { background-color: #0000aa; color: #ffff55; }
+QStatusBar {
+    background-color: #0000aa;
+    color: #ffffff;
+    border-top: 1px solid #5555ff;
+}
+/* Editor / central placeholder reads as a sunken panel. */
+QPlainTextEdit, QTextEdit, QWidget#editorHost {
+    background-color: #000000;
+    color: #aaaaaa;
+    border: 1px solid #5555ff;
+}

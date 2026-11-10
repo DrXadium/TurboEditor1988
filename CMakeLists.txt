@@ -16,7 +16,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 6.10 REQUIRED COMPONENTS Gui Widgets Qml Quick OpenGL ShaderTools)
+find_package(Qt6 6.10 REQUIRED COMPONENTS Gui Widgets Qml Quick OpenGL ShaderTools Test)
 
 enable_testing()
 
@@ -27,3 +27,29 @@ add_executable(crt-kate-spike
 target_link_libraries(crt-kate-spike PRIVATE
   Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
 )
+
+# Task 3: Borland chrome shell (static lib so tests + app share it).
+add_library(crt-shell STATIC
+  src/shell/ShellWindow.cpp
+  src/shell/ShellWindow.h
+  src/shell/BorlandStyle.cpp
+  src/shell/BorlandStyle.h
+  src/shell/MenuBar.cpp
+  src/shell/MenuBar.h
+  src/shell/TabStrip.cpp
+  src/shell/TabStrip.h
+  src/shell/FKeyStatusBar.cpp
+  src/shell/FKeyStatusBar.h
+)
+target_include_directories(crt-shell PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(crt-shell PUBLIC Qt6::Gui Qt6::Widgets)
+qt_add_resources(crt-shell "shell_qss"
+    PREFIX "/"
+    BASE src/shell
+    FILES src/shell/borland.qss
+)
+
+# Task 3 test: ctest -R tst_chrome
+add_executable(tst_chrome tests/tst_chrome.cpp)
+target_link_libraries(tst_chrome PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_chrome COMMAND tst_chrome)
