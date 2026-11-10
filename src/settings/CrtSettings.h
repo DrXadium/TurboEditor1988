@@ -105,6 +105,12 @@ public slots:
     // "disabled" state; on restores a sensible non-zero default.
     void setScanlinesEnabled(bool on);
 
+    // Dev aid: CRT_KATE_BRIGHT temporarily overrides brightness for a capture.
+    // It must NOT persist — restoreDevBrightness() puts the loaded value back
+    // so a dev session can't contaminate the user's saved settings.
+    void applyDevBrightness(double v);
+    void restoreDevBrightness();
+
     // Persistence (QSettings). Default store: ~/.config/crt-kate/crt.ini.
     void setStorePath(const QString& path);
     QString storePath() const;   // current store location (public: shown in
@@ -157,4 +163,5 @@ private:
     int m_fontSize;
     QColor m_backgroundColor;
     QString m_storePath;   // empty => default QSettings location
+    double m_savedBrightness = -1.0;   // brightness before applyDevBrightness (>=0 when active)
 };

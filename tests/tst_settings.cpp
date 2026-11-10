@@ -31,7 +31,9 @@ private slots:
         // cool-retro-term ApplicationSettings.qml: brightness = 0.5
         QCOMPARE(qRound(s.brightness() * 100), 50);
         // Other core defaults (from Task 2's QML model / cool-retro-term).
-        QCOMPARE(s.screenCurvature(), 0.3);
+        // Curvature is FLAT by default (Task 2 / user: no curved-CRT gimmick) —
+        // was cool-retro-term's 0.3; scanlines/bloom/texture stay on.
+        QCOMPARE(s.screenCurvature(), 0.0);
         QCOMPARE(s.contrast(), 0.80);
         QCOMPARE(s.staticNoise(), 0.12);
         QCOMPARE(s.bloom(), 0.55);
@@ -70,6 +72,48 @@ private slots:
 
     // Deferred-minor fix: a corrupt/unreadable store must not silently wipe
     // saved settings — load() reports false and the defaults stay intact.
+    // Task 2 regression: a CRT_KATE_BRIGHT dev session must not persist its
+    // temporary brightness into the user's saved settings.
+    void dev_brightness_does_not_persist() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt.ini");
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            s.setBrightness(0.5);          // the user's real value
+            s.applyDevBrightness(3.0);     // CRT_KATE_BRIGHT override
+            QCOMPARE(s.brightness(), 3.0); // active for the capture
+            s.restoreDevBrightness();      // on quit
+            QCOMPARE(s.brightness(), 0.5); // back to the user's value
+            QVERIFY(s.save());
+        }
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            QVERIFY(s.load());
+            QCOMPARE(s.brightness(), 0.5); // persisted = user value, not 3.0
+        }
+    }
+
+    // Task 2: the CRT is FLAT by default (user: "don't need the curved gimmick")
+    // while keeping scanlines/sweep/bloom/texture.
+    void curvature_defaults_to_flat() {
+        CrtSettings s;
+        QCOMPARE(s.screenCurvature(), 0.0);
+        QVERIFY2(!s.curvatureEnabled(),
+                 "curvature should be off by default (flat viewport)");
+    }
+
+    // The CRT still reads as a CRT: scanlines + bloom stay on by default.
+    void crt_effects_keep_scanlines_and_bloom_by_default() {
+        CrtSettings s;
+        QVERIFY2(s.scanlinesEnabled(), "scanlines must stay on by default");
+        QVERIFY2(s.rasterizationIntensity() > 0.0,
+                 "scanline intensity must be > 0 by default");
+        QVERIFY2(s.glowEnabled(), "bloom/glow must stay on by default");
+    }
+
     void load_failure_is_reported_and_defaults_survive() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

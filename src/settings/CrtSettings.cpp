@@ -10,7 +10,9 @@ constexpr double kContrast = 0.80;
 constexpr double kBrightness = 0.5;
 constexpr double kAmbientLight = 0.2;
 constexpr double kStaticNoise = 0.12;
-constexpr double kScreenCurvature = 0.3;
+constexpr double kScreenCurvature = 0.0;   // flat viewport by default (user:
+                                           // no curved-CRT gimmick; scanlines/
+                                           // bloom/texture still on)
 constexpr double kGlowingLine = 0.2;
 constexpr double kBurnIn = 0.25;
 constexpr double kBloom = 0.55;
@@ -184,6 +186,21 @@ bool CrtSettings::load()
     emit backgroundColorChanged();
     emit scanlinesEnabledChanged();
     return true;
+}
+
+void CrtSettings::applyDevBrightness(double v)
+{
+    if (m_savedBrightness < 0.0)
+        m_savedBrightness = m_brightness;   // remember the user's value once
+    setBrightness(v);
+}
+
+void CrtSettings::restoreDevBrightness()
+{
+    if (m_savedBrightness < 0.0)
+        return;
+    setBrightness(m_savedBrightness);
+    m_savedBrightness = -1.0;
 }
 
 bool CrtSettings::save()

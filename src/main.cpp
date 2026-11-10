@@ -128,7 +128,10 @@ int main(int argc, char** argv)
     CrtSettings crtSettings;
     const bool settingsLoaded = crtSettings.load();
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
-                     [&crtSettings] { crtSettings.save(); });
+                     [&crtSettings] {
+                         crtSettings.restoreDevBrightness();   // don't persist CRT_KATE_BRIGHT
+                         crtSettings.save();
+                     });
 
     // Task 12: apply the editor font size (Turbo Vision default 16px,
     // user-changeable via Settings > Editor/Appearance) to every view, now and
@@ -391,7 +394,7 @@ int main(int argc, char** argv)
         bool ok = false;
         const double v = b.toDouble(&ok);
         if (ok)
-            crtSettings.setBrightness(v);
+            crtSettings.applyDevBrightness(v);
     }
 
     // Dev aid (unset in normal runs): CRT_KATE_RAWSHOT=/tmp/x.png grabs the
