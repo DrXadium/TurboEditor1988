@@ -3,6 +3,7 @@
 #include "src/shell/ShellWindow.h"
 #include <QPainter>
 #include <QLayout>
+#include <QMenu>
 
 ContentBridge::ContentBridge(QObject* parent) : QObject(parent) {}
 
@@ -66,10 +67,17 @@ void ContentBridge::registerPopup(QWidget* popup)
     // native window, stays visible, and QWidget::render() captures it reliably
     // on every platform. The menu is drawn only into the composited CRT texture,
     // never as a stray native window above the scene.
-    if (!popup->testAttribute(Qt::WA_DontShowOnScreen))
-        popup->setAttribute(Qt::WA_DontShowOnScreen);
-    if (!popup->isVisible())
-        popup->show();
+    //
+    // QMenu-ONLY: an exec()'d modal dialog (SettingsDialog, QMessageBox) needs
+    // a real window to receive input; WA_DontShowOnScreen would leave it visible
+    // but uninteractable. Native top-level windows map fine on Wayland and stay
+    // isVisible() after show, so they composite without hardening.
+    if (auto* menu = qobject_cast<QMenu*>(popup)) {
+        if (!menu->testAttribute(Qt::WA_DontShowOnScreen))
+            menu->setAttribute(Qt::WA_DontShowOnScreen);
+        if (!menu->isVisible())
+            menu->show();
+    }
 
     m_popups.append(popup);
 }

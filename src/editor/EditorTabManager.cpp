@@ -8,6 +8,8 @@
 #include <QFileInfo>
 #include <QAction>
 #include <QWidget>
+#include <QInputDialog>
+#include <QLineEdit>
 
 EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
 {
@@ -215,6 +217,60 @@ void EditorTabManager::installActions(QWidget* host)
     auto* sort = new QAction(tr("Sort Lines"), host);
     connect(sort, &QAction::triggered, this, [this] { sortLines(); });
     host->addAction(sort);
+}
+
+bool EditorTabManager::saveActive()
+{
+    KTextEditor::Document* d = activeDocument();
+    return d && d->documentSave();
+}
+
+bool EditorTabManager::saveActiveAs()
+{
+    KTextEditor::Document* d = activeDocument();
+    return d && d->documentSaveAs();
+}
+
+void EditorTabManager::find()
+{
+    const QString pattern =
+        QInputDialog::getText(activeView(), tr("Find"), tr("Find:"),
+                              QLineEdit::Normal, m_lastFind);
+    if (pattern.isEmpty())
+        return;
+    m_lastFind = pattern;
+    findNext();
+}
+
+void EditorTabManager::findNext()
+{
+    if (m_lastFind.isEmpty()) {   // nothing searched yet: prompt first
+        find();
+        return;
+    }
+    jumpToNextMatch(m_lastFind);
+}
+
+bool EditorTabManager::jumpToNextMatch(const QString& pattern)
+{
+    KTextEditor::Document* d = activeDocument();
+    KTextEditor::View* v = activeView();
+    if (!d || !v || pattern.isEmpty())
+        return false;
+    // Search from just after the cursor, wrapping to the document start.
+    const KTextEditor::Cursor from = v->cursorPosition();
+    QList<KTextEditor::Range> hits =
+        d->searchText(KTextEditor::Range(KTextEditor::Cursor(from.line(), from.column() + 1),
+                                         d->documentEnd()),
+                      pattern);
+    if (hits.isEmpty())
+        hits = d->searchText(KTextEditor::Range(KTextEditor::Cursor(0, 0),
+                                                d->documentEnd()),
+                             pattern);
+    if (hits.isEmpty())
+        return false;
+    v->setCursorPosition(hits.first().start());
+    return true;
 }
 
 void EditorTabManager::syncTabs()

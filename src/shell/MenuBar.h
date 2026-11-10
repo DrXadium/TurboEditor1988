@@ -2,11 +2,21 @@
 #pragma once
 #include <QMenuBar>
 
-// Kate's menu options rendered in Borland style (see Task 10 for content).
-// For Task 3 it provides the menu bar chrome; entries are wired in Task 10.
+// Kate's menu options rendered in Borland style (Task 10). Builds the full
+// top-level menu structure (File, Edit, Search, View, Session, Settings, Help)
+// with their entries so the shell/test can assert on it standalone. The entries
+// are exposed via menu(title) so the composition root (main.cpp) can wire each
+// action to EditorTabManager / SessionManager / SettingsDialog.
 class MenuBar : public QMenuBar
 {
     Q_OBJECT
 public:
     explicit MenuBar(QWidget* parent = nullptr);
+
+    // The QMenu for a top-level title (e.g. "File"), or nullptr if absent.
+    // Title may include a hotkey marker ("&File"); it is matched after stripping.
+    QMenu* menu(const QString& title) const;
+
+    // Titles of the top-level menus, in order (hotkey markers stripped).
+    QStringList topLevelTitles() const;
 };

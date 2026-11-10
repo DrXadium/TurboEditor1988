@@ -6,6 +6,9 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QEvent>
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -14,12 +17,16 @@
 #include <QTimer>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
+#include "src/shell/MenuBar.h"
+#include "src/shell/Minimap.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
 #include "src/settings/CrtSettings.h"
+#include "src/settings/SettingsDialog.h"
 #include "src/session/SessionManager.h"
 #include "src/autosave/AutosaveService.h"
 #include <ktexteditor/view.h>
+#include <ktexteditor/document.h>
 
 int main(int argc, char** argv)
 {
@@ -49,7 +56,9 @@ int main(int argc, char** argv)
     // Named sessions (Task 7): snapshot open files + cursor on quit, restore
     // the last session at startup (no-op on a fresh install: nothing saved yet).
     SessionManager sessions;
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &sessions, [&]() {
+    // Collects the current tab set for persistence - shared by the quit
+    // snapshot AND the Session > Save menu so both record identical state.
+    auto collectSessionEntries = [&tabs]() {
         QVector<SessionManager::Entry> entries;
         for (int i = 0; i < tabs.viewCount(); ++i) {
             const QUrl url = tabs.viewFileUrl(i);
@@ -58,11 +67,16 @@ int main(int argc, char** argv)
             const QPoint p = tabs.viewCursorPosition(i);
             entries.append({ url, p.y(), p.x(), tabs.activeIndex() });
         }
+        return entries;
+    };
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &sessions, [&]() {
+        const auto entries = collectSessionEntries();
         if (!entries.isEmpty())
             sessions.setEntries(entries);
     });
-    if (!sessions.lastSession().isEmpty() && sessions.restoreSession(sessions.lastSession())) {
-        const auto entries = sessions.entries();
+    // Opens a restored entry set (files, active tab, cursor) - shared by the
+    // launch-time restore AND the Session > Restore Last menu.
+    auto restoreEntries = [&tabs](const QVector<SessionManager::Entry>& entries) {
         for (const auto& e : entries)
             tabs.openFile(e.fileUrl);
         if (!entries.isEmpty()) {
@@ -75,7 +89,9 @@ int main(int argc, char** argv)
             if (KTextEditor::View* v = tabs.activeView())
                 v->setCursorPosition(KTextEditor::Cursor(active.line, active.column));
         }
-    }
+    };
+    if (!sessions.lastSession().isEmpty() && sessions.restoreSession(sessions.lastSession()))
+        restoreEntries(sessions.entries());
 
     ContentBridge bridge;
     bridge.setShellWindow(&shell);
@@ -108,6 +124,103 @@ int main(int argc, char** argv)
     crtSettings.load();
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
                      [&crtSettings] { crtSettings.save(); });
+
+    // Task 10: wire Kate-option menus (MenuBar builds the structure and the
+    // Borland palette; here the actions get their real features). The session
+    // collect/restore helpers above are reused so menu, quit and launch paths
+    // record/restore identical state.
+    if (auto* menuBar = shell.findChild<MenuBar*>()) {
+        auto act = [menuBar](const char* name) -> QAction* {
+            return menuBar->findChild<QAction*>(QLatin1String(name));
+        };
+        auto on = [](QAction* a, auto fn) {
+            if (a)
+                QObject::connect(a, &QAction::triggered, a,
+                                 [fn = std::move(fn)](bool) { fn(); });
+        };
+
+        // File
+        on(act("actionFileNew"), [&tabs] { tabs.newDocument(); });
+        on(act("actionFileOpen"), [&shell, &tabs] {
+            const QString f =
+                QFileDialog::getOpenFileName(&shell, QObject::tr("Open File"));
+            if (!f.isEmpty())
+                tabs.openFile(QUrl::fromLocalFile(f));
+        });
+        on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
+        on(act("actionFileSaveAs"), [&tabs] { tabs.saveActiveAs(); });
+
+        // Edit: case/sort tools + on-the-fly spellcheck config toggle
+        on(act("actionEditUpper"),
+           [&tabs] { tabs.changeCase(EditorTabManager::Upper); });
+        on(act("actionEditLower"),
+           [&tabs] { tabs.changeCase(EditorTabManager::Lower); });
+        on(act("actionEditSort"), [&tabs] { tabs.sortLines(); });
+        if (QAction* spell = act("actionEditSpellcheck"))
+            QObject::connect(spell, &QAction::triggered, spell, [&tabs, spell](bool) {
+                if (auto* doc = tabs.activeDocument())
+                    doc->setConfigValue(QStringLiteral("on-the-fly-spellcheck"),
+                                        spell->isChecked());
+            });
+
+        // Search
+        on(act("actionSearchFind"), [&tabs] { tabs.find(); });
+        on(act("actionSearchFindNext"), [&tabs] { tabs.findNext(); });
+
+        // View: zoom + checkable toggles
+        on(act("actionViewZoomIn"), [&tabs] { tabs.setZoom(+1); });
+        on(act("actionViewZoomOut"), [&tabs] { tabs.setZoom(-1); });
+        on(act("actionViewZoomReset"), [&tabs] { tabs.setZoom(0); });
+        if (QAction* mm = act("actionViewMinimap"))
+            QObject::connect(mm, &QAction::triggered, mm, [&shell, mm](bool) {
+                if (auto* mini = shell.minimap())
+                    mini->setVisible(mm->isChecked());
+            });
+        if (QAction* fold = act("actionViewFoldBar"))
+            QObject::connect(fold, &QAction::triggered, fold, [&tabs, fold](bool) {
+                if (auto* v = tabs.activeView())
+                    v->setConfigValue(QStringLiteral("folding-bar"), fold->isChecked());
+            });
+
+        // Session -> SessionManager (reuses collectSessionEntries/restoreEntries)
+        on(act("actionSessionSave"),
+           [&shell, &sessions, &collectSessionEntries] {
+               bool ok = false;
+               const QString name = QInputDialog::getText(
+                   &shell, QObject::tr("Save Session"),
+                   QObject::tr("Session name:"), QLineEdit::Normal,
+                   sessions.lastSession(), &ok);
+               if (!ok || name.trimmed().isEmpty())
+                   return;
+               const auto entries = collectSessionEntries();
+               if (!entries.isEmpty())
+                   sessions.setEntries(entries);
+               sessions.saveSession(name);
+           });
+        on(act("actionSessionRestore"), [&shell, &sessions, &restoreEntries] {
+            const QString name = sessions.lastSession();
+            if (!name.isEmpty() && sessions.restoreSession(name))
+                restoreEntries(sessions.entries());
+        });
+
+        // Settings -> SettingsDialog. Opens NATIVELY while exec()'d: do NOT pass
+        // it through bridge.registerPopup - that WA_DontShowOnScreen hardening
+        // would leave a modal dialog with no window and no way to dismiss it.
+        on(act("actionSettingsConfigure"), [&shell, &crtSettings] {
+            SettingsDialog dlg(&crtSettings, &shell);
+            dlg.exec();
+        });
+
+        // Help
+        on(act("actionHelpAbout"), [&shell] {
+            QMessageBox::about(
+                &shell, QObject::tr("About CRT-Kate"),
+                QObject::tr("<b>CRT-Kate</b> - Kate-class editing in a "
+                            "Borland-style shell with cool-retro-term CRT "
+                            "effects.<br>Built on KTextEditor (KDE "
+                            "Frameworks) and Qt."));
+        });
+    }
 
     // Crash recovery (Task 8): snapshots modified buffers periodically; on
     // launch, surface any recovery files left by a previous crashed run as a

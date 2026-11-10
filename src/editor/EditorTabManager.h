@@ -47,6 +47,18 @@ public:
     void changeCase(CaseKind kind);
     void sortLines();
 
+    // File ops for the File menu (Task 10): documentSave/documentSaveAs on the
+    // active document. NOTE: both can open a native file dialog (save-as, or
+    // save of an untitled buffer) - never call them from automated tests.
+    bool saveActive();
+    bool saveActiveAs();
+
+    // Search menu (Task 10): find() prompts for a pattern (QInputDialog) and
+    // jumps to the first match after the cursor; findNext() repeats the last
+    // pattern. Core matching lives in jumpToNextMatch().
+    void find();
+    void findNext();
+
     // Installs zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0) and text-tool actions
     // (change case, sort) as children of \p host (typically the ShellWindow).
     void installActions(QWidget* host);
@@ -58,10 +70,12 @@ private:
     KTextEditor::Document* createDoc();
     void syncTabs();
     void applyZoom(int delta);
+    bool jumpToNextMatch(const QString& pattern);
 
     QList<KTextEditor::Document*> m_docs;
     QList<KTextEditor::View*> m_views;
     int m_active = -1;
     int m_basePointSize = -1;   // font point size at first view (zoom baseline)
     QStackedWidget* m_container = nullptr;
+    QString m_lastFind;   // last Search-menu pattern (for Find Next)
 };
