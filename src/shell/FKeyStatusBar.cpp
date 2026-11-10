@@ -1,13 +1,62 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "FKeyStatusBar.h"
+#include <QLabel>
+#include <QPainter>
+#include <QRegularExpression>
+
+namespace {
+// Turbo Vision status line rich text: key names red (#C41E1E), words black.
+// The status text is a fixed ASCII literal, so no HTML escaping is needed.
+QString tvRich(const QString& text)
+{
+    static const QRegularExpression keyRe(
+        QStringLiteral("\\b(F\\d{1,2}|Ctrl\\+?[A-Za-z0-9]+)\\b"));
+    QString html;
+    int last = 0;
+    auto it = keyRe.globalMatch(text);
+    while (it.hasNext()) {
+        const auto m = it.next();
+        html += text.mid(last, m.capturedStart() - last);
+        html += QStringLiteral("<span style=\"color:#C41E1E;\">")
+              + m.captured() + QStringLiteral("</span>");
+        last = m.capturedEnd();
+    }
+    html += text.mid(last);
+    return html;
+}
+const QColor kBarGray(0xAA, 0xAA, 0xAA);
+} // namespace
 
 FKeyStatusBar::FKeyStatusBar(QWidget* parent) : QStatusBar(parent)
 {
     setObjectName("fkeyStatusBar");
-    setFKeys("F1-Help  F2-Save  F3-Open  F9-Compile  F10-Menu");
+    setAutoFillBackground(false);   // paintEvent draws the gray bar itself
+    setFKeys(QStringLiteral("F2 Save  F3 Open  F5 Zoom  F6 Next  F10 Menu"));
 }
 
 void FKeyStatusBar::setFKeys(const QString& text)
 {
-    showMessage(text);
+    m_text = text;
+    QLabel* lab = findChild<QLabel*>(QStringLiteral("fkeyLabel"));
+    if (!lab) {
+        lab = new QLabel(this);
+        lab->setObjectName(QStringLiteral("fkeyLabel"));
+        lab->setTextFormat(Qt::RichText);
+        lab->setAutoFillBackground(false);
+        lab->setAttribute(Qt::WA_TranslucentBackground, true);
+        // Transparent label background: the app-wide QWidget rule gives labels
+        // a window-blue base that would otherwise paint over the gray bar.
+        lab->setStyleSheet(QStringLiteral("QLabel { background: transparent; }"));
+        addWidget(lab, 1);
+    }
+    lab->setText(tvRich(text));
+}
+
+// Explicitly fill the status bar TV light-gray (palette alone was being
+// overridden by the app-wide window-blue QWidget rule).
+void FKeyStatusBar::paintEvent(QPaintEvent* ev)
+{
+    QPainter p(this);
+    p.fillRect(rect(), kBarGray);
+    QStatusBar::paintEvent(ev);
 }

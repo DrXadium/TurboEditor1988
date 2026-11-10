@@ -7,7 +7,7 @@
 namespace {
 const QColor kBevelLight(190, 190, 190);
 const QColor kBevelDark(70, 70, 70);
-const QColor kNavy(0, 0, 128);
+const QColor kNavy(0x1A, 0x1A, 0xAA);   // TV window blue desktop
 }
 
 BorlandStyle::BorlandStyle(QStyle* base) : QProxyStyle(base) {}

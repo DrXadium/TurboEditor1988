@@ -1,33 +1,78 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * CRT-Kate Borland chrome — navy desktop, cyan hotkeys, beveled panels.
- * Turbo C++ / Turbo Pascal aesthetic. No bezel (CRT effects apply over all).
+ * CRT-Kate Turbo Vision chrome — DOS/Borland TV 2.0 palette.
+ * window blue #1A1AAA, gray bars #AAAAAA (black text, red hotkeys),
+ * yellow #FFFF55, teal #1AAFAF, green #19A819, red hotkey #C41E1E.
+ * No bezel (CRT effects apply over all).
  */
 QWidget {
-    background-color: #0000aa;          /* Borland navy desktop */
-    color: #ffffff;
+    background-color: #1A1AAA;          /* TV window blue desktop */
+    color: #FFFF55;
     font-family: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
-    font-size: 13px;
+    font-size: 16px;
 }
+/* Menu bar: light-gray strip, black labels (hotkey drawn red by MenuBar). */
 QMenuBar {
-    background-color: #0000aa;
-    color: #ffffff;
-    border-bottom: 1px solid #5555ff;
+    background-color: #AAAAAA;
+    color: #000000;
 }
-QMenuBar::item:selected { background-color: #0000aa; color: #ffff55; }
+QMenuBar::item { background-color: #AAAAAA; color: #000000; padding: 2px 8px; }
+QMenuBar::item:selected { background-color: #000000; color: #AAAAAA; }
+/* Dropdown menus: TV gray panel, black text, red hotkeys, inverse selection. */
 QMenu {
-    background-color: #0000aa;
-    color: #ffffff;
-    border: 1px solid #ffffff;
+    background-color: #AAAAAA;
+    color: #000000;
+    border: 1px solid #FFFFFF;
 }
-QMenu::item:selected { background-color: #0000aa; color: #ffff55; }
+QMenu::item { background-color: #AAAAAA; color: #000000; padding: 2px 24px 2px 22px; }
+QMenu::item:selected { background-color: #0000AA; color: #FFFF55; }
+QMenu::separator { height: 1px; background: #000000; margin: 2px 4px; }
+/* Status line: light-gray strip, black labels (red F-keys drawn by FKeyStatusBar). */
 QStatusBar {
-    background-color: #0000aa;
-    color: #ffffff;
-    border-top: 1px solid #5555ff;
+    background-color: #AAAAAA;
+    color: #000000;
 }
-/* Editor / central placeholder reads as a sunken panel. */
+/* Editor / central placeholder = TV window-blue field. */
 QPlainTextEdit, QTextEdit, QWidget#editorHost {
-    background-color: #000000;
-    color: #aaaaaa;
-    border: 1px solid #5555ff;
+    background-color: #1A1AAA;
+    color: #FFFF55;
+    border: 1px solid #AAAAAA;
+}
+/* TV teal scrollbars: track + arrow/thumb blocks. */
+QScrollBar:vertical {
+    background: #1AAFAF;
+    width: 14px;
+    margin: 0;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: #19A819;
+    min-height: 24px;
+    border: 1px solid #000000;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    background: #1AAFAF;
+    height: 14px;
+    border: 1px solid #000000;
+}
+QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
+    background: #19A819;
+}
+QScrollBar:horizontal {
+    background: #1AAFAF;
+    height: 14px;
+    margin: 0;
+    border: none;
+}
+QScrollBar::handle:horizontal {
+    background: #19A819;
+    min-width: 24px;
+    border: 1px solid #000000;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    background: #1AAFAF;
+    width: 14px;
+    border: 1px solid #000000;
+}
+QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
+    background: #19A819;
 }

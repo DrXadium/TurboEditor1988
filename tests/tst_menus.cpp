@@ -144,26 +144,56 @@ private slots:
         }
     }
 
-    // Task 10: Borland palette + hotkey highlight applied to the menu bar items.
-    void menu_bar_uses_borland_palette_with_hotkey_highlight() {
+    // Task 12 (Turbo Vision spec): menu bar = light-gray #AAAAAA bg, BLACK
+    // label text; window blue = #1A1AAA; hotkey = red #C41E1E (a QAction's
+    // highlighted role doubles as the hotkey letter in this theme).
+    void menu_bar_uses_turbo_vision_palette() {
         ShellWindow w;
         QMenuBar* mb = w.menuBar();
         QVERIFY(mb);
 
-        // Borland navy desktop is #0000aa (170 blue); hotkey highlight #ffff55.
         const QPalette pal = mb->palette();
-        const QColor navBg = pal.color(QPalette::Active, QPalette::Button);
-        QVERIFY2(qAbs(navBg.blue() - 170) < 24 && navBg.red() < 60 && navBg.green() < 60,
-                 qPrintable(QStringLiteral("menu bar background is not Borland navy: #%1%2%3")
-                                .arg(navBg.red(), 2, 16, QLatin1Char('0'))
-                                .arg(navBg.green(), 2, 16, QLatin1Char('0'))
-                                .arg(navBg.blue(), 2, 16, QLatin1Char('0'))));
+        const QColor barBg = pal.color(QPalette::Active, QPalette::Button);
+        QVERIFY2(qAbs(barBg.red() - 0xAA) < 24 && qAbs(barBg.green() - 0xAA) < 24 &&
+                 qAbs(barBg.blue() - 0xAA) < 24,
+                 qPrintable(QStringLiteral("menu bar background is not TV gray #AAAAAA: #%1%2%3")
+                                .arg(barBg.red(), 2, 16, QLatin1Char('0'))
+                                .arg(barBg.green(), 2, 16, QLatin1Char('0'))
+                                .arg(barBg.blue(), 2, 16, QLatin1Char('0'))));
+        const QColor txt = pal.color(QPalette::Active, QPalette::ButtonText);
+        QVERIFY2(txt.red() < 40 && txt.green() < 40 && txt.blue() < 40,
+                 qPrintable(QStringLiteral("menu bar label is not black: #%1%2%3")
+                                .arg(txt.red(), 2, 16, QLatin1Char('0'))
+                                .arg(txt.green(), 2, 16, QLatin1Char('0'))
+                                .arg(txt.blue(), 2, 16, QLatin1Char('0'))));
         const QColor hl = pal.color(QPalette::Active, QPalette::HighlightedText);
-        QVERIFY2(hl.red() > 200 && hl.green() > 200 && hl.blue() < 130,
-                 qPrintable(QStringLiteral("hotkey highlight is not Borland yellow: #%1%2%3")
+        QVERIFY2(hl.red() > 0x9E && hl.green() < 0x50 && hl.blue() < 0x50,
+                 qPrintable(QStringLiteral("hotkey is not TV red #C41E1E: #%1%2%3")
                                 .arg(hl.red(), 2, 16, QLatin1Char('0'))
                                 .arg(hl.green(), 2, 16, QLatin1Char('0'))
                                 .arg(hl.blue(), 2, 16, QLatin1Char('0'))));
+    }
+
+    // Task 12: window/desktop blue is TV #1A1AAA (not old navy #0000aa),
+    // verified on real painted pixels via ContentBridge frame.
+    void window_surface_is_tv_blue() {
+        ShellWindow w;
+        w.resize(320, 240);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        b.update();
+        const QImage f = b.frame();
+        QVERIFY(!f.isNull());
+        int blue = 0;
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x) {
+                const QColor c = f.pixelColor(x, y);
+                if (qAbs(c.red() - 0x1A) <= 8 && qAbs(c.green() - 0x1A) <= 8 &&
+                    qAbs(c.blue() - 0xAA) <= 10)
+                    ++blue;
+            }
+        QVERIFY2(blue > 1000,
+                 qPrintable(QStringLiteral("TV-blue #1A1AAA px=%1, expected >1000").arg(blue)));
     }
 };
 

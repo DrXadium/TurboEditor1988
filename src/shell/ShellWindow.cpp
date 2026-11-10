@@ -12,6 +12,48 @@
 #include <QLabel>
 #include <QWidget>
 #include <QLayout>
+#include <QPainter>
+#include <QPaintEvent>
+
+namespace {
+const QColor kFrameGray(0xAA, 0xAA, 0xAA);
+const QColor kBgBlue(0x1A, 0x1A, 0xAA);
+
+// Central editor host: fills the TV window-blue desktop, then draws the
+// left/right/bottom double-line frame edges as part of its OWN paint (so a
+// child editor painting inside won't cover the frame — this widget's paint is
+// the frame layer). The TabStrip title line supplies the top edge + boxes.
+class EditorHost : public QWidget
+{
+public:
+    explicit EditorHost(QWidget* parent = nullptr) : QWidget(parent)
+    {
+        setObjectName("editorHost");
+        setAutoFillBackground(false);   // we paint the blue bg ourselves
+    }
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        const QRect r = rect();
+        p.fillRect(r, kBgBlue);
+        p.setPen(kFrameGray);
+        // Left vertical double-line.
+        p.drawLine(1, 0, 1, r.bottom() - 1);
+        p.drawLine(2, 0, 2, r.bottom() - 1);
+        // Right vertical double-line.
+        p.drawLine(r.right() - 2, 0, r.right() - 2, r.bottom() - 1);
+        p.drawLine(r.right() - 3, 0, r.right() - 3, r.bottom() - 1);
+        // Bottom horizontal double-line.
+        p.drawLine(0, r.bottom() - 2, r.right(), r.bottom() - 2);
+        p.drawLine(0, r.bottom() - 1, r.right(), r.bottom() - 1);
+        // Corner connectors (join to the TabStrip title-line top edge).
+        p.drawLine(1, 0, 2, 0);
+        p.drawLine(r.right() - 3, 0, r.right() - 2, 0);
+    }
+};
+} // namespace
 
 ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
 {
@@ -36,11 +78,13 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     auto* menu = new MenuBar(this);
     setMenuBar(menu);
 
-    // Central editor placeholder (sunken panel) + TabStrip above it.
-    auto* central = new QWidget(this);
-    central->setObjectName("editorHost");
+    // Central editor host (sunken panel) + TabStrip above it. EditorHost fills
+    // the TV window-blue desktop and draws the frame edges as its own paint.
+    // The layout has a 3px margin so child content (editor/placeholder) never
+    // covers the 3px frame border the host paints at its edges.
+    auto* central = new EditorHost(this);
     auto* lay = new QVBoxLayout(central);
-    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setContentsMargins(3, 0, 3, 3);   // expose the frame border on L/R/bottom
     lay->setSpacing(0);
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);

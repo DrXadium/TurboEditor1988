@@ -17,8 +17,8 @@ int countNavy(const QImage& img)
     for (int y = 0; y < img.height(); ++y)
         for (int x = 0; x < img.width(); ++x) {
             const QColor c = img.pixelColor(x, y);
-            if (qAbs(c.red() - 0) <= 6 && qAbs(c.green() - 0) <= 6 &&
-                qAbs(c.blue() - 170) <= 8)
+            if (qAbs(c.red() - 0x1A) <= 6 && qAbs(c.green() - 0x1A) <= 6 &&
+                qAbs(c.blue() - 0xAA) <= 8)
                 ++n;
         }
     return n;

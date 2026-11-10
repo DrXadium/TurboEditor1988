@@ -20,6 +20,28 @@ EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
         newDocument();
 }
 
+// Task 12: Turbo Vision editor styling — TV window-blue field, yellow text.
+// KTextEditor paints its own background from its syntax scheme, so the widget
+// palette is not enough; set the view's background/foreground/selection keys.
+void EditorTabManager::applyTvStyle(KTextEditor::View* view)
+{
+    if (!view)
+        return;
+    const QColor blue(0x1A, 0x1A, 0xAA);
+    const QColor yellow(0xFF, 0xFF, 0x55);
+    view->setAutoFillBackground(true);
+    QPalette pal = view->palette();
+    pal.setColor(QPalette::Base, blue);
+    pal.setColor(QPalette::Window, blue);
+    pal.setColor(QPalette::Text, yellow);
+    view->setPalette(pal);
+    // Best-effort scheme-independent keys (validated against configKeys()).
+    view->setConfigValue(QStringLiteral("background-color"), blue);
+    view->setConfigValue(QStringLiteral("foreground-color"), yellow);
+    // TV selection = inverse block: yellow field, blue text.
+    view->setConfigValue(QStringLiteral("selection-color"), yellow);
+}
+
 EditorTabManager::~EditorTabManager() = default;
 
 KTextEditor::Document* EditorTabManager::createDoc()
@@ -56,6 +78,7 @@ void EditorTabManager::newDocument()
     m_active = m_docs.size() - 1;
     m_container->setCurrentIndex(m_active);
     syncTabs();
+    applyTvStyle(view);
 }
 
 void EditorTabManager::openFile(const QUrl& url)
@@ -71,6 +94,7 @@ void EditorTabManager::openFile(const QUrl& url)
     m_active = m_docs.size() - 1;
     m_container->setCurrentIndex(m_active);
     syncTabs();
+    applyTvStyle(view);
 }
 
 void EditorTabManager::setActiveIndex(int index)

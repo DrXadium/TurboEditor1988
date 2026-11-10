@@ -2,24 +2,30 @@
 #include "MenuBar.h"
 #include <QPalette>
 #include <QColor>
+#include <QPainter>
 
 namespace {
-// Borland palette: navy desktop (#0000aa), white text, yellow hotkey highlight
-// (#ffff55) — mirrors borland.qss so the widget's own palette agrees with the
-// stylesheet visuals (tests assert on the palette directly).
+// Turbo Vision palette: window blue #1A1AAA desktop, gray #AAAAAA bars,
+// yellow #FFFF55 text, red #C41E1E hotkey — mirrors borland.qss so the
+// widget's own palette agrees with the stylesheet visuals (tests assert
+// on the palette directly).
 void applyBorlandPalette(QWidget* w)
 {
     QPalette pal = w->palette();
-    const QColor navy(0, 0, 170);
-    const QColor white(255, 255, 255);
-    const QColor yellow(255, 255, 85);
+    const QColor windowBlue(0x1A, 0x1A, 0xAA);
+    const QColor gray(0xAA, 0xAA, 0xAA);
+    const QColor black(0, 0, 0);
+    const QColor yellow(0xFF, 0xFF, 0x55);
+    const QColor red(0xC4, 0x1E, 0x1E);
     for (auto group : { QPalette::Active, QPalette::Inactive, QPalette::Disabled }) {
-        pal.setColor(group, QPalette::Window, navy);
-        pal.setColor(group, QPalette::Button, navy);
-        pal.setColor(group, QPalette::WindowText, white);
-        pal.setColor(group, QPalette::ButtonText, white);
-        pal.setColor(group, QPalette::Highlight, navy);
-        pal.setColor(group, QPalette::HighlightedText, yellow);
+        pal.setColor(group, QPalette::Window, windowBlue);
+        pal.setColor(group, QPalette::Button, gray);
+        pal.setColor(group, QPalette::WindowText, black);
+        pal.setColor(group, QPalette::ButtonText, black);
+        pal.setColor(group, QPalette::Base, windowBlue);
+        pal.setColor(group, QPalette::Text, yellow);
+        pal.setColor(group, QPalette::Highlight, windowBlue);
+        pal.setColor(group, QPalette::HighlightedText, red);
     }
     w->setPalette(pal);
 }
@@ -103,4 +109,13 @@ QStringList MenuBar::topLevelTitles() const
     for (QAction* a : actions())
         out << a->text().remove(QLatin1Char('&'));
     return out;
+}
+
+// Explicitly fill the menu bar TV light-gray (palette alone was overridden by
+// the app-wide window-blue QWidget rule); QMenuBar draws its items on top.
+void MenuBar::paintEvent(QPaintEvent* ev)
+{
+    QPainter p(this);
+    p.fillRect(rect(), QColor(0xAA, 0xAA, 0xAA));
+    QMenuBar::paintEvent(ev);
 }

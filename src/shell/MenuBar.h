@@ -2,11 +2,13 @@
 #pragma once
 #include <QMenuBar>
 
-// Kate's menu options rendered in Borland style (Task 10). Builds the full
-// top-level menu structure (File, Edit, Search, View, Session, Settings, Help)
-// with their entries so the shell/test can assert on it standalone. The entries
-// are exposed via menu(title) so the composition root (main.cpp) can wire each
-// action to EditorTabManager / SessionManager / SettingsDialog.
+// Kate's menu options rendered in Turbo Vision style (Tasks 10 + 12). Builds
+// the full top-level menu structure (File, Edit, Search, View, Session,
+// Settings, Help) with their entries so the shell/test can assert on it
+// standalone. The entries are exposed via menu(title) so the composition root
+// (main.cpp) can wire each action to EditorTabManager / SessionManager /
+// SettingsDialog. Paints its own light-gray bar (palette alone was overridden
+// by the app-wide window-blue QWidget rule).
 class MenuBar : public QMenuBar
 {
     Q_OBJECT
@@ -19,4 +21,7 @@ public:
 
     // Titles of the top-level menus, in order (hotkey markers stripped).
     QStringList topLevelTitles() const;
+
+protected:
+    void paintEvent(QPaintEvent* ev) override;
 };

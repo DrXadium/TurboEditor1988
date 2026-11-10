@@ -43,6 +43,10 @@ public:
     // config key (KTextEditor::View::configValue/setConfigValue).
     void setZoom(int delta);
 
+    // Task 12: Turbo Vision editor styling (window-blue field, yellow text)
+    // applied to a freshly created KTextEditor::View.
+    void applyTvStyle(KTextEditor::View* view);
+
     // Text tools on the active view (selection if present, else whole doc).
     void changeCase(CaseKind kind);
     void sortLines();

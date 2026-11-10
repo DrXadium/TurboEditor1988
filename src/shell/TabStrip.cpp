@@ -1,11 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "TabStrip.h"
 #include <QPainter>
+#include <QPainterPath>
+#include <QMouseEvent>
+#include <QFontMetrics>
+
+namespace {
+const QColor kFrameGray(0xAA, 0xAA, 0xAA);   // title-line / frame color
+const QColor kBgBlue(0x1A, 0x1A, 0xAA);      // TV window blue desktop
+const QColor kBlack(0, 0, 0);
+const QColor kGreen(0x19, 0xA8, 0x19);       // close/zoom box fill
+const QColor kYellow(0xFF, 0xFF, 0x55);      // active tab label
+const QColor kGrayText(0xAA, 0xAA, 0xAA);    // inactive tab label
+} // namespace
 
 TabStrip::TabStrip(QWidget* parent) : QWidget(parent)
 {
     setObjectName("tabStrip");
     setMinimumHeight(24);
+    setAutoFillBackground(false);   // paintEvent draws the title line itself
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
 void TabStrip::setTabs(const QStringList& titles, int active)
@@ -13,4 +27,118 @@ void TabStrip::setTabs(const QStringList& titles, int active)
     m_titles = titles;
     m_active = active;
     update();
+}
+
+// Box geometries (recomputed in paintEvent; queried by mousePressEvent).
+QRect TabStrip::closeBoxRect() const
+{
+    return QRect(6, height() / 2 - 8, 18, 16);
+}
+
+QRect TabStrip::zoomBoxRect() const
+{
+    return QRect(width() - 24, height() / 2 - 8, 18, 16);
+}
+
+// Tab segment x-ranges, starting after the close box.
+QVector<QRect> TabStrip::tabRects() const
+{
+    QVector<QRect> out;
+    if (m_titles.isEmpty())
+        return out;
+    const QFontMetrics fm(font());
+    int x = closeBoxRect().right() + 10;
+    const int rightLimit = zoomBoxRect().left() - 8;
+    const int gap = 6;
+    for (int i = 0; i < m_titles.size(); ++i) {
+        const QString label = m_titles.at(i);
+        const int w = fm.horizontalAdvance(label) + 14;
+        if (x + w > rightLimit)
+            break;
+        out.append(QRect(x, 4, w, height() - 8));
+        x += w + gap;
+    }
+    return out;
+}
+
+void TabStrip::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, false);   // crisp DOS pixels
+    const int midY = height() / 2;
+
+    // Desktop blue background (the title line sits on the window blue).
+    p.fillRect(rect(), kBgBlue);
+
+    // Top + bottom frame edges (horizontal double-line), broken by the title
+    // content: draw full-width, then the tabs/boxes/labels paint over it.
+    p.setPen(kFrameGray);
+    p.drawLine(0, 1, width() - 1, 1);
+    p.drawLine(0, 2, width() - 1, 2);
+    p.drawLine(0, height() - 3, width() - 1, height() - 3);
+    p.drawLine(0, height() - 2, width() - 1, height() - 2);
+
+    // Left/right vertical frame stubs (corners connect to the edges above).
+    p.drawLine(1, 0, 1, height() - 1);
+    p.drawLine(2, 0, 2, height() - 1);
+    p.drawLine(width() - 2, 0, width() - 2, height() - 1);
+    p.drawLine(width() - 3, 0, width() - 3, height() - 1);
+
+    // Close box [■] (green fill, black square) — top-left.
+    const QRect cb = closeBoxRect();
+    p.fillRect(cb, kGreen);
+    p.setPen(kBlack);
+    p.drawRect(cb);
+    p.fillRect(QRect(cb.center().x() - 3, cb.center().y() - 3, 7, 7), kBlack);
+
+    // Zoom box [↕] (green fill, black up/down arrows) — top-right.
+    const QRect zb = zoomBoxRect();
+    p.fillRect(zb, kGreen);
+    p.setPen(kBlack);
+    p.drawRect(zb);
+    {
+        const int cx = zb.center().x();
+        const int top = zb.top() + 3;
+        const int bot = zb.bottom() - 3;
+        // Up arrow (top half).
+        p.drawLine(cx, top, cx, top + 4);
+        p.drawLine(cx - 3, top + 3, cx, top);
+        p.drawLine(cx + 3, top + 3, cx, top);
+        // Down arrow (bottom half).
+        p.drawLine(cx, bot, cx, bot - 4);
+        p.drawLine(cx - 3, bot - 3, cx, bot);
+        p.drawLine(cx + 3, bot - 3, cx, bot);
+    }
+
+    // Tabs as title-line segments.
+    const QVector<QRect> rects = tabRects();
+    for (int i = 0; i < rects.size() && i < m_titles.size(); ++i) {
+        const QRect r = rects.at(i);
+        const bool active = (i == m_active);
+        if (active) {
+            // Active tab: raised gray plate with black text (TV selected tab).
+            p.fillRect(r, kFrameGray);
+            p.setPen(kBlack);
+            p.drawRect(r);
+            p.setPen(kBlack);
+            p.drawText(r, Qt::AlignCenter, m_titles.at(i));
+        } else {
+            // Inactive tab: transparent over blue, gray label.
+            p.setPen(kGrayText);
+            p.drawText(r, Qt::AlignCenter, m_titles.at(i));
+        }
+    }
+}
+
+void TabStrip::mousePressEvent(QMouseEvent* ev)
+{
+    const QVector<QRect> rects = tabRects();
+    for (int i = 0; i < rects.size(); ++i) {
+        if (rects.at(i).contains(ev->pos())) {
+            if (i != m_active)
+                emit tabActivated(i);
+            return;
+        }
+    }
+    QWidget::mousePressEvent(ev);
 }

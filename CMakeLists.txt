@@ -136,6 +136,26 @@ add_executable(tst_menus tests/tst_menus.cpp)
 target_link_libraries(tst_menus PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
 add_test(NAME tst_menus COMMAND tst_menus)
 
+# Task 12: Turbo Vision grid proof (two-size palette/layout) - ctest -R tst_tv_grid
+add_executable(tst_tv_grid tests/tst_tv_grid.cpp)
+target_link_libraries(tst_tv_grid PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
+add_test(NAME tst_tv_grid COMMAND tst_tv_grid)
+
+# Task 12: Turbo Vision title-line tab strip (boxes, segments, click) - ctest -R tst_tabstrip
+add_executable(tst_tabstrip tests/tst_tabstrip.cpp)
+target_link_libraries(tst_tabstrip PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_tabstrip COMMAND tst_tabstrip)
+
+# Task 12: Turbo Vision window frame (title-line boxes + L/R edges) - ctest -R tst_frame
+add_executable(tst_frame tests/tst_frame.cpp)
+target_link_libraries(tst_frame PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_frame COMMAND tst_frame)
+
+# Task 12: Turbo Vision status-line F-key contract - ctest -R tst_fkeys
+add_executable(tst_fkeys tests/tst_fkeys.cpp)
+target_link_libraries(tst_fkeys PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_fkeys COMMAND tst_fkeys)
+
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
 target_link_libraries(crt-kate PRIVATE
@@ -177,3 +197,12 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.desktop
         DESTINATION share/applications)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.png
         DESTINATION share/icons/hicolor/256x256/apps)
+
+# Task 12 scratch probe (not a ctest test): renders the real ShellWindow plus
+# editor via ContentBridge and prints region colors. Build on demand with:
+#   cmake --build build --target probe_shell && ./build/probe_shell
+add_executable(probe_shell .relay/probe_shell.cpp)
+target_link_libraries(probe_shell PRIVATE
+  crt-bridge crt-editor Qt6::Gui Qt6::Widgets Qt6::Quick KF6::TextEditor)
+target_compile_definitions(probe_shell PRIVATE
+  CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

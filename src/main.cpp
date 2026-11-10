@@ -5,6 +5,9 @@
 #include <QApplication>
 #include <QMessageBox>
 #include <QMenu>
+#include <QMenuBar>
+#include <QAction>
+#include <QKeySequence>
 #include <QEvent>
 #include <QFileDialog>
 #include <QInputDialog>
@@ -222,6 +225,55 @@ int main(int argc, char** argv)
                             "effects.<br>Built on KTextEditor (KDE "
                             "Frameworks) and Qt."));
         });
+
+        // Turbo Vision function keys (Task 12): the status line claims these,
+        // so wire them live as extra shortcuts on the existing actions.
+        // F2 Save, F3 Open, F5 Zoom reset; F6 next tab + F10 menu added below.
+        auto addFKey = [](QAction* a, const char* key) {
+            if (!a)
+                return;
+            QStringList keys;
+            const QKeySequence cur = a->shortcut();
+            keys << cur.toString();
+            keys << QString::fromLatin1(key);
+            QList<QKeySequence> seq;
+            for (const QString& k : keys)
+                if (!k.isEmpty())
+                    seq << QKeySequence(k);
+            a->setShortcuts(seq);
+        };
+        addFKey(act("actionFileSave"), "F2");
+        addFKey(act("actionFileOpen"), "F3");
+        addFKey(act("actionViewZoomReset"), "F5");
+    }
+
+    // F6: next tab (cycle). Wired after the action block (needs shell/tabs).
+    {
+        auto* nextTab = new QAction(&shell);
+        nextTab->setObjectName(QStringLiteral("actionF6Next"));
+        nextTab->setShortcut(QKeySequence(QStringLiteral("F6")));
+        shell.addAction(nextTab);
+        QObject::connect(nextTab, &QAction::triggered, nextTab, [&tabs] {
+            const int n = tabs.tabCount();
+            if (n > 0)
+                tabs.setActiveIndex((tabs.activeIndex() + 1) % n);
+        });
+    }
+    // F10: open the menu bar (first menu), the TV "F10 = Menu" convention.
+    {
+        auto* menuAct = new QAction(&shell);
+        menuAct->setObjectName(QStringLiteral("actionF10Menu"));
+        menuAct->setShortcut(QKeySequence(QStringLiteral("F10")));
+        shell.addAction(menuAct);
+        QObject::connect(menuAct, &QAction::triggered, menuAct, [&shell] {
+            if (QMenuBar* mb = shell.menuBar()) {
+                const auto tops = mb->actions();
+                if (!tops.isEmpty())
+                    mb->setActiveAction(tops.first());
+                if (QMenu* m = mb->actions().first()->menu())
+                    m->popup(mb->mapToGlobal(QPoint(0, mb->height())));
+            }
+        });
     }
 
     // Crash recovery (Task 8): snapshots modified buffers periodically; on
@@ -296,6 +348,27 @@ int main(int argc, char** argv)
             probe->setObjectName(QStringLiteral("crtProbeMenu"));
             probe->move(40, 60);           // over the shell's top-left area
             probe->show();
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_BRIGHT=<0..3> forces the CRT
+    // brightness at launch so a capture can reveal the underlying chrome
+    // (used with CRT_KATE_SHOT for visual restyle verification).
+    if (const QByteArray b = qgetenv("CRT_KATE_BRIGHT"); !b.isEmpty()) {
+        bool ok = false;
+        const double v = b.toDouble(&ok);
+        if (ok)
+            crtSettings.setBrightness(v);
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_RAWSHOT=/tmp/x.png grabs the
+    // RAW widget render (the true chrome, no CRT shader) and exits - used for
+    // visual restyle verification / pixel proofs against the Turbo Vision spec.
+    if (const QByteArray raw = qgetenv("CRT_KATE_RAWSHOT"); !raw.isEmpty()) {
+        QTimer::singleShot(900, &app, [&shell, raw, &app]() {
+            const QImage img = shell.grab().toImage();
+            img.save(QString::fromUtf8(raw));
+            QCoreApplication::exit(0);
         });
     }
 
