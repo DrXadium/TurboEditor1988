@@ -83,10 +83,25 @@ add_executable(tst_zoomtools tests/tst_zoomtools.cpp)
 target_link_libraries(tst_zoomtools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
 
-# Task 4: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
+# Task 6: CRT settings (C++ model with QSettings persistence + dialog).
+add_library(crt-settings STATIC
+  src/settings/CrtSettings.cpp
+  src/settings/CrtSettings.h
+  src/settings/SettingsDialog.cpp
+  src/settings/SettingsDialog.h
+)
+target_include_directories(crt-settings PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(crt-settings PUBLIC Qt6::Gui Qt6::Widgets)
+
+# Task 6 test: ctest -R tst_settings
+add_executable(tst_settings tests/tst_settings.cpp)
+target_link_libraries(tst_settings PRIVATE crt-settings Qt6::Test Qt6::Widgets)
+add_test(NAME tst_settings COMMAND tst_settings)
+
+# Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
 target_link_libraries(crt-kate PRIVATE
-  crt-bridge crt-editor Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
+  crt-bridge crt-editor crt-settings Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
 )
 target_compile_definitions(crt-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"

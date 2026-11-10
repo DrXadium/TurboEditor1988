@@ -29,9 +29,12 @@ Window {
     }
 
     // CRT effect chain over the whole window (edge-to-edge, no bezel).
+    // `settings` binds to the C++ CrtSettings (context property) so the
+    // settings dialog drives the shader live; falls back to the QML default.
     EffectChain {
         objectName: "crtEffectChain"
         anchors.fill: parent
         sourceItem: bridge.sourceItem
+        settings: crtSettings
     }
 }

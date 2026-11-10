@@ -6,11 +6,14 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QQuickItem>
+#include <QtQuick/qquickitemgrabresult.h>
 #include <QTimer>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
+#include "src/settings/CrtSettings.h"
 
 int main(int argc, char** argv)
 {
@@ -40,11 +43,20 @@ int main(int argc, char** argv)
     ContentBridge bridge;
     bridge.setShellWindow(&shell);
 
+    // CRT settings (QSettings-backed single source of truth for effect knobs).
+    // Loaded at startup; persisted on quit so the dialog's changes survive restart.
+    CrtSettings crtSettings;
+    crtSettings.load();
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
+                     [&crtSettings] { crtSettings.save(); });
+
     QQmlApplicationEngine engine;
     engine.addImportPath(QStringLiteral(CRT_KATE_SOURCE_DIR)); // `import src`
     engine.addImageProvider(QStringLiteral("bridge"),
                              new BridgeImageProvider(&bridge));
     engine.rootContext()->setContextProperty(QStringLiteral("bridge"), &bridge);
+    engine.rootContext()->setContextProperty(QStringLiteral("crtSettings"),
+                                             &crtSettings);
 
     // ~30 fps frame feed (spec's approved perf budget for QWidget::render).
     QTimer frameTimer;
@@ -65,12 +77,33 @@ int main(int argc, char** argv)
         return 1;
 
     // Dev aid (unset in normal runs): CRT_KATE_SHOT=/tmp/x.png grabs the CRT
-    // window after 1.5s and exits — used for headless visual verification.
+    // window after 1.5s and exits - used for headless visual verification.
+    // Grabs via QQuickItem::grabToImage() on the EffectChain (full-window item).
+    // NOTE: do NOT verify renders with QT_QPA_PLATFORM=offscreen — offscreen has
+    // no GL, so Qt Quick falls back to the software backend where ShaderEffect
+    // never compiles (status stays Uncompiled) and effects silently don't render.
+    // Capture on a real display (DISPLAY/Wayland session) instead.
     if (const QByteArray shot = qgetenv("CRT_KATE_SHOT"); !shot.isEmpty()) {
-        QTimer::singleShot(1500, &app, [&engine, shot]() {
-            if (auto* root = engine.rootObjects().value(0))
+        QTimer::singleShot(1500, &app, [&engine, shot, &app]() {
+            if (auto* root = engine.rootObjects().value(0)) {
+                QQuickItem *chain = root->findChild<QQuickItem*>(
+                    QStringLiteral("crtEffectChain"));
+                if (!chain)
+                    chain = qobject_cast<QQuickItem*>(root);
+                if (chain) {
+                    auto result = chain->grabToImage();
+                    if (result) {
+                        QObject::connect(result.data(), &QQuickItemGrabResult::ready, &app,
+                                         [result, shot, &app]() {
+                            result->saveToFile(QString::fromUtf8(shot));
+                            QCoreApplication::exit(0);
+                        });
+                        return;
+                    }
+                }
                 if (auto* win = qobject_cast<QQuickWindow*>(root))
                     win->grabWindow().save(QString::fromUtf8(shot));
+            }
             QCoreApplication::exit(0);
         });
     }

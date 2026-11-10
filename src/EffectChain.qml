@@ -10,10 +10,13 @@ Item {
     // The content to be CRT'd.
     property Item sourceItem
 
-    // Effect model (defaults = cool-retro-term). Declared with an id so
-    // aliases and the shader can bind to it.
+    // Effect model. `crt` is the QML default (cool-retro-term defaults; used
+    // directly by Task 2 tests, which instantiate EffectChain without any C++
+    // context). The app overrides `settings` with the C++ CrtSettings context
+    // property `crtSettings` (QSettings-backed, loaded before engine.load()),
+    // so the settings dialog drives the shader live.
     CrtSettings { id: crt }
-    property CrtSettings settings: crt
+    property var settings: crt
 
     // Convenience aliases so tests/short UI can set these directly.
     property alias scanlinesEnabled: crt.scanlinesEnabled
@@ -40,17 +43,17 @@ Item {
         property var source: srcTex
         property real time: clock.time
         property vector2d resolution: Qt.vector2d(width, height)
-        property real screenCurvature: settings.screenCurvature
+        property real screenCurvature: root.settings.screenCurvature
         property real rasterizationIntensity:
-            settings.scanlinesEnabled ? settings.rasterizationIntensity : 0.0
-        property real glow: settings.glowEnabled ? settings.bloom : 0.0
-        property real rgbShift: settings.chromaColor
-        property real jitter: settings.motionEnabled ? settings.jitter : 0.0
-        property real horizontalSync: settings.horizontalSync
-        property real flickering: settings.flickerEnabled ? settings.flickering : 0.0
-        property real brightness: settings.brightness
-        property real contrast: settings.contrast
-        property real staticNoise: settings.staticNoise
+            root.settings.scanlinesEnabled ? root.settings.rasterizationIntensity : 0.0
+        property real glow: root.settings.glowEnabled ? root.settings.bloom : 0.0
+        property real rgbShift: root.settings.chromaColor
+        property real jitter: root.settings.motionEnabled ? root.settings.jitter : 0.0
+        property real horizontalSync: root.settings.horizontalSync
+        property real flickering: root.settings.flickerEnabled ? root.settings.flickering : 0.0
+        property real brightness: root.settings.brightness
+        property real contrast: root.settings.contrast
+        property real staticNoise: root.settings.staticNoise
         property real scanlineDensity: 1.0
         // Compiled shader path (absolute file URL). Overridable for the app
         // build (qrc path) in Task 4; the test runner sets this to the
