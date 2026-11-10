@@ -14,6 +14,8 @@
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
 #include "src/settings/CrtSettings.h"
+#include "src/session/SessionManager.h"
+#include <ktexteditor/view.h>
 
 int main(int argc, char** argv)
 {
@@ -39,6 +41,37 @@ int main(int argc, char** argv)
     // Seed the strip with the initial tab (created by the manager ctor).
     if (TabStrip* strip0 = shell.tabStrip())
         strip0->setTabs(QStringList() << QStringLiteral("untitled"), 0);
+
+    // Named sessions (Task 7): snapshot open files + cursor on quit, restore
+    // the last session at startup (no-op on a fresh install: nothing saved yet).
+    SessionManager sessions;
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &sessions, [&]() {
+        QVector<SessionManager::Entry> entries;
+        for (int i = 0; i < tabs.viewCount(); ++i) {
+            const QUrl url = tabs.viewFileUrl(i);
+            if (url.isEmpty())
+                continue;
+            const QPoint p = tabs.viewCursorPosition(i);
+            entries.append({ url, p.y(), p.x(), tabs.activeIndex() });
+        }
+        if (!entries.isEmpty())
+            sessions.setEntries(entries);
+    });
+    if (!sessions.lastSession().isEmpty() && sessions.restoreSession(sessions.lastSession())) {
+        const auto entries = sessions.entries();
+        for (const auto& e : entries)
+            tabs.openFile(e.fileUrl);
+        if (!entries.isEmpty()) {
+            int want = 0;
+            for (int i = 0; i < entries.size(); ++i)
+                if (entries[i].activeIndex >= 0 && entries[i].activeIndex < entries.size())
+                    want = entries[i].activeIndex;
+            tabs.setActiveIndex(want);
+            const auto& active = entries[want];
+            if (KTextEditor::View* v = tabs.activeView())
+                v->setCursorPosition(KTextEditor::Cursor(active.line, active.column));
+        }
+    }
 
     ContentBridge bridge;
     bridge.setShellWindow(&shell);

@@ -93,15 +93,28 @@ add_library(crt-settings STATIC
 target_include_directories(crt-settings PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(crt-settings PUBLIC Qt6::Gui Qt6::Widgets)
 
+# Task 7: named session manager (JSON snapshot of open files + cursor).
+add_library(crt-session STATIC
+  src/session/SessionManager.cpp
+  src/session/SessionManager.h
+)
+target_include_directories(crt-session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(crt-session PUBLIC Qt6::Core)
+
 # Task 6 test: ctest -R tst_settings
 add_executable(tst_settings tests/tst_settings.cpp)
 target_link_libraries(tst_settings PRIVATE crt-settings Qt6::Test Qt6::Widgets)
 add_test(NAME tst_settings COMMAND tst_settings)
 
+# Task 7 test: ctest -R tst_session
+add_executable(tst_session tests/tst_session.cpp)
+target_link_libraries(tst_session PRIVATE crt-session Qt6::Test)
+add_test(NAME tst_session COMMAND tst_session)
+
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
 target_link_libraries(crt-kate PRIVATE
-  crt-bridge crt-editor crt-settings Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
+  crt-bridge crt-editor crt-settings crt-session Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
 )
 target_compile_definitions(crt-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"

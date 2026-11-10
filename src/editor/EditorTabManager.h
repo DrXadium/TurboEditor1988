@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QUrl>
 #include <QList>
+#include <QPoint>
 #include <QStackedWidget>
 
 namespace KTextEditor { class Document; class View; }
@@ -31,6 +32,12 @@ public:
     void newDocument();
     void openFile(const QUrl& url);
     void setActiveIndex(int index);
+
+    // Session snapshot accessors (Task 7): per-tab file URL + cursor position
+    // and the active tab, so the composition root can persist a named session.
+    int viewCount() const { return m_views.size(); }
+    QUrl viewFileUrl(int index) const;
+    QPoint viewCursorPosition(int index) const;
 
     // Zoom: +1 in / -1 out / 0 reset, applied to the active view's "font"
     // config key (KTextEditor::View::configValue/setConfigValue).

@@ -80,6 +80,21 @@ void EditorTabManager::setActiveIndex(int index)
     syncTabs();
 }
 
+QUrl EditorTabManager::viewFileUrl(int index) const
+{
+    if (index < 0 || index >= m_views.size())
+        return {};
+    return m_views[index]->document()->url();
+}
+
+QPoint EditorTabManager::viewCursorPosition(int index) const
+{
+    if (index < 0 || index >= m_views.size())
+        return {};
+    const KTextEditor::Cursor c = m_views[index]->cursorPosition();
+    return { c.column(), c.line() };
+}
+
 void EditorTabManager::setZoom(int delta)
 {
     if (delta == 0) {
