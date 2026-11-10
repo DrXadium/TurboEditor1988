@@ -41,6 +41,24 @@ int main(int argc, char** argv)
     // The Borland chrome, rendered offscreen (never mapped to a real window).
     ShellWindow shell;
     shell.resize(1280, 800);
+    // Dev aid (unset in normal runs): CRT_KATE_SIZE=<W>x<H> overrides the
+    // window size, so paired captures can verify layout at two sizes (Task 5).
+    // Parsed here but applied AFTER engine.load(): the QML Window drives the
+    // shell size via ContentBridge::resizeShell, so resizing the widget alone
+    // would be overwritten the moment QML syncs.
+    int forcedW = 0, forcedH = 0;
+    if (const QByteArray sz = qgetenv("CRT_KATE_SIZE"); !sz.isEmpty()) {
+        const auto parts = QString::fromUtf8(sz).split(QLatin1Char('x'));
+        if (parts.size() == 2) {
+            bool okw = false, okh = false;
+            const int w = parts.at(0).toInt(&okw);
+            const int h = parts.at(1).toInt(&okh);
+            if (okw && okh && w > 0 && h > 0) {
+                forcedW = w;
+                forcedH = h;
+            }
+        }
+    }
 
     // Composition root: host the KTextEditor tab container below the TabStrip,
     // sync the TabStrip to the documents, and install zoom/tools actions.
@@ -370,6 +388,15 @@ int main(int argc, char** argv)
     engine.load(QUrl::fromLocalFile(qmlRoot + QStringLiteral("/src/main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
+    // Apply CRT_KATE_SIZE to the QML window (its onWidth/onHeightChanged
+    // handlers push the size down to the bridged shell).
+    if (forcedW > 0 && forcedH > 0) {
+        if (auto* rootWin =
+                qobject_cast<QQuickWindow*>(engine.rootObjects().value(0))) {
+            rootWin->setWidth(forcedW);
+            rootWin->setHeight(forcedH);
+        }
+    }
 
     // Dev aid (unset in normal runs): CRT_KATE_MENU=<title> opens a probe menu
     // over the shell before CRT_KATE_SHOT captures, proving a real popup gets
