@@ -3,6 +3,7 @@
 // into the QML CRT scene (EffectChain), which is the visible window —
 // CRT effects cover the entire display per the design spec.
 #include <QApplication>
+#include <QMessageBox>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -15,6 +16,7 @@
 #include "src/editor/EditorTabManager.h"
 #include "src/settings/CrtSettings.h"
 #include "src/session/SessionManager.h"
+#include "src/autosave/AutosaveService.h"
 #include <ktexteditor/view.h>
 
 int main(int argc, char** argv)
@@ -82,6 +84,25 @@ int main(int argc, char** argv)
     crtSettings.load();
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
                      [&crtSettings] { crtSettings.save(); });
+
+    // Crash recovery (Task 8): snapshots modified buffers periodically; on
+    // launch, surface any recovery files left by a previous crashed run as a
+    // message box so unsaved work isn't silently lost.
+    AutosaveService autosave;
+    autosave.start(120000);
+    if (const auto pending = autosave.pendingRecovery(); !pending.isEmpty()) {
+        QStringList names;
+        for (const auto& p : pending)
+            names << (p.originalUrl.isEmpty() ? p.autosavePath
+                                              : p.originalUrl.toLocalFile());
+        QMessageBox::information(
+            &shell, QObject::tr("Recovered unsaved work"),
+            QObject::tr("%1 autosave file(s) from a previous session were found:\n\n%2\n\n"
+                         "They are kept in:\n%3")
+                .arg(pending.size())
+                .arg(names.join(QLatin1Char('\n')))
+                .arg(autosave.autosaveDir()));
+    }
 
     QQmlApplicationEngine engine;
     engine.addImportPath(QStringLiteral(CRT_KATE_SOURCE_DIR)); // `import src`
