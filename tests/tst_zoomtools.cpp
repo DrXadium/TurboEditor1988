@@ -35,6 +35,29 @@ private slots:
         QCOMPARE(m.activeView()->document()->text(), QString());
     }
 
+    void font_size_then_zoom_keeps_pixel_base() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+
+        // Task 12: setFontSize sets a PIXEL size (TV default 16). A subsequent
+        // zoom must scale that pixel base, NOT reset the font to a ~10pt
+        // default (what happens when applyZoom reads pointSize()==-1 on a
+        // pixel-set font and takes its <=0 fallback, discarding the 16px).
+        m.setFontSize(16);
+        QCOMPARE(v->configValue("font").value<QFont>().pixelSize(), 16);
+
+        m.setZoom(+1);
+        const QFont after = v->configValue("font").value<QFont>();
+        // The base 16px must be preserved and grown — not swapped for an
+        // unrelated ~10-11pt default (which is ~14px at 96dpi, smaller).
+        QVERIFY2(after.pixelSize() > 16,
+                 qPrintable(QStringLiteral(
+                     "zoom after setFontSize(16) discarded the pixel base: pixel=%1 point=%2 (expected >16px)")
+                                .arg(after.pixelSize()).arg(after.pointSize())));
+    }
+
     void open_file_reads_content() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

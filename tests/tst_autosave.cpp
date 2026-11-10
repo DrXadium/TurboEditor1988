@@ -76,6 +76,28 @@ private slots:
         QVERIFY2(!QFile::exists(path), "accept left the file on disk");
     }
 
+    void recoveryContent_reads_buffer_for_restore() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        AutosaveService svc;
+        svc.setAutosaveDir(dir.path());
+
+        const QUrl orig = QUrl::fromLocalFile("/etc/hostname");
+        const QString text = QStringLiteral("unsaved work to restore\nline 2");
+        svc.registerDocument(orig, text);
+        svc.markModified(orig);
+        svc.runOneTick();
+
+        const auto pending = svc.pendingRecovery();
+        QVERIFY(!pending.isEmpty());
+        // The restore path needs the snapshot's content back so the composition
+        // root can reopen it into an editor tab (spec: "prompt to restore").
+        QCOMPARE(svc.recoveryContent(pending.first().id), text);
+        // Unknown id -> empty (no crash, no phantom content).
+        QVERIFY2(svc.recoveryContent(-999).isEmpty(),
+                 "recoveryContent must return empty for an unknown id");
+    }
+
     void cold_start_scan_detects_leftover_recovery_files() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

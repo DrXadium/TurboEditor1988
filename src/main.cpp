@@ -283,9 +283,11 @@ int main(int argc, char** argv)
         });
     }
 
-    // Crash recovery (Task 8): snapshots modified buffers periodically; on
-    // launch, surface any recovery files left by a previous crashed run as a
-    // message box so unsaved work isn't silently lost.
+    // Crash recovery (Task 8 / final-review fix): snapshots modified buffers
+    // periodically; on launch, if a previous run left recovery files, PROMPT TO
+    // RESTORE (spec: "if recovery files are newer than their originals, prompt
+    // to restore"): Restore reopens each snapshot's content in a new tab,
+    // Discard drops the snapshots.
     AutosaveService autosave;
     autosave.start(120000);
     if (const auto pending = autosave.pendingRecovery(); !pending.isEmpty()) {
@@ -293,13 +295,27 @@ int main(int argc, char** argv)
         for (const auto& p : pending)
             names << (p.originalUrl.isEmpty() ? p.autosavePath
                                               : p.originalUrl.toLocalFile());
-        QMessageBox::information(
-            &shell, QObject::tr("Recovered unsaved work"),
+        const auto choice = QMessageBox::question(
+            &shell, QObject::tr("Restore unsaved work"),
             QObject::tr("%1 autosave file(s) from a previous session were found:\n\n%2\n\n"
-                         "They are kept in:\n%3")
+                         "Restore them now?")
                 .arg(pending.size())
-                .arg(names.join(QLatin1Char('\n')))
-                .arg(autosave.autosaveDir()));
+                .arg(names.join(QLatin1Char('\n'))),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        for (const auto& p : pending) {
+            if (choice == QMessageBox::Yes) {
+                const QString content = autosave.recoveryContent(p.id);
+                if (!content.isEmpty()) {
+                    tabs.newDocument();
+                    if (KTextEditor::View* v = tabs.activeView())
+                        if (KTextEditor::Document* doc = v->document())
+                            doc->setText(content);
+                }
+                autosave.acceptRecovery(p.id);
+            } else {
+                autosave.discardRecovery(p.id);
+            }
+        }
     }
 
     QQmlApplicationEngine engine;

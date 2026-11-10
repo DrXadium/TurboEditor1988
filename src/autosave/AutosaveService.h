@@ -50,6 +50,10 @@ public:
     QList<RecoveryFile> pendingRecovery() const;
     bool acceptRecovery(int id);
     bool discardRecovery(int id);
+    // Task 12 (review fix): read a pending recovery file's buffer content so
+    // the composition root can reopen it in an editor tab (the restore path).
+    // Returns an empty string if the id is unknown or the file can't be read.
+    QString recoveryContent(int id) const;
 
 signals:
     void recoveryAvailable(const AutosaveService::RecoveryFile& file);

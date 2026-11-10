@@ -151,9 +151,28 @@ void EditorTabManager::applyZoom(int delta)
     if (!v)
         return;
     QFont f = v->configValue(QStringLiteral("font")).value<QFont>();
+    // Zoom in PIXEL units when the font is pixel-based (setFontSize sets
+    // pixel size; a pixel-set font reports pointSize() == -1). Zooming in
+    // point units there would hit the <=0 fallback and silently replace the
+    // configured pixel size with a ~10pt default. Otherwise zoom in points.
+    const bool pixelBased = f.pixelSize() > 0;
+    if (pixelBased) {
+        int base = (m_basePixelSize > 0) ? m_basePixelSize : f.pixelSize();
+        if (delta == 0) {
+            f.setPixelSize(base);
+        } else {
+            if (m_basePixelSize < 0)
+                m_basePixelSize = f.pixelSize();   // lock baseline on first zoom
+            int next = f.pixelSize() + delta;
+            if (next < 4)  next = 4;
+            if (next > 96) next = 96;
+            f.setPixelSize(next);
+        }
+        v->setConfigValue(QStringLiteral("font"), f);
+        return;
+    }
     if (f.pointSize() <= 0)
         f.setPointSize(10);
-
     if (delta == 0) {                       // reset to baseline
         if (m_basePointSize > 0)
             f.setPointSize(m_basePointSize);

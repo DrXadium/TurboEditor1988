@@ -40,7 +40,8 @@ public:
     QPoint viewCursorPosition(int index) const;
 
     // Zoom: +1 in / -1 out / 0 reset, applied to the active view's "font"
-    // config key (KTextEditor::View::configValue/setConfigValue).
+    // config key (KTextEditor::View::configValue/setConfigValue). Zooms in
+    // pixel units when the font is pixel-based (setFontSize), points otherwise.
     void setZoom(int delta);
     // Task 12: apply an absolute editor font size (px) to every view (the
     // Turbo Vision default 16px, user-changeable via the settings dialog).
@@ -83,6 +84,7 @@ private:
     QList<KTextEditor::View*> m_views;
     int m_active = -1;
     int m_basePointSize = -1;   // font point size at first view (zoom baseline)
+    int m_basePixelSize = -1;   // font pixel size at first zoom (pixel-based font)
     QStackedWidget* m_container = nullptr;
     QString m_lastFind;   // last Search-menu pattern (for Find Next)
 };

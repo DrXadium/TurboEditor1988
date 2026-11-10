@@ -95,6 +95,17 @@ bool AutosaveService::discardRecovery(int id)
     return true;
 }
 
+QString AutosaveService::recoveryContent(int id) const
+{
+    if (!m_pending.contains(id))
+        return {};
+    QFile f(m_pending.value(id).autosavePath);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    const QByteArray bytes = f.readAll();
+    return QString::fromUtf8(bytes);
+}
+
 void AutosaveService::scanExisting()
 {
     QDir d(m_dir);
