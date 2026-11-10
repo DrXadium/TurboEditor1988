@@ -8,7 +8,9 @@
 #include <QQuickWindow>
 #include <QTimer>
 #include "src/shell/ShellWindow.h"
+#include "src/shell/TabStrip.h"
 #include "src/bridge/ContentBridge.h"
+#include "src/editor/EditorTabManager.h"
 
 int main(int argc, char** argv)
 {
@@ -18,6 +20,22 @@ int main(int argc, char** argv)
     // The Borland chrome, rendered offscreen (never mapped to a real window).
     ShellWindow shell;
     shell.resize(1280, 800);
+
+    // Composition root: host the KTextEditor tab container below the TabStrip,
+    // sync the TabStrip to the documents, and install zoom/tools actions.
+    EditorTabManager tabs;
+    shell.setEditorWidget(tabs.containerWidget());
+    tabs.installActions(&shell);
+    QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
+                     [&shell](const QStringList& titles, int active) {
+                         if (TabStrip* strip = shell.tabStrip())
+                             strip->setTabs(titles, active);
+                     });
+    QObject::connect(shell.tabStrip(), &TabStrip::tabActivated, &tabs,
+                     &EditorTabManager::setActiveIndex);
+    // Seed the strip with the initial tab (created by the manager ctor).
+    if (TabStrip* strip0 = shell.tabStrip())
+        strip0->setTabs(QStringList() << QStringLiteral("untitled"), 0);
 
     ContentBridge bridge;
     bridge.setShellWindow(&shell);

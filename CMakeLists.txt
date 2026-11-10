@@ -17,6 +17,8 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 6.10 REQUIRED COMPONENTS Gui Widgets Qml Quick OpenGL ShaderTools Test)
+# Task 5: Kate text editing (tabs, zoom, tools).
+find_package(KF6TextEditor REQUIRED)
 
 enable_testing()
 
@@ -68,10 +70,23 @@ add_executable(tst_bridge tests/tst_bridge.cpp)
 target_link_libraries(tst_bridge PRIVATE crt-bridge Qt6::Test Qt6::Widgets)
 add_test(NAME tst_bridge COMMAND tst_bridge)
 
+# Task 5: KTextEditor integration — tabs, zoom, and text tools (case/sort).
+add_library(crt-editor STATIC
+  src/editor/EditorTabManager.cpp
+  src/editor/EditorTabManager.h
+)
+target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(crt-editor PUBLIC crt-shell Qt6::Widgets KF6::TextEditor)
+
+# Task 5 test: ctest -R tst_zoomtools
+add_executable(tst_zoomtools tests/tst_zoomtools.cpp)
+target_link_libraries(tst_zoomtools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
+
 # Task 4: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
 target_link_libraries(crt-kate PRIVATE
-  crt-bridge Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
+  crt-bridge crt-editor Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
 )
 target_compile_definitions(crt-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"

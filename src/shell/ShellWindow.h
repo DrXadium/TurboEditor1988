@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include <QMainWindow>
+#include <QVBoxLayout>
 class MenuBar;
 class TabStrip;
 class FKeyStatusBar;
@@ -16,6 +17,9 @@ public:
     explicit ShellWindow(QWidget* parent = nullptr);
     // Central editor host (replaced by KTextEditor in Task 5).
     void setCentralWidget(QWidget* w);
+    // Replaces the placeholder area BELOW the TabStrip with the real editor
+    // widget (EditorTabManager's container). TabStrip stays intact above it.
+    void setEditorWidget(QWidget* w);
     TabStrip* tabStrip() const;
     FKeyStatusBar* fkeyStatusBar() const;
     // The Borland style this window installed (QSS wrapping hides it from
@@ -25,4 +29,5 @@ protected:
     void paintEvent(QPaintEvent*) override;
 private:
     BorlandStyle* m_borland = nullptr;
+    QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editor]
 };

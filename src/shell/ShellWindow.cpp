@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QWidget>
+#include <QLayout>
 
 ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
 {
@@ -43,12 +44,29 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     lay->addWidget(tabs);
     auto* placeholder = new QLabel(QStringLiteral("Editor"), central);
     placeholder->setAlignment(Qt::AlignCenter);
+    placeholder->setObjectName("editorPlaceholder");
     lay->addWidget(placeholder, 1);
+    m_editorLayout = lay;   // slot below TabStrip (setEditorWidget swaps here)
     setCentralWidget(central);
 
     // F-key status bar (bottom).
     auto* fkeys = new FKeyStatusBar(this);
     setStatusBar(fkeys);
+}
+
+void ShellWindow::setEditorWidget(QWidget* w)
+{
+    if (!m_editorLayout || !w)
+        return;
+    // Remove the current placeholder (or prior editor) and insert \p w in its
+    // place, stretching it, without touching the TabStrip above.
+    QLayoutItem* old = m_editorLayout->takeAt(1);   // index 0 = TabStrip
+    if (old) {
+        if (old->widget() && old->widget() != w)
+            old->widget()->deleteLater();
+        delete old;
+    }
+    m_editorLayout->addWidget(w);
 }
 
 void ShellWindow::setCentralWidget(QWidget* w)
