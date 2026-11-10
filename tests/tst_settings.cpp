@@ -5,11 +5,14 @@
 // (3) effect properties emit NOTIFY signals (required for live QML binding).
 #include <QtTest>
 #include <QTemporaryDir>
+#include <QDir>
 #include <QSettings>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QApplication>
 #include "src/settings/CrtSettings.h"
+#include <QLabel>
+#include <QSpinBox>
 #include "src/settings/SettingsDialog.h"
 
 class TstSettings : public QObject
@@ -65,6 +68,23 @@ private slots:
                  "fontSizeChanged did not emit on a real change");
     }
 
+    // Deferred-minor fix: a corrupt/unreadable store must not silently wipe
+    // saved settings — load() reports false and the defaults stay intact.
+    void load_failure_is_reported_and_defaults_survive() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // Unreadable store: a DIRECTORY where the .ini should be.
+        const QString store = dir.filePath("corrupt-store");
+        QVERIFY(QDir().mkpath(store));
+
+        CrtSettings s;
+        s.setStorePath(store);
+        QVERIFY2(!s.load(),
+                 "load() must return false when the store can't be read");
+        QCOMPARE(s.fontSize(), 16);          // defaults intact
+        QCOMPARE(s.scanlinesEnabled(), true); // defaults intact
+    }
+
     void save_load_roundtrip_persists_scanlines_enabled_false() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -117,6 +137,23 @@ private slots:
         QSignalSpy spy3(&s, &CrtSettings::screenCurvatureChanged);
         s.setScreenCurvature(0.6);
         QCOMPARE(spy3.count(), 1);
+    }
+
+    // Deferred-minor fix: the Appearance tab carries no stale copy claiming
+    // controls are "wired in later tasks" — the font-size control is wired now.
+    void appearance_tab_has_no_stale_future_copy() {
+        CrtSettings s;
+        SettingsDialog dlg(&s);
+        const auto labels = dlg.findChildren<QLabel*>();
+        for (const QLabel* lab : labels) {
+            QVERIFY2(!lab->text().contains(QStringLiteral("later tasks")),
+                     qPrintable("stale label copy: " + lab->text()));
+            QVERIFY2(!lab->text().contains(QStringLiteral("wired in later tasks")),
+                     qPrintable("stale label copy: " + lab->text()));
+        }
+        // And the wired control is actually present.
+        QVERIFY2(dlg.findChild<QSpinBox*>(QStringLiteral("fontSizeSpin")),
+                 "fontSizeSpin missing from the Appearance tab");
     }
 
     // --- SettingsDialog (widget contract) --------------------------------

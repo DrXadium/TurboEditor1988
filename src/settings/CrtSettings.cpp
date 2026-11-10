@@ -132,6 +132,13 @@ QString CrtSettings::storePath() const
 bool CrtSettings::load()
 {
     QSettings s(storePath(), QSettings::IniFormat);
+    // Unreadable/corrupt store: report the failure BEFORE touching any member
+    // so current values (defaults on a fresh instance) survive intact — and the
+    // caller can decide to warn instead of silently dropping saved settings.
+    if (s.status() != QSettings::NoError) {
+        s.clear();   // clear the sticky error so later saves still work
+        return false;
+    }
     s.beginGroup(QStringLiteral("crt"));
     m_contrast = s.value(QStringLiteral("contrast"), kContrast).toDouble();
     m_brightness = s.value(QStringLiteral("brightness"), kBrightness).toDouble();

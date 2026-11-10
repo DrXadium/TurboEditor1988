@@ -176,7 +176,7 @@ QWidget* SettingsDialog::buildAppearanceTab()
     form->addRow(tr("Editor font size (px):"), sizeSpin);
 
     form->addRow(new QLabel(
-        tr("Editor scheme, chrome theme and minimap options are wired "
-           "in later tasks (KTextEditor / theming).")));
+        tr("Editor scheme, chrome theme and minimap options are configured "
+           "by the theme and editor settings.")));
     return w;
 }

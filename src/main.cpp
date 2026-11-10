@@ -126,7 +126,7 @@ int main(int argc, char** argv)
     // CRT settings (QSettings-backed single source of truth for effect knobs).
     // Loaded at startup; persisted on quit so the dialog's changes survive restart.
     CrtSettings crtSettings;
-    crtSettings.load();
+    const bool settingsLoaded = crtSettings.load();
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
                      [&crtSettings] { crtSettings.save(); });
 
@@ -281,6 +281,16 @@ int main(int argc, char** argv)
                     m->popup(mb->mapToGlobal(QPoint(0, mb->height())));
             }
         });
+    }
+
+    if (!settingsLoaded) {
+        // Deferred-minor fix: a failed load is surfaced, not swallowed —
+        // defaults are in effect and a corrupt/unreadable store is named.
+        QMessageBox::warning(
+            &shell, QObject::tr("Settings not loaded"),
+            QObject::tr("The settings store at %1 could not be read.\n"
+                         "Defaults are in effect; saving will rewrite the file.")
+                .arg(crtSettings.storePath()));
     }
 
     // Crash recovery (Task 8 / final-review fix): snapshots modified buffers
