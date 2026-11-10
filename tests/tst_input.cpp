@@ -182,6 +182,41 @@ private slots:
         QCOMPARE(edit->text(), QStringLiteral("a"));
         delete edit;
     }
+
+    // Regression: clicking a menu on the LIVE app crashed with SIGSEGV.
+    // QMenuBarPrivate::popupAction (qmenubar.cpp) derefs
+    // window()->windowHandle()->screen(). The shell is never mapped, so
+    // windowHandle() was null and opening a popup crashed. Reproduces the
+    // production path (render ticks the shell first, then the click arrives)
+    // and asserts the click opens the menu instead of crashing.
+    void menu_click_after_render_opens_popup_without_crash() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);   // the fix gives the shell a platform window handle
+
+        QMenuBar* mb = w.menuBar();
+        QVERIFY2(mb && !mb->actions().isEmpty(), "no menu bar / no menus");
+        QAction* file = mb->actions().first();
+        QVERIFY2(file->menu(), "first top-level action has no submenu");
+
+        // Production has rendered the shell every tick before any click arrives;
+        // that primes the menubar for the popup path (as observed on the live app).
+        b.update();
+        const QPoint c = mb->actionGeometry(file).center();
+        // Reaching these lines == no SIGSEGV in popupAction (the crash aborts
+        // the process before any QVERIFY can run).
+        b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                            Qt::LeftButton, Qt::NoModifier, c.x(), c.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(mb->activeAction() == file,
+                 "forwarded menu click did not select File (precondition)");
+        QVERIFY2(file->menu()->isVisible() || mb->windowHandle(),
+                 "menu did not open / shell has no window handle");
+        b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::NoButton,
+                            Qt::NoButton, Qt::NoModifier, c.x(), c.y());
+        QCoreApplication::processEvents();
+    }
 };
 
 int main(int argc, char** argv)

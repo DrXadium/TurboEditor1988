@@ -18,6 +18,13 @@ void ContentBridge::setShellWindow(ShellWindow* shell)
         // real window (the visible window is the QML CRT scene).
         m_shell->setAttribute(Qt::WA_DontShowOnScreen);
         m_shell->ensurePolished();
+        // Create the platform window WITHOUT mapping it. QMenuBar's popup
+        // path (QMenuBarPrivate::popupAction) reads
+        // window()->windowHandle()->screen() when a menu opens; on a shell
+        // that was never shown, windowHandle() is null and clicking a menu
+        // SIGSEGV'd (null QWindow). winId() forces the unmapped handle so
+        // screen() resolves, while WA_DontShowOnScreen keeps it off-screen.
+        m_shell->winId();
     }
 }
 
