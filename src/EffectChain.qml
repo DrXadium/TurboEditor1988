@@ -29,7 +29,7 @@ Item {
         id: srcTex
         anchors.fill: parent
         sourceItem: root.sourceItem
-        hideSource: false
+        hideSource: true   // source renders only through the CRT pass
         live: true
         recursive: true
     }
