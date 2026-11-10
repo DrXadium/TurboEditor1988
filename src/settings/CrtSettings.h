@@ -107,6 +107,8 @@ public slots:
 
     // Persistence (QSettings). Default store: ~/.config/crt-kate/crt.ini.
     void setStorePath(const QString& path);
+    QString storePath() const;   // current store location (public: shown in
+                                 // the load-failure warning)
     bool load();
     bool save();
 
@@ -134,7 +136,6 @@ signals:
 
 private:
     void resetToDefaults();
-    QString storePath() const;
 
     double m_contrast;
     double m_brightness;

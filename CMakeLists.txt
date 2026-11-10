@@ -72,6 +72,11 @@ add_executable(tst_bridge tests/tst_bridge.cpp)
 target_link_libraries(tst_bridge PRIVATE crt-bridge Qt6::Test Qt6::Widgets)
 add_test(NAME tst_bridge COMMAND tst_bridge)
 
+# Input-forwarding test: ctest -R tst_input
+add_executable(tst_input tests/tst_input.cpp)
+target_link_libraries(tst_input PRIVATE crt-bridge Qt6::Test Qt6::Widgets Qt6::Quick)
+add_test(NAME tst_input COMMAND tst_input)
+
 # Task 5: KTextEditor integration — tabs, zoom, and text tools (case/sort).
 add_library(crt-editor STATIC
   src/editor/EditorTabManager.cpp

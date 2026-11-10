@@ -4,6 +4,9 @@
 #include <QPainter>
 #include <QLayout>
 #include <QMenu>
+#include <QMouseEvent>
+#include <QKeyEvent>
+#include <QApplication>
 
 ContentBridge::ContentBridge(QObject* parent) : QObject(parent) {}
 
@@ -91,6 +94,52 @@ void ContentBridge::resizeShell(int w, int h)
 {
     if (m_shell && w > 0 && h > 0 && m_shell->size() != QSize(w, h))
         m_shell->resize(w, h);
+}
+
+void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
+                                      int modifiers, double x, double y)
+{
+    if (!m_shell)
+        return;
+    // x,y arrive in SHELL-local coords (== QML-local, 1:1). Resolve the child
+    // under the point, then convert to THAT child's local frame — a child
+    // widget's mousePressEvent hit-tests in its own coordinates, not the
+    // shell's. (Posting at the shell makes QMainWindow::event() swallow it, so
+    // we must send to the child with child-local coords + matching global.)
+    const QPoint shellLocal{int(x), int(y)};
+    QWidget* target = m_shell->childAt(shellLocal);
+    if (!target)
+        target = m_shell;
+    const QPoint local = target->mapFrom(m_shell, shellLocal);
+    const QPoint global = target->mapToGlobal(local);
+    auto* ev = new QMouseEvent(static_cast<QEvent::Type>(type),
+                               QPointF(local), QPointF(global),
+                               static_cast<Qt::MouseButton>(button),
+                               static_cast<Qt::MouseButtons>(buttons),
+                               static_cast<Qt::KeyboardModifiers>(modifiers));
+    QApplication::sendEvent(target, ev);
+    delete ev;
+    update();   // re-render now so the click shows without waiting the 33ms tick
+}
+
+void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
+                                    const QString& text)
+{
+    if (!m_shell)
+        return;
+    // Keys go to the focused child (editor/line-edit), or the shell if nothing
+    // holds focus offscreen. (QWidget::keyPressEvent routes from the focused
+    // widget; posting at the shell would be swallowed by QMainWindow::event.)
+    QWidget* target = m_shell->focusWidget();
+    if (!target)
+        target = m_shell;
+    auto* ev = new QKeyEvent(static_cast<QEvent::Type>(type),
+                             static_cast<Qt::Key>(key),
+                             static_cast<Qt::KeyboardModifiers>(modifiers),
+                             text);
+    QApplication::sendEvent(target, ev);
+    delete ev;
+    update();
 }
 
 void ContentBridge::setSourceItem(QQuickItem* item)

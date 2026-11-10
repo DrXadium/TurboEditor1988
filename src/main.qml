@@ -41,4 +41,49 @@ Window {
         settings: crtSettings
         fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
     }
+
+    // Input capture: the visible window is the CRT glass; real mouse/key events
+    // land here and are forwarded to the offscreen ShellWindow (1:1 coords), so
+    // the app is interactive through the CRT layer. Transparent — draws nothing,
+    // only routes input. Above EffectChain so it receives the events.
+    Item {
+        id: inputLayer
+        objectName: "inputLayer"
+        anchors.fill: parent
+        focus: true
+
+        MouseArea {
+            id: mouseForwarder
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+            propagateComposedEvents: true
+            onPressed: (mouse) => bridge.forwardMouseEvent(
+                2 /*QEvent::MouseButtonPress*/, mouse.button, mouse.buttons,
+                mouse.modifiers, mouse.x, mouse.y)
+            onReleased: (mouse) => bridge.forwardMouseEvent(
+                3 /*QEvent::MouseButtonRelease*/, mouse.button, mouse.buttons,
+                mouse.modifiers, mouse.x, mouse.y)
+            onPositionChanged: (mouse) => {
+                if (mouse.buttons !== Qt.NoButton)
+                    bridge.forwardMouseEvent(
+                        5 /*QEvent::MouseMove*/, mouse.button, mouse.buttons,
+                        mouse.modifiers, mouse.x, mouse.y)
+            }
+            onWheel: (wheel) => { /* scroll: not forwarded in this pass */ }
+        }
+
+        Keys.onPressed: (event) => {
+            bridge.forwardKeyEvent(
+                6 /*QEvent::KeyPress*/, event.key, event.modifiers,
+                event.text)
+            event.accepted = true   // we consumed it on the shell's behalf
+        }
+        Keys.onReleased: (event) => {
+            bridge.forwardKeyEvent(
+                7 /*QEvent::KeyRelease*/, event.key, event.modifiers,
+                event.text)
+            event.accepted = true
+        }
+    }
 }

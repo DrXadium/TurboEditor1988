@@ -25,6 +25,15 @@ public:
     // Keeps the shell sized to the visible QML window (spec: view fits window).
     Q_INVOKABLE void resizeShell(int w, int h);
 
+    // Input forwarding (the CRT glass captures mouse/keys and posts them at the
+    // offscreen shell, 1:1 coords — see input-forwarding design doc).
+    // type: QEvent::Type (MouseButtonPress/Release/Move, KeyPress/Release).
+    // x,y are shell-local (== QML local, since shell renders 1:1 to the window).
+    Q_INVOKABLE void forwardMouseEvent(int type, int button, int buttons,
+                                       int modifiers, double x, double y);
+    Q_INVOKABLE void forwardKeyEvent(int type, int key, int modifiers,
+                                     const QString& text);
+
     // Popup bridging (Task 9): an open QMenu/QWidget popup is captured into the
     // same composited frame so CRT effects cover it (instead of leaving it a
     // separate native window above the CRT scene).
