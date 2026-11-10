@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ShellWindow.h"
 #include "BorlandStyle.h"
+#include "ScrollBarInstaller.h"
 #include "MenuBar.h"
 #include "TabStrip.h"
 #include "Minimap.h"
@@ -39,18 +40,27 @@ protected:
         const QRect r = rect();
         p.fillRect(r, kBgBlue);
         p.setPen(kFrameGray);
+        // Double-line frame flush to the widget edges (r.bottom()/r.right() are
+        // the LAST valid rows/cols). Verticals run the full height; the bottom
+        // pair sits on the last two rows so no blue gap shows at the edge and
+        // all four corners join solidly.
+        const int bot = r.bottom();     // last row
+        const int right = r.right();    // last col
         // Left vertical double-line.
-        p.drawLine(1, 0, 1, r.bottom() - 1);
-        p.drawLine(2, 0, 2, r.bottom() - 1);
+        p.drawLine(1, 0, 1, bot);
+        p.drawLine(2, 0, 2, bot);
         // Right vertical double-line.
-        p.drawLine(r.right() - 2, 0, r.right() - 2, r.bottom() - 1);
-        p.drawLine(r.right() - 3, 0, r.right() - 3, r.bottom() - 1);
-        // Bottom horizontal double-line.
-        p.drawLine(0, r.bottom() - 2, r.right(), r.bottom() - 2);
-        p.drawLine(0, r.bottom() - 1, r.right(), r.bottom() - 1);
+        p.drawLine(right - 2, 0, right - 2, bot);
+        p.drawLine(right - 3, 0, right - 3, bot);
+        // Bottom horizontal double-line (last two rows).
+        p.drawLine(0, bot - 1, right, bot - 1);
+        p.drawLine(0, bot, right, bot);
         // Corner connectors (join to the TabStrip title-line top edge).
         p.drawLine(1, 0, 2, 0);
-        p.drawLine(r.right() - 3, 0, r.right() - 2, 0);
+        p.drawLine(right - 3, 0, right - 2, 0);
+        // Solid bottom corner joints (verticals meet the bottom pair).
+        p.drawLine(1, bot - 1, 2, bot);
+        p.drawLine(right - 3, bot - 1, right - 2, bot);
     }
 };
 } // namespace
@@ -64,6 +74,9 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     // Borland style applied app-wide (spec: qApp->setStyle(new BorlandStyle)).
     m_borland = new BorlandStyle;
     qApp->setStyle(m_borland);
+    // Convert plain QScrollBars to TV TextScrollBars app-wide.
+    auto* sbInstall = new ScrollBarInstaller(qApp);
+    qApp->installEventFilter(sbInstall);
 
     // Force the QSS resource into the link (static lib resources are dropped
     // by the linker unless referenced).

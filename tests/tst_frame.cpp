@@ -59,6 +59,51 @@ private slots:
 
     // The editor host paints left + right vertical frame edges (gray) along
     // its sides, with blue between.
+    // Task 4: the DOS double-line frame box has all FOUR corners — the title
+    // line (TabStrip) supplies the top two, the editor host the bottom two.
+    // Sample the actual frame-box corners (not the menubar/status bar, which
+    // are also gray and would mask a missing frame corner).
+    void frame_has_all_four_corners() {
+        ShellWindow w;
+        w.resize(400, 300);
+        w.show();
+        QCoreApplication::processEvents();
+        TabStrip* ts = w.tabStrip();
+        QWidget* central = w.centralWidget();
+        QVERIFY(ts && central);
+        const QImage img = w.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        const QPoint tsOrigin = ts->mapTo(&w, QPoint(0, 0));
+        const QPoint cOrigin = central->mapTo(&w, QPoint(0, 0));
+
+        // Frame-box corners in shell coordinates:
+        //   top-left/top-right: the title line's left/right ends.
+        //   bottom-left/bottom-right: the editor host's bottom corners.
+        const QPoint corners[4] = {
+            tsOrigin + QPoint(3, ts->height() - 4),                 // top-left
+            tsOrigin + QPoint(ts->width() - 4, ts->height() - 4),   // top-right
+            cOrigin + QPoint(3, central->height() - 4),             // bottom-left
+            cOrigin + QPoint(central->width() - 4, central->height() - 4)  // bottom-right
+        };
+        const char* names[4] = { "top-left", "top-right", "bottom-left", "bottom-right" };
+
+        for (int i = 0; i < 4; ++i) {
+            bool found = false;
+            const QPoint c = corners[i];
+            for (int dy = -3; dy <= 3 && !found; ++dy)
+                for (int dx = -3; dx <= 3 && !found; ++dx) {
+                    const int x = c.x() + dx, y = c.y() + dy;
+                    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+                        continue;
+                    if (isGray(img.pixelColor(x, y)))
+                        found = true;
+                }
+            QVERIFY2(found, qPrintable(QStringLiteral("frame %1 corner missing gray box at (%2,%3)")
+                                           .arg(names[i]).arg(c.x()).arg(c.y())));
+        }
+    }
+
     void editor_host_paints_left_right_frame_edges() {
         ShellWindow w;
         w.resize(800, 600);

@@ -44,6 +44,10 @@ add_library(crt-shell STATIC
   src/shell/Minimap.h
   src/shell/FKeyStatusBar.cpp
   src/shell/FKeyStatusBar.h
+  src/shell/TextScrollBar.cpp
+  src/shell/TextScrollBar.h
+  src/shell/ScrollBarInstaller.cpp
+  src/shell/ScrollBarInstaller.h
 )
 target_include_directories(crt-shell PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(crt-shell PUBLIC Qt6::Gui Qt6::Widgets)
@@ -160,6 +164,11 @@ add_test(NAME tst_frame COMMAND tst_frame)
 add_executable(tst_fkeys tests/tst_fkeys.cpp)
 target_link_libraries(tst_fkeys PRIVATE crt-shell Qt6::Test Qt6::Widgets)
 add_test(NAME tst_fkeys COMMAND tst_fkeys)
+
+# Task 4: Turbo Vision text-mode scrollbars (ASCII arrow glyphs + teal track).
+add_executable(tst_scrollbars tests/tst_scrollbars.cpp)
+target_link_libraries(tst_scrollbars PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_scrollbars COMMAND tst_scrollbars)
 
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
