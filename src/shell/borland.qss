@@ -14,8 +14,12 @@ QWidget {
 QMenuBar {
     background-color: #AAAAAA;
     color: #000000;
+    /* Turbo Vision placement: indent the first title to ~column 2 and space the
+       titles with a small fixed gap (DOS fixed-column layout, not flush-left). */
+    margin-left: 1.3em;
+    padding-left: 0.3em;
 }
-QMenuBar::item { background-color: #AAAAAA; color: #000000; padding: 2px 8px; }
+QMenuBar::item { background-color: #AAAAAA; color: #000000; padding: 2px 10px; }
 QMenuBar::item:selected { background-color: #000000; color: #AAAAAA; }
 /* Dropdown menus: TV gray panel, black text, red hotkeys, inverse selection. */
 QMenu {

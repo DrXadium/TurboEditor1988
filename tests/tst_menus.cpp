@@ -147,6 +147,39 @@ private slots:
     // Task 12 (Turbo Vision spec): menu bar = light-gray #AAAAAA bg, BLACK
     // label text; window blue = #1A1AAA; hotkey = red #C41E1E (a QAction's
     // highlighted role doubles as the hotkey letter in this theme).
+    // Task 3: canonical Turbo Vision placement — the first top-level title
+    // starts at ~column 2 (2 cell widths from the left) and consecutive titles
+    // are separated by a small, consistent gap (TV's fixed-column layout), not
+    // QMenuBar's default flush packing.
+    void menu_items_use_tv_column_placement() {
+        ShellWindow w;
+        w.resize(800, 600);
+        w.show();
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        const QList<QAction*> tops = mb->actions();
+        QVERIFY(tops.size() >= 2);
+
+        const QFontMetrics fm(mb->font());
+        const int cellW = fm.horizontalAdvance(QLatin1Char('M'));   // one DOS cell
+        const QRect g0 = mb->actionGeometry(tops.at(0));
+
+        // First item starts at ~column 2 (allow a little style padding slack).
+        QVERIFY2(g0.x() >= cellW && g0.x() <= 4 * cellW,
+                 qPrintable(QStringLiteral(
+                     "first menu item starts at x=%1, expected ~column 2 (%2..%3 px)")
+                                .arg(g0.x()).arg(2 * cellW).arg(4 * cellW)));
+
+        // Consecutive items are separated by a small, consistent gap (TV uses a
+        // fixed inter-title space; QMenuBar default packs them tighter/looser).
+        const QRect g1 = mb->actionGeometry(tops.at(1));
+        const int gap = g1.x() - g0.right();
+        QVERIFY2(gap > 0 && gap <= 3 * cellW,
+                 qPrintable(QStringLiteral(
+                     "menu gap between items = %1 px, expected a small TV gap (1..%2)")
+                                .arg(gap).arg(3 * cellW)));
+    }
+
     void menu_bar_uses_turbo_vision_palette() {
         ShellWindow w;
         QMenuBar* mb = w.menuBar();
