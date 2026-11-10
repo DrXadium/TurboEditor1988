@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CRT-Kate
+GenericName=Text Editor
+Comment=Kate-class editing in a Borland-style shell with CRT effects
+Exec=crt-kate
+Icon=crt-kate
+Terminal=false
+Categories=Development;TextEditor;Qt;
+StartupWMClass=crt-kate

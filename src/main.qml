@@ -31,10 +31,14 @@ Window {
     // CRT effect chain over the whole window (edge-to-edge, no bezel).
     // `settings` binds to the C++ CrtSettings (context property) so the
     // settings dialog drives the shader live; falls back to the QML default.
+    // Shader: the qsb compiled into this binary (works from any install
+    // location - AppImage or dev tree). QML tests load EffectChain.qml
+    // directly and keep its source-tree default.
     EffectChain {
         objectName: "crtEffectChain"
         anchors.fill: parent
         sourceItem: bridge.sourceItem
         settings: crtSettings
+        fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
     }
 }

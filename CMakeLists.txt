@@ -144,3 +144,36 @@ target_link_libraries(crt-kate PRIVATE
 target_compile_definitions(crt-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
+
+# Task 11: packaging - install layout + the CRT shader EMBEDDED in the binary.
+# The AppImage must not depend on the source tree or on the test scratch dir
+# (.superpowers/qmlbuild) that EffectChain.qml's default resolves against in
+# dev runs; main.qml points EffectChain at the qrc copy (tests keep the default).
+set(CRT_QSB_DIR ${CMAKE_CURRENT_BINARY_DIR}/qml/shaders)
+set(CRT_QSB_OUT ${CRT_QSB_DIR}/crt_effect.frag.qsb)
+add_custom_command(
+  OUTPUT ${CRT_QSB_OUT}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CRT_QSB_DIR}
+  COMMAND Qt6::qsb --glsl "100 es,120,150" --hlsl 50 --msl 12
+          -o ${CRT_QSB_OUT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/crt/app/shaders/crt_effect.frag
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/crt/app/shaders/crt_effect.frag
+  COMMENT "qsb: compiling crt_effect.frag"
+)
+add_custom_target(crt_shaders DEPENDS ${CRT_QSB_OUT})
+add_dependencies(crt-kate crt_shaders)
+qt_add_resources(crt-kate "crt_qsb_res"
+  PREFIX "/crt-kate"
+  BASE ${CMAKE_CURRENT_BINARY_DIR}/qml
+  FILES ${CRT_QSB_OUT}
+)
+
+# Task 11: install targets (DESTDIR=staging cmake --install build).
+install(TARGETS crt-kate RUNTIME DESTINATION bin)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/
+        DESTINATION share/crt-kate/src
+        FILES_MATCHING PATTERN "*.qml" PATTERN "qmldir")
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.desktop
+        DESTINATION share/applications)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.png
+        DESTINATION share/icons/hicolor/256x256/apps)

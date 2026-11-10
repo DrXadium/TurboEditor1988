@@ -5,3 +5,5 @@ staging/
 spike/out/
 third_party/crt-src/
 .tmp/
+AppDir/
+CRT-Kate-*.AppImage

@@ -9,6 +9,8 @@
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QDir>
+#include <QFileInfo>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -242,7 +244,22 @@ int main(int argc, char** argv)
     }
 
     QQmlApplicationEngine engine;
-    engine.addImportPath(QStringLiteral(CRT_KATE_SOURCE_DIR)); // `import src`
+    // Locate QML at runtime so the binary is not tied to the build tree:
+    // 1. CRT_KATE_QML_DIR env override,
+    // 2. installed layout (AppImage: <appdir>/../share/crt-kate),
+    // 3. build-time source dir (dev builds).
+    const QString qmlRoot = []() -> QString {
+        const QString env = qEnvironmentVariable("CRT_KATE_QML_DIR");
+        if (!env.isEmpty())
+            return env;
+        const QString installed =
+            QDir::cleanPath(QCoreApplication::applicationDirPath()
+                            + QStringLiteral("/../share/crt-kate"));
+        if (QFileInfo::exists(installed + QStringLiteral("/src/main.qml")))
+            return installed;
+        return QStringLiteral(CRT_KATE_SOURCE_DIR);
+    }();
+    engine.addImportPath(qmlRoot); // `import src`
     engine.addImageProvider(QStringLiteral("bridge"),
                              new BridgeImageProvider(&bridge));
     engine.rootContext()->setContextProperty(QStringLiteral("bridge"), &bridge);
@@ -262,8 +279,7 @@ int main(int argc, char** argv)
     // (avoids a null-fetch at frameSerial=0).
     bridge.update();
 
-    engine.load(QUrl::fromLocalFile(
-        QStringLiteral(CRT_KATE_SOURCE_DIR "/src/main.qml")));
+    engine.load(QUrl::fromLocalFile(qmlRoot + QStringLiteral("/src/main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
 
