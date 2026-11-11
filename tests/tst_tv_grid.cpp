@@ -104,8 +104,31 @@ private slots:
                  "TV window blue #1A1AAA not dominant in frame");
         QVERIFY2(countColor(frame, QColor(0xAA, 0xAA, 0xAA), 8) > 2000,
                  "gray bars #AAAAAA not present in frame");
-        QVERIFY2(countColor(frame, QColor(0xFF, 0xFF, 0x55), 40) > 100,
-                 "yellow text #FFFF55 not present in frame");
+        // TV-revision spec 4+7: yellow lives ONLY in the editor text area —
+        // the status line and chrome carry no yellow (spec 7). Assert the
+        // frame's yellow is present and confined to the central editor area.
+        {
+            const QPoint cOrigin = w.centralWidget()->mapTo(&w, QPoint(0, 0));
+            const QRect cre(cOrigin, w.centralWidget()->size());
+            int yCentral = 0, yElse = 0;
+            for (int yy = 0; yy < frame.height(); ++yy)
+                for (int xx = 0; xx < frame.width(); ++xx) {
+                    const QColor c = frame.pixelColor(xx, yy);
+                    if (qAbs(c.red() - 0xFF) <= 40 && qAbs(c.green() - 0xFF) <= 40
+                        && qAbs(c.blue() - 0x55) <= 40) {
+                        if (cre.contains(QPoint(xx, yy))) ++yCentral;
+                        else ++yElse;
+                    }
+                }
+            QVERIFY2(yCentral > 0,
+                     "no yellow editor text #FFFF55 in the central area");
+            QVERIFY2(yElse == 0,
+                     qPrintable(QStringLiteral("yellow outside the editor area: %1 px")
+                                    .arg(yElse)));
+            QVERIFY2(yCentral > 40,
+                     qPrintable(QStringLiteral("editor-area yellow too thin: %1 px")
+                                    .arg(yCentral)));
+        }
     }
 
     // Resizable: a second, different size still shows gray bars + blue field.

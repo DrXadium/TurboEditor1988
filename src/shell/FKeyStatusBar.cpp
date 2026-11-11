@@ -16,12 +16,14 @@ QString tvRich(const QString& text)
     auto it = keyRe.globalMatch(text);
     while (it.hasNext()) {
         const auto m = it.next();
-        html += text.mid(last, m.capturedStart() - last);
+        html += QStringLiteral("<span style=\"color:#000000;\">")
+              + text.mid(last, m.capturedStart() - last) + QStringLiteral("</span>");
         html += QStringLiteral("<span style=\"color:#C41E1E;\">")
               + m.captured() + QStringLiteral("</span>");
         last = m.capturedEnd();
     }
-    html += text.mid(last);
+    html += QStringLiteral("<span style=\"color:#000000;\">")
+          + text.mid(last) + QStringLiteral("</span>");
     return html;
 }
 const QColor kBarGray(0xAA, 0xAA, 0xAA);
@@ -31,6 +33,9 @@ FKeyStatusBar::FKeyStatusBar(QWidget* parent) : QStatusBar(parent)
 {
     setObjectName("fkeyStatusBar");
     setAutoFillBackground(false);   // paintEvent draws the gray bar itself
+    // Spec 7: flat solid gray row across the full width — no resize grip
+    // (its default blue handle broke the flat fill at the right edge).
+    setSizeGripEnabled(false);
     setFKeys(QStringLiteral("F2 Save  F3 Open  F5 Zoom  F6 Next  F10 Menu"));
 }
 
@@ -47,6 +52,9 @@ void FKeyStatusBar::setFKeys(const QString& text)
         // Transparent label background: the app-wide QWidget rule gives labels
         // a window-blue base that would otherwise paint over the gray bar.
         lab->setStyleSheet(QStringLiteral("QLabel { background: transparent; }"));
+        // Left margin so the first F-key sits near column 12 (spec 7: x≈8..20),
+        // not flush against the window edge.
+        lab->setContentsMargins(12, 0, 0, 0);
         addWidget(lab, 1);
     }
     lab->setText(tvRich(text));
