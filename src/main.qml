@@ -34,12 +34,33 @@ Window {
     // Shader: the qsb compiled into this binary (works from any install
     // location - AppImage or dev tree). QML tests load EffectChain.qml
     // directly and keep its source-tree default.
-    EffectChain {
-        objectName: "crtEffectChain"
-        anchors.fill: parent
-        sourceItem: bridge.sourceItem
-        settings: crtSettings
-        fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
+    // TV-revision2: the chain is composed through SweepPatch (90° CW) so the
+    // CRT sweep band travels top→bottom instead of left→right. sweepTime is
+    // the phase clock; a QML inline default couldn't reach the inner `time`
+    // Timer id (component-id scoping), so the chain drives it from a binding.
+    SweepPatch {
+        id: sweep
+        // Center the ROTATED display box on the window (see SweepPatch):
+        // x = (W−H)/2, y = (H−W)/2 for patch size (H×W).
+        x: (parent.width - parent.height) / 2
+        y: (parent.height - parent.width) / 2
+        width: parent.height
+        height: parent.width
+        chain: EffectChain {
+            objectName: "crtEffectChain"
+            anchors.fill: parent
+            sourceItem: bridge.sourceItem
+            settings: crtSettings
+            fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
+            sweepTime: clockTime
+            // Phase clock (fixed 16 ms per tick), exposed for the sweepTime
+            // binding — the internal EffectChain `time` is scope-hidden here.
+            property real clockTime: 0
+            Timer {
+                interval: 16; repeat: true; running: true
+                onTriggered: parent.clockTime += 0.016
+            }
+        }
     }
 
     // Input capture: the visible window is the CRT glass; real mouse/key events

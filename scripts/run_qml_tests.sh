@@ -46,4 +46,21 @@ if [ "$NAME" = "tst_effectchain" ] && [ "$QML_RC" -eq 0 ]; then
   echo "  curvature corner rgb=$CORNER"
   echo "PIXELS OK"
 fi
+
+# TV-revision2 Task 1: sweep orientation. Two phases of the COMPOSED (90° CW)
+# chain; the bright band's centroid must MOVE IN Y and stay PUT IN X.
+if [ "$NAME" = "tst_sweep" ] && [ "$QML_RC" -eq 0 ]; then
+  echo "[sweep] asserting top→bottom band motion"
+  read -r _ ax ay _ < <(python3 spike/sweepcentroid.py /tmp/crt_sweep_a.png /tmp/crt_sweep_b.png | head -1)
+  read -r _ bx by _ < <(python3 spike/sweepcentroid.py /tmp/crt_sweep_a.png /tmp/crt_sweep_b.png | tail -1)
+  echo "  A cx=$ax cy=$ay  B cx=$bx cy=$by"
+  dy=$(python3 -c "print(abs($by-$ay))")
+  dx=$(python3 -c "print(abs($bx-$ax))")
+  ok=$(python3 -c "print(1 if ($dy > 4 and $dx <= 6) else 0)")
+  if [ "$ok" != "1" ]; then
+    echo "SWEEP FAIL: band must move in Y (dy=$dy) and stay put in X (dx=$dx)"
+    exit 1
+  fi
+  echo "SWEEP OK (dy=$dy dx=$dx)"
+fi
 exit "$QML_RC"

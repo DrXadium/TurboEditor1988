@@ -26,6 +26,14 @@ Item {
     property alias motionEnabled: crt.motionEnabled
     property real screenCurvature: crt.screenCurvature
     onScreenCurvatureChanged: crt.screenCurvature = screenCurvature
+    // TV-revision2 sweep orientation: the shader's sweep band moves along
+    // screen X (left→right); the real CRT sweep must move top→bottom, so the
+    // composed window rotates the pass 90° CW. `sweepTime` is the phase the
+    // shader samples (app: the live clock; tests: a fixed value). Defaulting
+    // to the internal `time` would trip Qt 6.10 component-id scoping in
+    // initial bindings — QML resolves the id from the OBJECT's scope only —
+    // so the default is an inert 0 and the app sets it explicitly.
+    property real sweepTime: 0
 
     // Render the source item to a texture the shader samples.
     ShaderEffectSource {
@@ -55,6 +63,7 @@ Item {
         property real contrast: root.settings.contrast
         property real staticNoise: root.settings.staticNoise
         property real scanlineDensity: 1.0
+        property real sweep: root.sweepTime
         // Compiled shader path (absolute file URL). Overridable for the app
         // build (qrc path) in Task 4; the test runner sets this to the
         // .superpowers/qmlbuild/shaders output.

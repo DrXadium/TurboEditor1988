@@ -30,6 +30,9 @@ QtObject {
     property real horizontalSync: 0.08
     property real flickering: 0.1
     property real rgbShift: 0.0
+    property real sweep: 0.0    // sweep band amplitude (content, not a uniform
+                                // in crt_effect.frag; reserved for shaders that
+                                // implement it)
     property real frameShininess: 0.0      // bezel-related: keep 0 (no bezel)
     property real frameSize: 0.0           // bezel-related: keep 0 (no bezel)
 

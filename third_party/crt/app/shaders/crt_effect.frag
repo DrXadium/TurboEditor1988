@@ -29,6 +29,7 @@ layout(std140, binding = 0) uniform ubuf {
     float contrast;
     float staticNoise;
     float scanlineDensity; // scanlines per pixel row scale
+    float sweep;           // moving bright-band amplitude (TV-revision2 "sweep")
 };
 
 layout(binding = 0) uniform sampler2D source;
@@ -96,6 +97,18 @@ void main() {
     if (staticNoise != 0.0) {
         float n = rand2(uv * resolution + vec2(fract(time))) - 0.5;
         col += n * staticNoise * 0.15;
+    }
+
+    // --- Sweep (moving bright band) — cool-retro-term's "sweep" effect. ---
+    // Travels along the axis of the TEXTURE (screen X when drawn); the app
+    // composes the pass through SweepPatch (90° CW) so on screen it sweeps
+    // top→bottom (TV-revision2). Phase comes from the QML uniform `sweep`.
+    if (sweep != 0.0) {
+        float phase = fract(sweep);          // 0..1 band position
+        float coord = (uv.x - phase) * 6.28318530718;
+        float band = pow(max(sin(coord), 0.0), 4.0);
+        col += col * band * 1.4;       // band lifts the image itself
+        col += vec3(band) * 0.30;      // plus glow so dark rows show motion
     }
 
     // --- Flicker (time-varying brightness) ---
