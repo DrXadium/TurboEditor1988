@@ -24,6 +24,7 @@
 #include "src/shell/TabStrip.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/Minimap.h"
+#include "src/shell/BottomBand.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
 #include "src/settings/CrtSettings.h"
@@ -72,6 +73,17 @@ int main(int argc, char** argv)
                      });
     QObject::connect(shell.tabStrip(), &TabStrip::tabActivated, &tabs,
                      &EditorTabManager::setActiveIndex);
+    // Bottom band cursor position "L:C" (spec 6): mirror the active view's
+    // cursor, 1-based. Seed from the initial view, then track changes.
+    if (KTextEditor::View* v0 = tabs.activeView()) {
+        const KTextEditor::Cursor c0 = v0->cursorPosition();
+        shell.bottomBand()->setCursorPos(c0.line() + 1, c0.column() + 1);
+        QObject::connect(v0, &KTextEditor::View::cursorPositionChanged, &shell,
+                         [&shell](KTextEditor::View*, const KTextEditor::Cursor& np) {
+                             if (BottomBand* band = shell.bottomBand())
+                                 band->setCursorPos(np.line() + 1, np.column() + 1);
+                         });
+    }
     // Seed the strip with the initial tab (created by the manager ctor).
     if (TabStrip* strip0 = shell.tabStrip())
         strip0->setTabs(QStringList() << QStringLiteral("untitled"), 0);

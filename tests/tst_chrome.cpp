@@ -10,6 +10,8 @@
 #include "src/shell/BorlandStyle.h"
 #include "src/shell/TabStrip.h"
 #include "src/shell/FKeyStatusBar.h"
+#include "src/shell/BottomBand.h"
+#include "src/shell/TextScrollBar.h"
 
 class TstChrome : public QObject
 {
@@ -41,6 +43,75 @@ private slots:
         QVERIFY2(w.borlandStyle(), "ShellWindow did not install a BorlandStyle");
         QCOMPARE(QString(w.borlandStyle()->metaObject()->className()),
                  QStringLiteral("BorlandStyle"));
+    }
+
+    // TV-revision spec 6: cursor position "2:1" rendered WHITE at cols 8-12
+    // (x in [75,125]) inside the bottom band.
+    void cursor_position_rendered_white_at_cols_8_12() {
+        BottomBand band;
+        band.setCursorPos(2, 1);
+        band.resize(640, 26);
+        QCOMPARE(band.cursorPosText(), QStringLiteral("2:1"));
+        const QImage img = band.grab().toImage();
+        QVERIFY(!img.isNull());
+        int white = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 75; x <= 125 && x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() > 235 && c.green() > 235 && c.blue() > 235)
+                    ++white;
+            }
+        QVERIFY2(white >= 3,
+                 qPrintable(QStringLiteral("no white cursor-pos text in x[75,125]: %1 px").arg(white)));
+    }
+
+    // TV-revision spec 5h: the horizontal scrollbar spans from ~col 18 (x≥180)
+    // to the right edge, full band height.
+    void horizontal_scrollbar_spans_from_col_18_to_right() {
+        BottomBand band;
+        band.resize(640, 26);
+        band.show();
+        QCoreApplication::processEvents();
+        TextScrollBar* hb = band.horizontalBar();
+        QVERIFY(hb);
+        QVERIFY2(hb->geometry().left() >= 180,
+                 qPrintable(QStringLiteral("hbar left=%1, expected >=180 (col 18)")
+                                .arg(hb->geometry().left())));
+        QVERIFY2(hb->geometry().right() >= band.width() - 6,
+                 qPrintable(QStringLiteral("hbar right=%1, expected >=%2 (right corner)")
+                                .arg(hb->geometry().right()).arg(band.width() - 6)));
+        QCOMPARE(hb->geometry().height(), band.height());
+    }
+
+    // TV-revision spec 9: row order — menu bar, window top border (tabs),
+    // editor text rows, bottom border (scrollbar + info), status line. The
+    // BottomBand must sit between the editor and the status line.
+    void bottom_band_sits_between_editor_and_status_line() {
+        ShellWindow w;
+        w.resize(800, 600);
+        w.show();
+        QCoreApplication::processEvents();
+        QMenuBar* mb = w.menuBar();
+        BottomBand* band = w.bottomBand();
+        FKeyStatusBar* st = w.fkeyStatusBar();
+        QWidget* central = w.centralWidget();
+        QVERIFY(mb && band && st && central);
+        const int yMenu = mb->geometry().bottom();
+        const int yCentral = central->geometry().bottom();
+        const int yBand = band->geometry().top();
+        const int yStatus = st->geometry().top();
+        QVERIFY2(yMenu < yBand, "menu bar not above the bottom band");
+        QVERIFY2(yBand < yStatus,
+                 qPrintable(QStringLiteral("bottom band (top=%1) not above status line (top=%2)")
+                                .arg(yBand).arg(yStatus)));
+        // The band is the last row of the central area (below the editor).
+        QVERIFY2(qAbs(yCentral - band->geometry().bottom()) <= 1 ||
+                 band->geometry().bottom() <= yCentral + 1,
+                 "band is not the bottom row of the central area");
+        // Status line is the very last row (at the window's bottom edge).
+        QVERIFY2(yStatus >= w.height() - 40,
+                 qPrintable(QStringLiteral("status line top=%1 not near window bottom %2")
+                                .arg(yStatus).arg(w.height())));
     }
 };
 

@@ -7,6 +7,7 @@
 #include <QColor>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
+#include "src/shell/BottomBand.h"
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -77,22 +78,23 @@ private slots:
         w.show();
         QCoreApplication::processEvents();
         TabStrip* ts = w.tabStrip();
-        QWidget* central = w.centralWidget();
-        QVERIFY(ts && central);
+        BottomBand* band = w.bottomBand();
+        QVERIFY(ts && band);
         const QImage img = w.grab().toImage();
         QVERIFY(!img.isNull());
 
         const QPoint tsOrigin = ts->mapTo(&w, QPoint(0, 0));
-        const QPoint cOrigin = central->mapTo(&w, QPoint(0, 0));
+        const QPoint bOrigin = band->mapTo(&w, QPoint(0, 0));
 
         // Frame-box corners in shell coordinates:
         //   top-left/top-right: the title line's left/right ends.
-        //   bottom-left/bottom-right: the editor host's bottom corners.
+        //   bottom-left/bottom-right: the BOTTOM BAND's bottom corners
+        //   (spec 9 — the band now owns the window's bottom border row).
         const QPoint corners[4] = {
             tsOrigin + QPoint(3, ts->height() - 4),                 // top-left
             tsOrigin + QPoint(ts->width() - 4, ts->height() - 4),   // top-right
-            cOrigin + QPoint(3, central->height() - 4),             // bottom-left
-            cOrigin + QPoint(central->width() - 4, central->height() - 4)  // bottom-right
+            bOrigin + QPoint(3, band->height() - 4),                // bottom-left
+            bOrigin + QPoint(band->width() - 4, band->height() - 4) // bottom-right
         };
         const char* names[4] = { "top-left", "top-right", "bottom-left", "bottom-right" };
 

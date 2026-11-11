@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "BottomBand.h"
+#include "TextScrollBar.h"
+#include <QPainter>
+#include <QFontMetrics>
+#include <QResizeEvent>
+
+namespace {
+const QColor kBgBlue(0x1A, 0x1A, 0xAA);      // band sits on the window blue
+const QColor kWhite(0xFF, 0xFF, 0xFF);       // cursor-position text (spec 6) + frame
+const int kBandHeight = 26;                  // one text row @16px + padding
+const int kCursorColX = 75;                  // spec: white text at cols 8-12 (x in [75,125])
+}
+
+BottomBand::BottomBand(QWidget* parent) : QWidget(parent)
+{
+    setObjectName(QStringLiteral("bottomBand"));
+    setAutoFillBackground(false);   // paintEvent fills the blue ourselves
+    m_hbar = new TextScrollBar(Qt::Horizontal, this);
+    m_hbar->setObjectName(QStringLiteral("bottomBandHScroll"));
+}
+
+void BottomBand::setCursorPos(int line, int col)
+{
+    m_line = line;
+    m_col = col;
+    update();
+}
+
+QString BottomBand::cursorPosText() const
+{
+    return QStringLiteral("%1:%2").arg(m_line).arg(m_col);
+}
+
+void BottomBand::mirrorHorizontal(QScrollBar* source)
+{
+    if (!source || !m_hbar)
+        return;
+    // Range/value: seed, then keep both directions in sync.
+    m_hbar->setRange(source->minimum(), source->maximum());
+    m_hbar->setValue(source->value());
+    connect(source, &QScrollBar::rangeChanged, m_hbar, &QScrollBar::setRange);
+    connect(m_hbar, &QScrollBar::rangeChanged, source, &QScrollBar::setRange);
+    connect(source, &QScrollBar::valueChanged, m_hbar, &QScrollBar::setValue);
+    connect(m_hbar, &QScrollBar::valueChanged, source, &QScrollBar::setValue);
+}
+
+TextScrollBar* BottomBand::horizontalBar() const
+{
+    return m_hbar;
+}
+
+QSize BottomBand::sizeHint() const
+{
+    return QSize(400, kBandHeight);
+}
+
+QSize BottomBand::minimumSizeHint() const
+{
+    return QSize(120, kBandHeight);
+}
+
+int BottomBand::heightForWidth(int) const
+{
+    return kBandHeight;
+}
+
+// Position the horizontal scrollbar: from ~col 18 (x=180) to the right edge,
+// full band height. Called from both resizeEvent and paintEvent so the
+// geometry is correct regardless of whether a repaint has happened yet.
+void BottomBand::layoutHBar()
+{
+    if (!m_hbar)
+        return;
+    const int left = 180;                          // ~col 18 @10px cell
+    const int right = width() - 4;                 // stop just short of the right
+                                                   // frame edge (cols right-4..right-1)
+    m_hbar->setGeometry(QRect(QPoint(left, 0), QPoint(right, height() - 1)));
+}
+
+void BottomBand::resizeEvent(QResizeEvent* ev)
+{
+    QWidget::resizeEvent(ev);
+    layoutHBar();
+}
+
+void BottomBand::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, false);
+    p.fillRect(rect(), kBgBlue);
+
+    // The band owns the window's BOTTOM frame edge (spec 9): white double line
+    // + left/right vertical stubs joining the EditorHost's verticals above, so
+    // all four frame corners stay solid. Drawn first; cursor + hbar on top.
+    p.setPen(kWhite);
+    const int bot = height() - 1;
+    const int right = width() - 1;
+    // Bottom horizontal double-line (last two rows).
+    p.drawLine(0, bot - 1, right, bot - 1);
+    p.drawLine(0, bot, right, bot);
+    // Left/right vertical stubs (top of band, joining EditorHost verticals).
+    p.drawLine(1, 0, 1, bot);
+    p.drawLine(2, 0, 2, bot);
+    p.drawLine(right - 3, 0, right - 3, bot);
+    p.drawLine(right - 4, 0, right - 4, bot);
+    // Solid bottom corner joints.
+    p.drawLine(1, bot - 1, 2, bot);
+    p.drawLine(right - 4, bot - 1, right - 3, bot);
+
+    // Cursor position "L:C" white, left-anchored around column 8 (x≈75).
+    p.setPen(kWhite);
+    const QFontMetrics fm(p.font());
+    const int baseline = (height() + fm.ascent() - fm.descent()) / 2 - 1;
+    p.drawText(QPoint(kCursorColX, baseline), cursorPosText());
+
+    // Horizontal scrollbar spans from ~col 18 to the right edge, full band height.
+    layoutHBar();
+}

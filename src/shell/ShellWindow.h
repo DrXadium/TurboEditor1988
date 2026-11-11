@@ -22,6 +22,8 @@ public:
     void setEditorWidget(QWidget* w);
     TabStrip* tabStrip() const;
     FKeyStatusBar* fkeyStatusBar() const;
+    // Bottom border band (cursor position + horizontal scrollbar), spec 5h/6.
+    class BottomBand* bottomBand() const;
     // The code minimap shown beside the editor (Task 9), or nullptr before
     // setEditorWidget() installs the editor row.
     class Minimap* minimap() const { return m_minimap; }
@@ -34,4 +36,5 @@ private:
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     Minimap* m_minimap = nullptr;
+    class BottomBand* m_bottomBand = nullptr;
 };

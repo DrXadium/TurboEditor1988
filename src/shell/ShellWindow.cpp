@@ -6,6 +6,7 @@
 #include "TabStrip.h"
 #include "Minimap.h"
 #include "FKeyStatusBar.h"
+#include "BottomBand.h"
 #include <QApplication>
 #include <QFile>
 #include <QVBoxLayout>
@@ -109,6 +110,22 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     m_editorLayout = lay;   // slot below TabStrip (setEditorWidget swaps here)
     setCentralWidget(central);
 
+    // Bottom band (cursor position + horizontal scrollbar) sits between the
+    // editor and the status line (spec 9 row order). The EditorHost's bottom
+    // frame edge is suppressed: the band now supplies the bottom border row.
+    m_bottomBand = new BottomBand(this);
+    auto* outer = new QVBoxLayout;
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    auto* centralWrap = new QWidget(this);
+    auto* cw = new QVBoxLayout(centralWrap);
+    cw->setContentsMargins(0, 0, 0, 0);
+    cw->setSpacing(0);
+    cw->addWidget(central, 1);
+    cw->addWidget(m_bottomBand, 0);
+    outer->addWidget(centralWrap);
+    setCentralWidget(centralWrap);
+
     // F-key status bar (bottom).
     auto* fkeys = new FKeyStatusBar(this);
     setStatusBar(fkeys);
@@ -157,6 +174,11 @@ TabStrip* ShellWindow::tabStrip() const
 FKeyStatusBar* ShellWindow::fkeyStatusBar() const
 {
     return findChild<FKeyStatusBar*>();
+}
+
+BottomBand* ShellWindow::bottomBand() const
+{
+    return m_bottomBand;
 }
 
 void ShellWindow::paintEvent(QPaintEvent* ev)
