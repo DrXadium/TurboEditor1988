@@ -591,6 +591,71 @@ private slots:
                                 .arg(bar->displayedText())));
         b.unregisterPopup(view);
     }
+
+    // Spec 6: the dropdown casts a HARD black drop shadow offset (+2 cols,
+    // +1 row): 2 cells wide along the right edge starting one row below the
+    // top, and 1 row tall along the bottom edge starting 2 cells right of the
+    // box's left edge. Drawn into the composited frame by ContentBridge.
+    void dropdown_drop_shadow_is_hard_black_offset() {
+        ShellWindow w;
+        w.resize(900, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        auto* mb = static_cast<MenuBar*>(w.menuBar());
+        QVERIFY(mb);
+        QMenu* view = mb->menu(QStringLiteral("View"));
+        QVERIFY(view);
+        view->move(w.pos() + QPoint(100, 40));   // keep the shadow inside the frame
+        b.registerPopup(view);
+        view->show();
+        QCoreApplication::processEvents();
+        b.update();
+        const QImage f = b.frame();
+        QVERIFY(!f.isNull());
+
+        const QFontMetrics fm(view->font());
+        const int cellH = fm.height();
+        const int cellW = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
+        const QRect r(view->pos() - w.pos(), view->size());
+        const auto isBlack = [](const QColor& c) {
+            return c.red() < 40 && c.green() < 40 && c.blue() < 40;
+        };
+
+        // Right band: 2 cells wide, starting one row below the popup top.
+        int rightBlack = 0, rightTotal = 0;
+        for (int y = r.top() + cellH; y <= r.bottom() + cellH; ++y)
+            for (int x = r.right() + 1; x <= r.right() + 2 * cellW; ++x) {
+                if (x < 0 || y < 0 || x >= f.width() || y >= f.height())
+                    continue;
+                ++rightTotal;
+                if (isBlack(f.pixelColor(x, y)))
+                    ++rightBlack;
+            }
+        QVERIFY2(rightTotal > 0 && rightBlack * 10 >= rightTotal * 8,
+                 qPrintable(QStringLiteral("right drop shadow missing: %1/%2 black")
+                                .arg(rightBlack).arg(rightTotal)));
+
+        // Bottom band: 1 row tall, starting 2 cells right of the popup left.
+        int botBlack = 0, botTotal = 0;
+        for (int y = r.bottom() + 1; y <= r.bottom() + cellH; ++y)
+            for (int x = r.left() + 2 * cellW; x <= r.right() + 2 * cellW; ++x) {
+                if (x < 0 || y < 0 || x >= f.width() || y >= f.height())
+                    continue;
+                ++botTotal;
+                if (isBlack(f.pixelColor(x, y)))
+                    ++botBlack;
+            }
+        QVERIFY2(botTotal > 0 && botBlack * 10 >= botTotal * 8,
+                 qPrintable(QStringLiteral("bottom drop shadow missing: %1/%2 black")
+                                .arg(botBlack).arg(botTotal)));
+
+        // The shadow starts BELOW the popup top: the cell right of the top row
+        // is still shell background, not shadow.
+        QVERIFY2(!isBlack(f.pixelColor(r.right() + 1, r.top() + 1)),
+                 "drop shadow must start one row below the popup top");
+        b.unregisterPopup(view);
+        view->hide();
+    }
 };
 
 int main(int argc, char** argv)

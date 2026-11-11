@@ -48,7 +48,14 @@ Window {
         height: parent.width
         chain: EffectChain {
             objectName: "crtEffectChain"
-            anchors.fill: parent
+            // Explicit size = the patch box. NOT anchors.fill: parent - the
+            // chain gets reparented into SweepPatch's host item, whose
+            // width/height are themselves bound to the chain's size, so an
+            // anchor would close a binding loop (both resolve to 0 => the
+            // ShaderEffectSource is 0x0 and the whole window renders black;
+            // the QML test never hit it because it sized the chain explicitly).
+            width: sweep.width
+            height: sweep.height
             sourceItem: bridge.sourceItem
             settings: crtSettings
             fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"

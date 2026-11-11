@@ -154,7 +154,10 @@ void ShellWindow::setEditorWidget(QWidget* w)
     // Remove the current placeholder/editor row (everything below the TabStrip)
     // and replace it with an editor+minimap row. Index 0 is always the TabStrip.
     while (m_editorLayout->count() > 0) {   // drain placeholder + stale rows alike
-        QLayoutItem* old = m_editorLayout->takeAt(1);
+        // takeAt(0): with a single item takeAt(1) returns nullptr and the loop
+        // would spin forever (this hung the real app while tests passed,
+        // because tests never call setEditorWidget twice).
+        QLayoutItem* old = m_editorLayout->takeAt(0);
         if (old) {
             if (old->widget() && old->widget() != w && !qobject_cast<Minimap*>(old->widget()))
                 old->widget()->deleteLater();

@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QLayout>
 #include <QMenu>
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QApplication>
@@ -54,6 +55,20 @@ void ContentBridge::update()
         const QPoint rel = popup->pos() - m_shell->pos();
         painter.save();
         painter.translate(rel);
+        // Spec 6/8: hard black drop shadow, offset (+2 cols, +1 row):
+        // 2 cells wide along the right edge starting one row below the top,
+        // 1 row tall along the bottom edge starting 2 cells right of the left
+        // edge. Popups are composited here, so the shadow is drawn into the
+        // same pass (a widget cannot paint outside its own rect).
+        if (popup->inherits("QMenu")) {
+            const QFontMetrics fm(popup->font());
+            const int cellH = fm.height();
+            const int cellW = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
+            const int pw = popup->width();
+            const int ph = popup->height();
+            painter.fillRect(QRect(pw, cellH, 2 * cellW, ph), Qt::black);
+            painter.fillRect(QRect(2 * cellW, ph, pw, cellH), Qt::black);
+        }
         popup->render(&painter);
         painter.restore();
     }

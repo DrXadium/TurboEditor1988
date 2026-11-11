@@ -426,6 +426,21 @@ int main(int argc, char** argv)
         });
     }
 
+    // Dev aid (unset in normal runs): CRT_KATE_VIEWMENU=1 opens the REAL
+    // View dropdown (MenuBar's BorlandMenu) over the shell before a capture,
+    // proving the spec-6 dropdown + drop shadow composite end-to-end and that
+    // opening a real menu does not crash (the rev1 menu-click regression).
+    if (qEnvironmentVariableIsSet("CRT_KATE_VIEWMENU")) {
+        QTimer::singleShot(700, &app, [&shell]() {
+            if (auto* mb = qobject_cast<MenuBar*>(shell.menuBar())) {
+                if (QMenu* view = mb->menu(QStringLiteral("View"))) {
+                    view->move(shell.pos() + QPoint(320, 60));
+                    view->show();
+                }
+            }
+        });
+    }
+
     // Dev aid (unset in normal runs): CRT_KATE_BRIGHT=<0..3> forces the CRT
     // brightness at launch so a capture can reveal the underlying chrome
     // (used with CRT_KATE_SHOT for visual restyle verification).
@@ -457,10 +472,18 @@ int main(int argc, char** argv)
     if (const QByteArray shot = qgetenv("CRT_KATE_SHOT"); !shot.isEmpty()) {
         QTimer::singleShot(1500, &app, [&engine, shot, &app]() {
             if (auto* root = engine.rootObjects().value(0)) {
+                // Grab the actual WINDOW pixels: the visible scene is composed
+                // through the rotated SweepPatch, and grabToImage() on a rotated
+                // ShaderEffect item renders black (that is what the old
+                // chain-item path returned). grabWindow() shows what the user
+                // really sees.
+                if (auto* win = qobject_cast<QQuickWindow*>(root)) {
+                    win->grabWindow().save(QString::fromUtf8(shot));
+                    QCoreApplication::exit(0);
+                    return;
+                }
                 QQuickItem *chain = root->findChild<QQuickItem*>(
                     QStringLiteral("crtEffectChain"));
-                if (!chain)
-                    chain = qobject_cast<QQuickItem*>(root);
                 if (chain) {
                     auto result = chain->grabToImage();
                     if (result) {
@@ -472,8 +495,6 @@ int main(int argc, char** argv)
                         return;
                     }
                 }
-                if (auto* win = qobject_cast<QQuickWindow*>(root))
-                    win->grabWindow().save(QString::fromUtf8(shot));
             }
             QCoreApplication::exit(0);
         });
