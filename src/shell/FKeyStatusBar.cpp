@@ -39,25 +39,56 @@ FKeyStatusBar::FKeyStatusBar(QWidget* parent) : QStatusBar(parent)
     setFKeys(QStringLiteral("F2 Save  F3 Open  F5 Zoom  F6 Next  F10 Menu"));
 }
 
+void FKeyStatusBar::ensureLabel()
+{
+    QLabel* lab = findChild<QLabel*>(QStringLiteral("fkeyLabel"));
+    if (lab)
+        return;
+    lab = new QLabel(this);
+    lab->setObjectName(QStringLiteral("fkeyLabel"));
+    lab->setTextFormat(Qt::RichText);
+    lab->setAutoFillBackground(false);
+    lab->setAttribute(Qt::WA_TranslucentBackground, true);
+    // Transparent label background: the app-wide QWidget rule gives labels
+    // a window-blue base that would otherwise paint over the gray bar.
+    lab->setStyleSheet(QStringLiteral("QLabel { background: transparent; }"));
+    // Left margin so the first F-key sits near column 12 (spec 7: x≈8..20),
+    // not flush against the window edge.
+    lab->setContentsMargins(12, 0, 0, 0);
+    addWidget(lab, 1);
+}
+
+void FKeyStatusBar::refreshLabel()
+{
+    ensureLabel();
+    QLabel* lab = findChild<QLabel*>(QStringLiteral("fkeyLabel"));
+    if (lab)
+        lab->setText(tvRich(displayedText()));
+}
+
 void FKeyStatusBar::setFKeys(const QString& text)
 {
     m_text = text;
-    QLabel* lab = findChild<QLabel*>(QStringLiteral("fkeyLabel"));
-    if (!lab) {
-        lab = new QLabel(this);
-        lab->setObjectName(QStringLiteral("fkeyLabel"));
-        lab->setTextFormat(Qt::RichText);
-        lab->setAutoFillBackground(false);
-        lab->setAttribute(Qt::WA_TranslucentBackground, true);
-        // Transparent label background: the app-wide QWidget rule gives labels
-        // a window-blue base that would otherwise paint over the gray bar.
-        lab->setStyleSheet(QStringLiteral("QLabel { background: transparent; }"));
-        // Left margin so the first F-key sits near column 12 (spec 7: x≈8..20),
-        // not flush against the window edge.
-        lab->setContentsMargins(12, 0, 0, 0);
-        addWidget(lab, 1);
-    }
-    lab->setText(tvRich(text));
+    refreshLabel();
+}
+
+// Spec 7: while a dropdown is open the status line is REPLACED by a context
+// hint for the highlighted item: "F1" red, " Help " black, a black "│", then
+// the hint text in black.
+void FKeyStatusBar::setContextHint(const QString& hint)
+{
+    m_hintActive = true;
+    m_hint = QStringLiteral("F1 Help \u2502 ") + hint;
+    refreshLabel();
+}
+
+void FKeyStatusBar::clearContextHint()
+{
+    if (!m_hintActive)
+        return;
+    m_hintActive = false;
+    m_hint.clear();
+    refreshLabel();
 }
 
 // Explicitly fill the status bar TV light-gray (palette alone was being

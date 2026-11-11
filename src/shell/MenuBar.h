@@ -22,6 +22,11 @@ public:
     // Titles of the top-level menus, in order (hotkey markers stripped).
     QStringList topLevelTitles() const;
 
+    // Creates a BorlandMenu (self-painted dropdown, spec 6) and adds it.
+    // Shadows QMenuBar::addMenu(const QString&) so every top-level menu gets
+    // the TV dropdown painting.
+    QMenu* addMenu(const QString& title);
+
 protected:
     void paintEvent(QPaintEvent* ev) override;
 };

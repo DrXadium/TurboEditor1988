@@ -28,15 +28,20 @@ QMenuBar {
    with the rules, then BorlandStyle paints). The item plate, glyph colors
    and title spacing now come from BorlandStyle (pixelMetric
    PM_MenuBarItemSpacing + the CE_MenuBarItem branch). */
-/* Dropdown menus: TV gray panel, black text, red hotkeys, inverse selection. */
-QMenu {
-    background-color: #AAAAAA;
-    color: #000000;
-    border: 1px solid #FFFFFF;
-}
-QMenu::item { background-color: #AAAAAA; color: #000000; padding: 2px 24px 2px 22px; }
-QMenu::item:selected { background-color: #0000AA; color: #FFFF55; }
-QMenu::separator { height: 1px; background: #000000; margin: 2px 4px; }
+/* Dropdown menus (TV-revision2 spec 6): solid light-gray box with NO
+   line-drawing border. The PANEL is styled here; item painting (green
+   full-width highlight, black text, red hotkey letter, check gutter,
+   right-aligned shortcut, full-width separator) is done by
+   BorlandStyle::drawControl(CE_MenuItem).
+   NO QMenu::item / ::separator rules may exist: QStyleSheetStyle takes over
+   item painting when they do, which bypasses BorlandStyle exactly like the
+   QMenuBar::item case above (probe-verified for the menu bar). */
+/* NOTE: NO QMenu rules AT ALL. QStyleSheetStyle intercepts CE_MenuItem
+   painting as soon as the menu carries stylesheet rules (probe: the style's
+   CE_MenuItem branch is never entered - 0 calls), which would make the green
+   highlight / red hotkey letters / full-width separator impossible.
+   The flat gray panel + no border come from BorlandStyle::drawPrimitive
+   (PE_PanelMenu) instead. */
 /* Status line: light-gray strip, black labels (red F-keys drawn by FKeyStatusBar). */
 QStatusBar {
     background-color: #AAAAAA;

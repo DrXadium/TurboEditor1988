@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ContentBridge.h"
 #include "src/shell/ShellWindow.h"
+#include "src/shell/FKeyStatusBar.h"
 #include <QPainter>
 #include <QLayout>
 #include <QMenu>
@@ -83,6 +84,19 @@ void ContentBridge::registerPopup(QWidget* popup)
     // but uninteractable. Native top-level windows map fine on Wayland and stay
     // isVisible() after show, so they composite without hardening.
     if (auto* menu = qobject_cast<QMenu*>(popup)) {
+        // Spec 7: while this dropdown is open the status line shows the
+        // highlighted item's hint; closing restores the F-key row.
+        connect(menu, &QMenu::hovered, this, [this](QAction* a) {
+            if (!a) {
+                setStatusHint(QString());
+                return;
+            }
+            const QString hint = a->statusTip().isEmpty()
+                ? a->text().remove(QLatin1Char('&'))
+                : a->statusTip();
+            setStatusHint(hint);
+        });
+        connect(menu, &QMenu::aboutToHide, this, [this] { setStatusHint(QString()); });
         if (!menu->testAttribute(Qt::WA_DontShowOnScreen))
             menu->setAttribute(Qt::WA_DontShowOnScreen);
         if (!menu->isVisible())
@@ -95,6 +109,20 @@ void ContentBridge::registerPopup(QWidget* popup)
 void ContentBridge::unregisterPopup(QWidget* popup)
 {
     m_popups.removeAll(popup);
+    if (m_popups.isEmpty())
+        setStatusHint(QString());
+}
+
+void ContentBridge::setStatusHint(const QString& hint)
+{
+    if (!m_shell)
+        return;
+    if (auto* bar = m_shell->fkeyStatusBar()) {
+        if (hint.isEmpty())
+            bar->clearContextHint();
+        else
+            bar->setContextHint(hint);
+    }
 }
 
 void ContentBridge::resizeShell(int w, int h)
@@ -114,7 +142,23 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // shell's. (Posting at the shell makes QMainWindow::event() swallow it, so
     // we must send to the child with child-local coords + matching global.)
     const QPoint shellLocal{int(x), int(y)};
-    QWidget* target = m_shell->childAt(shellLocal);
+    // Popups are top-level windows, not shell children, so childAt() can never
+    // reach them. Resolve visible popups FIRST: a move over an open dropdown
+    // must land in the popup (QMenu's hover highlight + the spec-7 status
+    // hint depend on it).
+    QWidget* target = nullptr;
+    const QPoint shellGlobal = m_shell->mapToGlobal(shellLocal);
+    for (QWidget* popup : std::as_const(m_popups)) {
+        if (!popup || !popup->isVisible())
+            continue;
+        const QPoint inPopup = popup->mapFromGlobal(shellGlobal);
+        if (popup->rect().contains(inPopup)) {
+            target = popup;
+            break;
+        }
+    }
+    if (!target)
+        target = m_shell->childAt(shellLocal);
     if (!target)
         target = m_shell;
     const QPoint local = target->mapFrom(m_shell, shellLocal);

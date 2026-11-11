@@ -35,6 +35,7 @@ add_library(crt-shell STATIC
   src/shell/ShellWindow.cpp
   src/shell/ShellWindow.h
   src/shell/BorlandStyle.cpp
+    src/shell/BorlandMenu.cpp
   src/shell/BorlandStyle.h
   src/shell/MenuBar.cpp
   src/shell/MenuBar.h

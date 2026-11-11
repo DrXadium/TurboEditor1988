@@ -10,7 +10,12 @@
 #include <QStyle>
 #include <QImage>
 #include <QGuiApplication>
+#include <QPainter>
+#include <QStyleOptionMenuItem>
 #include "src/shell/ShellWindow.h"
+#include "src/shell/BorlandStyle.h"
+#include "src/shell/MenuBar.h"
+#include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
 
 class TstMenus : public QObject
@@ -358,6 +363,233 @@ private slots:
             }
         QVERIFY2(blue > 1000,
                  qPrintable(QStringLiteral("TV-blue #0000AA px=%1, expected >1000").arg(blue)));
+    }
+
+    // ---- TV-revision2 Task 5 (spec 5 + 6) --------------------------------
+    // Helper: open the View dropdown through the bridge (same hardening the
+    // app uses) so grabs see real menu pixels.
+    static QMenu* openViewMenu(ShellWindow& w, ContentBridge& b) {
+        auto* mb = static_cast<MenuBar*>(w.menuBar());
+        if (!mb)
+            return nullptr;
+        QMenu* view = mb->menu(QStringLiteral("View"));
+        if (!view)
+            return nullptr;
+        b.registerPopup(view);
+        view->show();
+        QCoreApplication::processEvents();
+        return view;
+    }
+    static QAction* findAction(QMenu* m, const QString& needle) {
+        for (QAction* a : m->actions())
+            if (!a->isSeparator() && a->text().contains(needle))
+                return a;
+        return nullptr;
+    }
+    static QPoint itemCenterInShell(QMenu* menu, QAction* a, ShellWindow* w) {
+        return menu->pos() - w->pos() + menu->actionGeometry(a).center();
+    }
+
+    // Spec 5: the OPEN menu's title is drawn with a BLACK background and
+    // WHITE text; the hotkey letter stays red.
+    void selected_menu_title_is_black_plate_white_text_red_hotkey() {
+        ShellWindow w;
+        BorlandStyle* st = w.borlandStyle();
+        QVERIFY(st);
+        QImage img(120, 26, QImage::Format_RGB32);
+        img.fill(QColor(0xAA, 0xAA, 0xAA));
+        QPainter p(&img);
+        p.setFont(w.font());
+        QStyleOptionMenuItem opt;
+        opt.rect = QRect(0, 0, 120, 26);
+        opt.text = QStringLiteral("&View");
+        opt.menuItemType = QStyleOptionMenuItem::Normal;
+        opt.state = QStyle::State_Selected | QStyle::State_Enabled;
+        st->drawControl(QStyle::CE_MenuBarItem, &opt, &p, &w);
+        p.end();
+
+        int black = 0, white = 0, red = 0, total = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                ++total;
+                if (c.red() < 40 && c.green() < 40 && c.blue() < 40) ++black;
+                if (c.red() > 235 && c.green() > 235 && c.blue() > 235) ++white;
+                if (c.red() > 120 && c.red() < 200 && c.green() < 40 && c.blue() < 40) ++red;
+            }
+        QVERIFY2(black * 2 > total,
+                 qPrintable(QStringLiteral("selected title plate not black: %1/%2")
+                                .arg(black).arg(total)));
+        QVERIFY2(white >= 5,
+                 qPrintable(QStringLiteral("selected title text not white: %1 px").arg(white)));
+        QVERIFY2(red >= 2,
+                 qPrintable(QStringLiteral("selected title hotkey not red: %1 px").arg(red)));
+
+        // Screenshot styling: the hotkey letter is underlined (a short white
+        // horizontal run below the glyph baseline).
+        int underline = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            int run = 0, best = 0;
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() > 235 && c.green() > 235 && c.blue() > 235)
+                    best = qMax(best, ++run);
+                else
+                    run = 0;
+            }
+            if (best >= 4)
+                underline = qMax(underline, best);
+        }
+        QVERIFY2(underline >= 4,
+                 qPrintable(QStringLiteral("hotkey underline missing (best run %1)")
+                                .arg(underline)));
+    }
+
+    // Spec 6: dropdown is a solid light-gray box with NO line-drawing border.
+    void dropdown_is_flat_gray_no_border() {
+        ShellWindow w;
+        w.resize(900, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QMenu* view = openViewMenu(w, b);
+        QVERIFY2(view, "View menu missing");
+        const QImage img = view->grab().toImage();
+        QVERIFY(!img.isNull());
+
+        int gray = 0, total = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                ++total;
+                if (qAbs(c.red() - 0xAA) < 30 && qAbs(c.green() - 0xAA) < 30
+                    && qAbs(c.blue() - 0xAA) < 30)
+                    ++gray;
+            }
+        QVERIFY2(gray * 2 >= total,
+                 qPrintable(QStringLiteral("dropdown not flat gray: %1/%2").arg(gray).arg(total)));
+
+        int whiteEdge = 0;
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, 0);
+            if (c.red() > 235 && c.green() > 235 && c.blue() > 235) ++whiteEdge;
+        }
+        for (int y = 0; y < img.height(); ++y) {
+            const QColor c = img.pixelColor(0, y);
+            if (c.red() > 235 && c.green() > 235 && c.blue() > 235) ++whiteEdge;
+        }
+        QVERIFY2(whiteEdge == 0,
+                 qPrintable(QStringLiteral("dropdown has a white border line: %1 px")
+                                .arg(whiteEdge)));
+        b.unregisterPopup(view);
+        view->hide();
+    }
+
+    // Spec 6: the highlighted row is a FULL-WIDTH green bar (edge to edge),
+    // text black, hotkey red. Driven by a forwarded hover.
+    void dropdown_selected_row_is_green_full_width() {
+        ShellWindow w;
+        w.resize(900, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QMenu* view = openViewMenu(w, b);
+        QVERIFY2(view, "View menu missing");
+        QAction* zoomIn = findAction(view, QStringLiteral("In"));
+        QVERIFY2(zoomIn, "Zoom In missing");
+        const QPoint pt = itemCenterInShell(view, zoomIn, &w);
+        b.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton, Qt::NoButton,
+                            Qt::NoModifier, pt.x(), pt.y());
+        QCoreApplication::processEvents();
+
+        const QImage img = view->grab().toImage();
+        const QRect r = view->actionGeometry(zoomIn);
+        const int y = r.center().y();
+        int green = 0, black = 0, red = 0;
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (c.green() > 140 && c.red() < 60 && c.blue() < 60) ++green;
+            if (c.red() < 40 && c.green() < 40 && c.blue() < 40) ++black;
+            if (c.red() > 120 && c.red() < 200 && c.green() < 40 && c.blue() < 40) ++red;
+        }
+        const auto isGreen = [&](const QColor& c) {
+            return c.green() > 140 && c.red() < 60 && c.blue() < 60;
+        };
+        QVERIFY2(isGreen(img.pixelColor(0, y)) && isGreen(img.pixelColor(img.width() - 1, y)),
+                 qPrintable(QStringLiteral("selected row not edge-to-edge green (edges: %1/%2)")
+                                .arg(img.pixelColor(0, y).name(), img.pixelColor(img.width() - 1, y).name())));
+        QVERIFY2(green * 10 >= img.width() * 7,
+                 qPrintable(QStringLiteral("selected row mostly not green: %1/%2")
+                                .arg(green).arg(img.width())));
+        QVERIFY2(black >= 2, "selected row text not black");
+        QVERIFY2(red >= 1, "selected row hotkey not red");
+        b.unregisterPopup(view);
+        view->hide();
+    }
+
+    // Spec 6: the separator is one full-width row of a single black line.
+    void dropdown_separator_is_full_width_single_line() {
+        ShellWindow w;
+        w.resize(900, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QMenu* view = openViewMenu(w, b);
+        QVERIFY2(view, "View menu missing");
+        QAction* sep = nullptr;
+        for (QAction* a : view->actions())
+            if (a->isSeparator()) {
+                sep = a;
+                break;
+            }
+        QVERIFY2(sep, "View menu has no separator");
+        const QImage img = view->grab().toImage();
+        const QRect r = view->actionGeometry(sep);
+        int bestBlack = 0;
+        for (int y = r.top(); y <= r.bottom(); ++y) {
+            int black = 0;
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() < 40 && c.green() < 40 && c.blue() < 40) ++black;
+            }
+            bestBlack = qMax(bestBlack, black);
+        }
+        QVERIFY2(bestBlack >= img.width() - 2,
+                 qPrintable(QStringLiteral("separator not full width: %1/%2 px black")
+                                .arg(bestBlack).arg(img.width())));
+        b.unregisterPopup(view);
+        view->hide();
+    }
+
+    // Spec 7: while a dropdown is open the status line is REPLACED by the
+    // context hint for the highlighted item ("F1 Help │ <hint>"), and it
+    // returns to the F-key row when the dropdown closes.
+    void dropdown_highlight_updates_status_hint() {
+        ShellWindow w;
+        w.resize(900, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QMenu* view = openViewMenu(w, b);
+        QVERIFY2(view, "View menu missing");
+        QAction* zoomIn = findAction(view, QStringLiteral("In"));
+        QVERIFY2(zoomIn, "Zoom In missing");
+        const QPoint pt = itemCenterInShell(view, zoomIn, &w);
+        b.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton, Qt::NoButton,
+                            Qt::NoModifier, pt.x(), pt.y());
+        QCoreApplication::processEvents();
+
+        FKeyStatusBar* bar = w.fkeyStatusBar();
+        QVERIFY(bar);
+        QVERIFY2(bar->displayedText().contains(QStringLiteral("F1 Help")),
+                 qPrintable(QStringLiteral("status hint missing 'F1 Help': %1")
+                                .arg(bar->displayedText())));
+        QVERIFY2(bar->displayedText().contains(QStringLiteral("Increase the text size")),
+                 qPrintable(QStringLiteral("status hint missing item hint: %1")
+                                .arg(bar->displayedText())));
+
+        view->hide();
+        QCoreApplication::processEvents();
+        QVERIFY2(bar->displayedText().contains(QStringLiteral("F2 Save")),
+                 qPrintable(QStringLiteral("status line did not return to F-keys: %1")
+                                .arg(bar->displayedText())));
+        b.unregisterPopup(view);
     }
 };
 

@@ -41,6 +41,11 @@ public:
     void unregisterPopup(QWidget* popup);
     QList<QWidget*> registeredPopups() const { return m_popups; }
 
+    // TV-revision2 spec 7: the status line is REPLACED by a context hint while
+    // a dropdown is open. The bridge owns the popup lifecycle, so it is the
+    // natural place to relay hovered actions to the shell's FKeyStatusBar.
+    void setStatusHint(const QString& hint);
+
     QImage frame() const { return m_frame; }
     int frameSerial() const { return m_frameSerial; }
     QQuickItem* sourceItem() const { return m_sourceItem; }

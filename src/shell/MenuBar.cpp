@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "MenuBar.h"
+#include "BorlandMenu.h"
 #include <QPalette>
 #include <QColor>
 #include <QPainter>
@@ -68,18 +69,28 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(search, QStringLiteral("Find &Next"), QStringLiteral("actionSearchFindNext"));
 
     QMenu* view = addMenu(QStringLiteral("View"));
-    added(view, QStringLiteral("Zoom &In"), QStringLiteral("actionViewZoomIn"));
-    added(view, QStringLiteral("Zoom &Out"), QStringLiteral("actionViewZoomOut"));
-    added(view, QStringLiteral("&Reset Zoom"), QStringLiteral("actionViewZoomReset"));
+    QAction* zoomIn = added(view, QStringLiteral("Zoom &In"),
+                            QStringLiteral("actionViewZoomIn"));
+    zoomIn->setStatusTip(QStringLiteral("Increase the text size"));
+    QAction* zoomOut = added(view, QStringLiteral("Zoom &Out"),
+                             QStringLiteral("actionViewZoomOut"));
+    zoomOut->setStatusTip(QStringLiteral("Decrease the text size"));
+    // Spec 6: only Reset Zoom carries a shortcut, shown right-aligned (F5).
+    // A tab in the action text renders the shortcut without binding a key.
+    QAction* zoomReset = added(view, QStringLiteral("&Reset Zoom\tF5"),
+                               QStringLiteral("actionViewZoomReset"));
+    zoomReset->setStatusTip(QStringLiteral("Restore the default text size"));
     view->addSeparator();
     QAction* minimap = added(view, QStringLiteral("Show &Minimap"),
                              QStringLiteral("actionViewMinimap"));
     minimap->setCheckable(true);
     minimap->setChecked(false);   // TV-revision: minimap off by default
+    minimap->setStatusTip(QStringLiteral("Toggle the document minimap"));
     QAction* foldBar = added(view, QStringLiteral("Show &Folding Bar"),
                              QStringLiteral("actionViewFoldBar"));
     foldBar->setCheckable(true);
     foldBar->setChecked(true);
+    foldBar->setStatusTip(QStringLiteral("Toggle the code folding bar"));
 
     QMenu* session = addMenu(QStringLiteral("Se&ssion"));
     added(session, QStringLiteral("&Save Session..."), QStringLiteral("actionSessionSave"));
@@ -91,6 +102,14 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
 
     QMenu* help = addMenu(QStringLiteral("&Help"));
     added(help, QStringLiteral("&About CRT-Kate"), QStringLiteral("actionHelpAbout"));
+}
+
+QMenu* MenuBar::addMenu(const QString& title)
+{
+    auto* m = new BorlandMenu(this);
+    m->setTitle(title);
+    QMenuBar::addMenu(m);
+    return m;
 }
 
 QMenu* MenuBar::menu(const QString& title) const
