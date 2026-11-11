@@ -10,9 +10,13 @@
 // The window stays resizable (two sizes prove it); 90x30 is only the anchor.
 #include <QtTest>
 #include <QApplication>
+#include <QMenuBar>
 #include <QImage>
 #include <QColor>
 #include "src/shell/ShellWindow.h"
+#include "src/shell/TabStrip.h"
+#include "src/shell/BottomBand.h"
+#include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
 
 namespace {
@@ -152,6 +156,116 @@ private slots:
                                 .arg(mid.red(), 2, 16, QLatin1Char('0'))
                                 .arg(mid.green(), 2, 16, QLatin1Char('0'))
                                 .arg(mid.blue(), 2, 16, QLatin1Char('0'))));
+    }
+
+    // TV-revision2 spec 8: top-to-bottom row order is
+    //   menu bar -> window top border (tabs) -> editor rows -> bottom border
+    //   (position + h-scrollbar) -> status line,
+    // with no black voids and nothing clipped at any edge.
+    void layout_order_menu_border_editor_border_status() {
+        ShellWindow w;
+        const QImage frame = renderShell(w, QSize(900, 600));
+        QVERIFY2(!frame.isNull(), "frame is null");
+        const int W = frame.width(), H = frame.height();
+
+        // Widget geometry gives the bands; assert the order first. Children
+        // live in their parent's coordinate space (TabStrip is inside the
+        // central host), so map every band into WINDOW coordinates.
+        auto* menu = w.menuBar();
+        TabStrip* tabs = w.tabStrip();
+        BottomBand* band = w.bottomBand();
+        FKeyStatusBar* status = w.fkeyStatusBar();
+        QVERIFY(menu && tabs && band && status);
+        const auto rectInWindow = [&](QWidget* child) {
+            return QRect(child->mapTo(&w, QPoint(0, 0)), child->size());
+        };
+        const QRect menuR = rectInWindow(menu);
+        const QRect tabsR = rectInWindow(tabs);
+        const QRect bandR = rectInWindow(band);
+        const QRect statusR = rectInWindow(status);
+        QVERIFY2(menuR.bottom() < tabsR.top(),
+                 qPrintable(QStringLiteral("menu bar (bottom=%1) not above the window "
+                                           "top border (top=%2)")
+                                .arg(menuR.bottom()).arg(tabsR.top())));
+        QVERIFY2(tabsR.top() < bandR.top(),
+                 qPrintable(QStringLiteral("top border (top=%1) not above the bottom "
+                                           "border (top=%2)")
+                                .arg(tabsR.top()).arg(bandR.top())));
+        QVERIFY2(bandR.top() < statusR.top(),
+                 qPrintable(QStringLiteral("bottom border (top=%1) not above the status "
+                                           "line (top=%2)")
+                                .arg(bandR.top()).arg(statusR.top())));
+
+        const auto bandDominant = [&](int y0, int y1, QColor want, int tol,
+                                      const char* what) {
+            int hit = 0, total = 0;
+            y0 = qMax(0, y0); y1 = qMin(H - 1, y1);
+            for (int y = y0; y <= y1; ++y)
+                for (int x = 0; x < W; ++x) {
+                    const QColor c = frame.pixelColor(x, y);
+                    ++total;
+                    if (qAbs(c.red() - want.red()) <= tol
+                        && qAbs(c.green() - want.green()) <= tol
+                        && qAbs(c.blue() - want.blue()) <= tol)
+                        ++hit;
+                }
+            QVERIFY2(total > 0 && hit * 2 >= total,
+                     qPrintable(QStringLiteral("%1 band not dominant (#%2%3%4): %5/%6")
+                                    .arg(QString::fromLatin1(what),
+                                         QString::number(want.red(), 16),
+                                         QString::number(want.green(), 16),
+                                         QString::number(want.blue(), 16))
+                                    .arg(hit).arg(total)));
+        };
+        // Row order, top to bottom.
+        bandDominant(0, menuR.bottom(), QColor(0xAA, 0xAA, 0xAA), 28, "menu");
+        bandDominant(tabsR.top(), tabsR.bottom(), QColor(0x00, 0x00, 0xAA), 28,
+                     "top-border");
+        bandDominant(tabsR.bottom() + 1, bandR.top() - 1, QColor(0x00, 0x00, 0xAA), 28,
+                     "editor");
+        bandDominant(bandR.top(), bandR.bottom(), QColor(0x00, 0x00, 0xAA), 28,
+                     "bottom-border");
+        bandDominant(statusR.top(), H - 1, QColor(0xAA, 0xAA, 0xAA), 28, "status");
+
+        // Top and bottom borders are drawn: white glyphs present in both bands.
+        const auto whiteIn = [&](int y0, int y1) {
+            int n = 0;
+            for (int y = qMax(0, y0); y <= qMin(H - 1, y1); ++y)
+                for (int x = 0; x < W; ++x) {
+                    const QColor c = frame.pixelColor(x, y);
+                    if (c.red() > 235 && c.green() > 235 && c.blue() > 235)
+                        ++n;
+                }
+            return n;
+        };
+        QVERIFY2(whiteIn(tabsR.top(), tabsR.bottom()) > 20,
+                 "window top border (double lines/boxes) not drawn");
+        QVERIFY2(whiteIn(bandR.top(), bandR.bottom()) > 20,
+                 "window bottom border (double lines/position) not drawn");
+
+        // No black voids: black may only appear as glyphs/shadow accents, not
+        // as regions (spec 1 bans black inside the window except shadows).
+        int black = 0;
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x) {
+                const QColor c = frame.pixelColor(x, y);
+                if (c.red() < 40 && c.green() < 40 && c.blue() < 40)
+                    ++black;
+            }
+        QVERIFY2(black * 50 < W * H,
+                 qPrintable(QStringLiteral("black voids inside the window: %1 px")
+                                .arg(black)));
+
+        // Nothing clipped: the frame reaches all four edges (top menu row gray,
+        // bottom status row gray, and the border columns painted at x=0/x=W-1).
+        const auto isGray = [](const QColor& c) {
+            return qAbs(c.red() - 0xAA) <= 28 && qAbs(c.green() - 0xAA) <= 28
+                && qAbs(c.blue() - 0xAA) <= 28;
+        };
+        QVERIFY2(isGray(frame.pixelColor(0, 1)) && isGray(frame.pixelColor(W - 1, 1)),
+                 "menu row does not reach both edges");
+        QVERIFY2(isGray(frame.pixelColor(0, H - 2)) && isGray(frame.pixelColor(W - 1, H - 2)),
+                 "status row does not reach both edges");
     }
 };
 

@@ -131,6 +131,78 @@ private slots:
         open->setShortcuts({ open->shortcut(), QKeySequence(QStringLiteral("F3")) });
         QVERIFY(open->shortcuts().size() >= 1);
     }
+
+    // TV-revision2 spec 7: while a dropdown is open the status line is
+    // REPLACED by "F1 Help | <hint>": F1 red, "Help" black, a black vertical
+    // bar, then the hint text in black. Covers all five View-item hints.
+    void status_line_renders_hint_format_when_dropdown_open() {
+        const QList<QPair<QString, QString>> hints = {
+            { QStringLiteral("Zoom In"), QStringLiteral("Increase the text size") },
+            { QStringLiteral("Zoom Out"), QStringLiteral("Decrease the text size") },
+            { QStringLiteral("Reset Zoom"), QStringLiteral("Restore the default text size") },
+            { QStringLiteral("Show Minimap"), QStringLiteral("Toggle the document minimap") },
+            { QStringLiteral("Show Folding Bar"),
+              QStringLiteral("Toggle the code folding bar") },
+        };
+        FKeyStatusBar bar;
+        bar.resize(900, 26);
+        bar.show();
+        QCoreApplication::processEvents();
+
+        for (const auto& h : hints) {
+            bar.setContextHint(h.second);
+            QVERIFY2(bar.contextHintActive(),
+                     qPrintable(QStringLiteral("hint not active for %1").arg(h.first)));
+            const QString text = bar.displayedText();
+            QVERIFY2(text.startsWith(QStringLiteral("F1 Help")),
+                     qPrintable(QStringLiteral("hint format wrong: %1").arg(text)));
+            QVERIFY2(text.contains(QStringLiteral("\u2502")),
+                     qPrintable(QStringLiteral("hint missing the | separator: %1").arg(text)));
+            QVERIFY2(text.contains(h.second),
+                     qPrintable(QStringLiteral("hint text missing for %1: %2")
+                                    .arg(h.first, text)));
+
+            const QImage img = bar.grab().toImage();
+            QVERIFY(!img.isNull());
+            int red = 0, black = 0, gray = 0, total = 0;
+            int firstRedX = 9999, firstBlackX = 9999;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    ++total;
+                    if (qAbs(c.red() - 0xAA) < 40 && c.green() < 50 && c.blue() < 50) {
+                        ++red;
+                        firstRedX = qMin(firstRedX, x);
+                    }
+                    if (c.red() < 40 && c.green() < 40 && c.blue() < 40) {
+                        ++black;
+                        firstBlackX = qMin(firstBlackX, x);
+                    }
+                    if (qAbs(c.red() - 0xAA) < 30 && qAbs(c.green() - 0xAA) < 30
+                        && qAbs(c.blue() - 0xAA) < 30)
+                        ++gray;
+                }
+            QVERIFY2(red >= 3,
+                     qPrintable(QStringLiteral("F1 not red for %1 (%2 px)")
+                                    .arg(h.first).arg(red)));
+            QVERIFY2(black >= 10,
+                     qPrintable(QStringLiteral("hint/Help text not black for %1 (%2 px)")
+                                    .arg(h.first).arg(black)));
+            QVERIFY2(gray * 2 >= total,
+                     qPrintable(QStringLiteral("status bar not flat gray for %1")
+                                    .arg(h.first)));
+            // Structure: the red F1 sits LEFT of the black Help/hint text.
+            QVERIFY2(firstRedX < firstBlackX,
+                     qPrintable(QStringLiteral("F1 not left of Help for %1 (red@%2 black@%3)")
+                                    .arg(h.first).arg(firstRedX).arg(firstBlackX)));
+        }
+
+        bar.clearContextHint();
+        QVERIFY(!bar.contextHintActive());
+        QVERIFY2(bar.displayedText().contains(QStringLiteral("F2 Save")),
+                 qPrintable(QStringLiteral("status line did not restore: %1")
+                                .arg(bar.displayedText())));
+    }
 };
 
 int main(int argc, char** argv)
