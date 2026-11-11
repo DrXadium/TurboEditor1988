@@ -5,6 +5,8 @@
 #include <ktexteditor/view.h>
 #include <ktexteditor/cursor.h>
 #include <ktexteditor/range.h>
+#include <KSyntaxHighlighting/Repository>
+#include <KSyntaxHighlighting/Theme>
 #include <QFileInfo>
 #include <QAction>
 #include <QWidget>
@@ -37,9 +39,53 @@ void EditorTabManager::applyTvStyle(KTextEditor::View* view)
     view->setPalette(pal);
     // Best-effort scheme-independent keys (validated against configKeys()).
     view->setConfigValue(QStringLiteral("background-color"), blue);
-    view->setConfigValue(QStringLiteral("foreground-color"), yellow);
-    // TV selection = inverse block: yellow field, blue text.
-    view->setConfigValue(QStringLiteral("selection-color"), yellow);
+    // NOTE: "foreground-color" is NOT a view config key (configKeys() has no
+    // such entry); text color comes from the active KSyntaxHighlighting theme,
+    // selected below via the custom "CRTKTV" theme.
+    // TV selection = light gray-lavender block (spec section 4).
+    view->setConfigValue(QStringLiteral("selection-color"),
+                         QColor(0xC8, 0xC8, 0xD8));
+    // Spec 1: gutter/line numbers flat on the SAME blue (no black strip) and
+    // line numbers yellow, matching the bundled CRTKTV theme.
+    view->setConfigValue(QStringLiteral("icon-border-color"), blue);
+    view->setConfigValue(QStringLiteral("line-number-color"), yellow);
+    view->setConfigValue(QStringLiteral("current-line-number-color"), yellow);
+    // Spec 6 addendum: NO green chips at all — hide KTextEditor's built-in
+    // status strip. It has no public API; locate by class name (KateViewBar
+    // hosts KateStatusBar's QPushButton row; hide both when present).
+    for (QWidget* w : view->findChildren<QWidget*>()) {
+        const char* cls = w->metaObject()->className();
+        if (qstrcmp(cls, "KateViewBar") == 0 || qstrcmp(cls, "KateStatusBar") == 0)
+            w->hide();
+    }
+    applyTvTheme(view);
+}
+
+// Select the bundled Turbo Vision theme (src/editor/tvtheme/tvtheme.qrc,
+// resource :/crttv/themes/crt_tv.theme) so editor TEXT is yellow on blue with
+// no black current-line band. Registered once into the shared KSS repository.
+void EditorTabManager::applyTvTheme(KTextEditor::View* view)
+{
+    static const bool registered = [] {
+        // Static-library trap: qrc_tvtheme.cpp.o lives in libcrt-editor.a but no
+        // symbol references it, so the linker drops it and the resource never
+        // auto-registers — force it in (resource name = qrc base name "tvtheme").
+        Q_INIT_RESOURCE(tvtheme);
+        const auto& repo = KTextEditor::Editor::instance()->repository();
+        const_cast<KSyntaxHighlighting::Repository&>(repo)
+            .addCustomSearchPath(QStringLiteral(":/crttv"));
+        return true;
+    }();
+    Q_UNUSED(registered);
+    // Verified: the view's "theme" config key stores the theme NAME as a
+    // QString (configValue("theme").typeName() == "QString", e.g. "Breeze
+    // Light"). Passing a KSyntaxHighlighting::Theme variant is silently ignored.
+    if (view->theme().name() == QLatin1String("CRTKTV"))
+        return; // already active
+    view->setConfigValue(QStringLiteral("theme"), QStringLiteral("CRTKTV"));
+    if (view->theme().name() != QLatin1String("CRTKTV"))
+        qWarning("CRTKTV theme not applied (readback=%s)",
+                 qPrintable(view->theme().name()));
 }
 
 EditorTabManager::~EditorTabManager() = default;

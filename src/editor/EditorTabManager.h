@@ -50,6 +50,9 @@ public:
     // Task 12: Turbo Vision editor styling (window-blue field, yellow text)
     // applied to a freshly created KTextEditor::View.
     void applyTvStyle(KTextEditor::View* view);
+    // TV-revision Task 1: select the bundled Turbo Vision KSyntaxHighlighting
+    // theme (:/crttv) so editor text is yellow on blue with no black current line.
+    void applyTvTheme(KTextEditor::View* view);
 
     // Text tools on the active view (selection if present, else whole doc).
     void changeCase(CaseKind kind);

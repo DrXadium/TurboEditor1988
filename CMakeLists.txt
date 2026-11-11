@@ -85,6 +85,7 @@ add_test(NAME tst_input COMMAND tst_input)
 add_library(crt-editor STATIC
   src/editor/EditorTabManager.cpp
   src/editor/EditorTabManager.h
+  src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(crt-editor PUBLIC crt-shell Qt6::Widgets KF6::TextEditor)
@@ -93,6 +94,11 @@ target_link_libraries(crt-editor PUBLIC crt-shell Qt6::Widgets KF6::TextEditor)
 add_executable(tst_zoomtools tests/tst_zoomtools.cpp)
 target_link_libraries(tst_zoomtools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
+
+# TV-revision Task 1 test: flat blue field, yellow text, lavender selection.
+add_executable(tst_tveditor tests/tst_tveditor.cpp)
+target_link_libraries(tst_tveditor PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_tveditor COMMAND tst_tveditor)
 
 # Task 6: CRT settings (C++ model with QSettings persistence + dialog).
 add_library(crt-settings STATIC

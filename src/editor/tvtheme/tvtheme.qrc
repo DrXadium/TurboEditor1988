@@ -1,0 +1,9 @@
+<RCC>
+  <!-- File lives at tvtheme/themes/crt_tv.theme (rcc resolves <file>
+       relative to the .qrc). alias maps it to the resource path
+       :/crttv/themes/crt_tv.theme — exactly what
+       addCustomSearchPath(":/crttv") scans (it appends /themes). -->
+  <qresource prefix="/crttv/themes">
+    <file alias="crt_tv.theme">themes/crt_tv.theme</file>
+  </qresource>
+</RCC>
