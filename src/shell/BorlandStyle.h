@@ -14,4 +14,6 @@ public:
                      QPainter* p, const QWidget* w) const override;
     void drawPrimitive(PrimitiveElement pe, const QStyleOption* opt,
                        QPainter* p, const QWidget* w) const override;
+    int pixelMetric(PixelMetric metric, const QStyleOption* option,
+                    const QWidget* widget) const override;
 };
