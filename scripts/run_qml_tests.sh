@@ -47,9 +47,27 @@ if [ "$NAME" = "tst_effectchain" ] && [ "$QML_RC" -eq 0 ]; then
   echo "PIXELS OK"
 fi
 
-# TV-revision2 Task 1: sweep orientation. Two phases of the COMPOSED (90° CW)
-# chain; the bright band's centroid must MOVE IN Y and stay PUT IN X.
+# TV-revision2 Task 1: sweep orientation + upright picture.
+# (a) The composed frame must be UPRIGHT: the source's red marker stays in the
+#     top-left quadrant and the blue marker in the bottom-right. A rotated pass
+#     (the SweepPatch defect) swaps them.
+# (b) The bright band must MOVE IN Y and stay PUT IN X.
 if [ "$NAME" = "tst_sweep" ] && [ "$QML_RC" -eq 0 ]; then
+  echo "[sweep] asserting upright output"
+  UPRIGHT=$(python3 spike/upright.py /tmp/crt_upright.png 2>&1)
+  echo "$UPRIGHT" | sed 's/^/  /'
+  RX=$(echo "$UPRIGHT" | awk '/^red/{gsub("cx=","",$2); print $2}')
+  RY=$(echo "$UPRIGHT" | awk '/^red/{gsub("cy=","",$3); print $3}')
+  BX=$(echo "$UPRIGHT" | awk '/^blue/{gsub("cx=","",$2); print $2}')
+  BY=$(echo "$UPRIGHT" | awk '/^blue/{gsub("cy=","",$3); print $3}')
+  ok_up=$(python3 -c "
+rx,ry,bx,by=${RX:-0},${RY:-0},${BX:-0},${BY:-0}
+print(1 if (rx < 80 and ry < 60 and bx > 80 and by > 60) else 0)")
+  if [ "$ok_up" != "1" ]; then
+    echo "UPRIGHT FAIL: red must stay top-left and blue bottom-right (rx=$RX ry=$RY bx=$BX by=$BY)"
+    exit 1
+  fi
+  echo "  UPRIGHT OK (red $RX,$RY  blue $BX,$BY)"
   echo "[sweep] asserting top→bottom band motion"
   read -r _ ax ay _ < <(python3 spike/sweepcentroid.py /tmp/crt_sweep_a.png /tmp/crt_sweep_b.png | head -1)
   read -r _ bx by _ < <(python3 spike/sweepcentroid.py /tmp/crt_sweep_a.png /tmp/crt_sweep_b.png | tail -1)

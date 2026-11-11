@@ -100,12 +100,13 @@ void main() {
     }
 
     // --- Sweep (moving bright band) — cool-retro-term's "sweep" effect. ---
-    // Travels along the axis of the TEXTURE (screen X when drawn); the app
-    // composes the pass through SweepPatch (90° CW) so on screen it sweeps
-    // top→bottom (TV-revision2). Phase comes from the QML uniform `sweep`.
+    // Travels TOP→BOTTOM (TV-revision2): the band coordinate is uv.y, whose
+    // 0 end is the top of the item in Qt Quick's texture orientation. The
+    // picture itself is never rotated — an earlier version rotated the whole
+    // composed pass 90° to fake the direction, which rotated the UI with it.
     if (sweep != 0.0) {
         float phase = fract(sweep);          // 0..1 band position
-        float coord = (uv.x - phase) * 6.28318530718;
+        float coord = (uv.y - phase) * 6.28318530718;
         float band = pow(max(sin(coord), 0.0), 4.0);
         col += col * band * 1.4;       // band lifts the image itself
         col += vec3(band) * 0.30;      // plus glow so dark rows show motion

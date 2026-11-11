@@ -472,11 +472,10 @@ int main(int argc, char** argv)
     if (const QByteArray shot = qgetenv("CRT_KATE_SHOT"); !shot.isEmpty()) {
         QTimer::singleShot(1500, &app, [&engine, shot, &app]() {
             if (auto* root = engine.rootObjects().value(0)) {
-                // Grab the actual WINDOW pixels: the visible scene is composed
-                // through the rotated SweepPatch, and grabToImage() on a rotated
-                // ShaderEffect item renders black (that is what the old
-                // chain-item path returned). grabWindow() shows what the user
-                // really sees.
+                // Grab the actual WINDOW pixels. grabToImage() on the CRT
+                // chain item can come back black depending on the scene-graph
+                // pass ordering; grabWindow() shows what the user really sees
+                // (including composited popups).
                 if (auto* win = qobject_cast<QQuickWindow*>(root)) {
                     win->grabWindow().save(QString::fromUtf8(shot));
                     QCoreApplication::exit(0);

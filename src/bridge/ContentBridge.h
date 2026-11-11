@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include <QtGlobal>   // qEnvironmentVariableIsSet (noSweep verification aid)
 #include <QObject>
 #include <QImage>
 #include <QQuickImageProvider>
@@ -16,9 +17,15 @@ class ContentBridge : public QObject
     Q_PROPERTY(QQuickItem* sourceItem READ sourceItem WRITE setSourceItem
                NOTIFY sourceItemChanged)
     Q_PROPERTY(int frameSerial READ frameSerial NOTIFY frameChanged)
+    // Verification aid: when set, the QML sweep clock stops advancing so a
+    // capture is not caught mid-band (a vertical band lingers ~0.6s per row on
+    // a 800px-tall window vs ~0.06s per column horizontally).
+    Q_PROPERTY(bool noSweep READ noSweep CONSTANT)
 public:
     explicit ContentBridge(QObject* parent = nullptr);
     void setShellWindow(ShellWindow* shell);
+
+    bool noSweep() const { return qEnvironmentVariableIsSet("CRT_KATE_NOSWEEP"); }
 
     // Renders the shell into frame(); bumps frameSerial; emits frameChanged.
     Q_INVOKABLE void update();

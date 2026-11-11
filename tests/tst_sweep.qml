@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// TV-revision2 Task 1: the CRT sweep must travel TOP→BOTTOM on screen.
-// The shader sweeps along screen X of its own texture; the app composes the
-// chain through SweepPatch (90° CW). This test grabs the COMPOSED scene at
-// two sweep phases and saves both PNGs; scripts/run_qml_tests.sh decodes them
-// and asserts the bright band's row (y) changes while its column (x) stays
-// put. (EffectChain alone sweeps columns — the defect this pins.)
+// TV-revision2 Task 1 (corrected): the CRT sweep must travel TOP→BOTTOM
+// while the picture stays UPRIGHT.
 //
-// Scene lives directly on the TestCase root: qmltestrunner renders that Item
-// (grabs of EffectChain here are proven to work), while a scratch `Window`
-// created from a test file never maps under the runner and grabs black.
+// The band axis lives in the SHADER (uv.y). An earlier revision rotated the
+// whole composed pass 90° CW to fake the direction, which rotated the entire
+// UI with it — the user-visible defect this test now pins. Two assertions:
+//   1. Upright: the source paints a RED block top-left and a BLUE block
+//      bottom-right; after the pass they must still be top-left / bottom-right.
+//   2. Sweep: the bright band's row (y) changes between two phases while its
+//      column (x) stays put.
+//
+// Scene lives directly on the TestCase root: qmltestrunner renders that Item,
+// while a scratch `Window` created from a test file never maps and grabs black.
 import QtQuick
 import QtTest
 import src
@@ -24,17 +27,28 @@ TestCase {
     property real sweepAmp: 0
     property bool grabDone: false
 
-    // Source fed through the chain (hidden while the shader pass owns it).
-    Rectangle {
+    // Flat mid-grey field (something for the sweep band to lift) plus the
+    // orientation markers: red top-left, blue bottom-right.
+    Item {
         id: src
         anchors.fill: parent
-        color: "#404040"
+        Rectangle { anchors.fill: parent; color: "#404040" }
+        // Markers are hidden for the sweep-phase grabs: at full brightness the
+        // red block out-shines the band and would dominate the centroid.
+        Item {
+            id: markers
+            anchors.fill: parent
+            Rectangle { x: 0; y: 0; width: tc.width / 4; height: tc.height / 4; color: "#FF0000" }
+            Rectangle {
+                x: tc.width * 3 / 4; y: tc.height * 3 / 4
+                width: tc.width / 4; height: tc.height / 4; color: "#0000FF"
+            }
+        }
     }
 
     EffectChain {
         id: chain
-        width: tc.width
-        height: tc.height
+        anchors.fill: parent
         sourceItem: src
         sweepTime: phase
         function resetChain() {
@@ -53,18 +67,6 @@ TestCase {
         Component.onCompleted: resetChain()
     }
 
-    // 90° CW composition. Display box (160 wide × 120 tall after rotation)
-    // lands exactly over the TestCase: patch local center (80,80) with
-    // x=20, y=-20 puts rotated center at (80,60) = tc center.
-    SweepPatch {
-        id: patch
-        x: 20
-        y: -20
-        width: 120
-        height: 160
-        chain: chain
-    }
-
     function grabToFile(item, path) {
         grabDone = false
         item.grabToImage(function(res) {
@@ -74,11 +76,18 @@ TestCase {
         verify("saveToFile failed for " + path, grabDone)
     }
 
-    // Two phases of the composed (rotated) chain → two PNGs for the shell.
+    // Upright proof: no rotation anywhere in the pipeline.
+    function test_upright_output() {
+        markers.visible = true
+        sweepAmp = 0
+        chain.resetChain()
+        wait(120)
+        grabToFile(tc, "file:///tmp/crt_upright.png")
+    }
+
+    // Two phases → two PNGs; the shell asserts the band moved in Y only.
     function test_zz_save_two_sweep_phases() {
-        // The chain must have landed in the patch host before grabbing.
-        verify("chain never entered the SweepPatch host",
-            patch.hostItem !== null && chain.parent === patch.hostItem)
+        markers.visible = false
         sweepAmp = 0.6
         chain.resetChain()
         phase = 0.15

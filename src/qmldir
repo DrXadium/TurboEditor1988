@@ -1,4 +1,3 @@
 module src
 EffectChain 1.0 EffectChain.qml
 CrtSettings 1.0 CrtSettings.qml
-SweepPatch 1.0 SweepPatch.qml
