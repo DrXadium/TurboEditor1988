@@ -18,6 +18,7 @@
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
+const QColor kFrameWhite(0xFF, 0xFF, 0xFF);   // TV-revision spec 3: white double line
 const QColor kBgBlue(0x1A, 0x1A, 0xAA);
 
 // Central editor host: fills the TV window-blue desktop, then draws the
@@ -39,7 +40,7 @@ protected:
         p.setRenderHint(QPainter::Antialiasing, false);
         const QRect r = rect();
         p.fillRect(r, kBgBlue);
-        p.setPen(kFrameGray);
+        p.setPen(kFrameWhite);
         // Double-line frame flush to the widget edges (r.bottom()/r.right() are
         // the LAST valid rows/cols). Verticals run the full height; the bottom
         // pair sits on the last two rows so no blue gap shows at the edge and

@@ -6,12 +6,12 @@
 #include <QFontMetrics>
 
 namespace {
-const QColor kFrameGray(0xAA, 0xAA, 0xAA);   // title-line / frame color
+const QColor kFrameGray(0xAA, 0xAA, 0xAA);   // active-tab plate
+const QColor kFrameWhite(0xFF, 0xFF, 0xFF);  // TV-revision spec 3: white double line
 const QColor kBgBlue(0x1A, 0x1A, 0xAA);      // TV window blue desktop
 const QColor kBlack(0, 0, 0);
 const QColor kGreen(0x19, 0xA8, 0x19);       // close/zoom box fill
-const QColor kYellow(0xFF, 0xFF, 0x55);      // active tab label
-const QColor kGrayText(0xAA, 0xAA, 0xAA);    // inactive tab label
+const QColor kWhite(0xFF, 0xFF, 0xFF);       // inactive tab label (spec 3)
 } // namespace
 
 TabStrip::TabStrip(QWidget* parent) : QWidget(parent)
@@ -72,7 +72,7 @@ void TabStrip::paintEvent(QPaintEvent*)
 
     // Top + bottom frame edges (horizontal double-line), broken by the title
     // content: draw full-width, then the tabs/boxes/labels paint over it.
-    p.setPen(kFrameGray);
+    p.setPen(kFrameWhite);
     p.drawLine(0, 1, width() - 1, 1);
     p.drawLine(0, 2, width() - 1, 2);
     p.drawLine(0, height() - 3, width() - 1, height() - 3);
@@ -116,15 +116,15 @@ void TabStrip::paintEvent(QPaintEvent*)
         const QRect r = rects.at(i);
         const bool active = (i == m_active);
         if (active) {
-            // Active tab: raised gray plate with black text (TV selected tab).
+            // Active tab: gray plate with WHITE text (spec 3).
             p.fillRect(r, kFrameGray);
             p.setPen(kBlack);
             p.drawRect(r);
-            p.setPen(kBlack);
+            p.setPen(kWhite);
             p.drawText(r, Qt::AlignCenter, m_titles.at(i));
         } else {
-            // Inactive tab: transparent over blue, gray label.
-            p.setPen(kGrayText);
+            // Inactive tab: transparent over blue, white label (spec 3).
+            p.setPen(kWhite);
             p.drawText(r, Qt::AlignCenter, m_titles.at(i));
         }
     }

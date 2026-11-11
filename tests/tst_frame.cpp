@@ -11,11 +11,19 @@
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
 const QColor kBgBlue(0x1A, 0x1A, 0xAA);
+const QColor kFrameWhite(0xFF, 0xFF, 0xFF);   // TV-revision spec 3: white double line
 
 bool isGray(const QColor& c)
 {
     return qAbs(c.red() - 0xAA) <= 30 && qAbs(c.green() - 0xAA) <= 30 &&
            qAbs(c.blue() - 0xAA) <= 30;
+}
+
+// Spec 3 supersedes gray: the double-line window frame is #FFFFFF.
+bool isFrameWhite(const QColor& c)
+{
+    return qAbs(c.red() - 0xFF) <= 24 && qAbs(c.green() - 0xFF) <= 24 &&
+           qAbs(c.blue() - 0xFF) <= 24;
 }
 } // namespace
 
@@ -96,10 +104,10 @@ private slots:
                     const int x = c.x() + dx, y = c.y() + dy;
                     if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
                         continue;
-                    if (isGray(img.pixelColor(x, y)))
+                    if (isFrameWhite(img.pixelColor(x, y)))
                         found = true;
                 }
-            QVERIFY2(found, qPrintable(QStringLiteral("frame %1 corner missing gray box at (%2,%3)")
+            QVERIFY2(found, qPrintable(QStringLiteral("frame %1 corner missing WHITE box at (%2,%3)")
                                            .arg(names[i]).arg(c.x()).arg(c.y())));
         }
     }
@@ -111,16 +119,16 @@ private slots:
         QVERIFY(!img.isNull());
         const int midY = img.height() / 2;
 
-        // Walk inward from the left edge: find a gray frame pixel.
-        bool leftGray = false;
+        // Walk inward from the left edge: find a WHITE frame pixel (spec 3).
+        bool leftWhite = false;
         for (int x = 0; x < 12 && x < img.width(); ++x)
-            if (isGray(img.pixelColor(x, midY))) { leftGray = true; break; }
-        bool rightGray = false;
+            if (isFrameWhite(img.pixelColor(x, midY))) { leftWhite = true; break; }
+        bool rightWhite = false;
         for (int x = img.width() - 1; x >= img.width() - 12 && x >= 0; --x)
-            if (isGray(img.pixelColor(x, midY))) { rightGray = true; break; }
+            if (isFrameWhite(img.pixelColor(x, midY))) { rightWhite = true; break; }
 
-        QVERIFY2(leftGray, "no gray left frame edge found");
-        QVERIFY2(rightGray, "no gray right frame edge found");
+        QVERIFY2(leftWhite, "no WHITE left frame edge found");
+        QVERIFY2(rightWhite, "no WHITE right frame edge found");
     }
 };
 

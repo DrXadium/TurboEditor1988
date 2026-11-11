@@ -61,6 +61,83 @@ private slots:
         QCOMPARE(ts.titles().size(), 3);
     }
 
+    // TV-revision spec 3: tab titles sit in the top border row, WHITE, the
+    // active tab ("hostname" when active=1) highlighted on a gray plate with
+    // white text; inactive labels are white on blue (not gray).
+    void tab_titles_are_white_active_is_gray_plate() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "untitled" << "hostname" << "os-release", 1);
+        ts.resize(640, 26);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+        const QVector<QRect> rects = ts.tabRects();
+        QCOMPARE(rects.size(), 3);
+
+        auto countIn = [&](const QRect& r, const QColor& t, int tol) {
+            int n = 0;
+            for (int y = r.top(); y <= r.bottom(); ++y)
+                for (int x = r.left(); x <= r.right(); ++x) {
+                    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+                        continue;
+                    const QColor c = img.pixelColor(x, y);
+                    if (qAbs(c.red() - t.red()) <= tol && qAbs(c.green() - t.green()) <= tol &&
+                        qAbs(c.blue() - t.blue()) <= tol)
+                        ++n;
+                }
+            return n;
+        };
+        const QColor white(255, 255, 255);
+        const QColor gray(0xAA, 0xAA, 0xAA);
+        const QColor blue(0x1A, 0x1A, 0xAA);
+
+        // Inactive tab "untitled" (index 0): white text, blue behind (no plate).
+        const int untitledWhite = countIn(rects[0], white, 24);
+        QVERIFY2(untitledWhite >= 3,
+                 qPrintable(QStringLiteral("inactive tab 'untitled' has %1 white px (expected >=3)")
+                                .arg(untitledWhite)));
+        QVERIFY2(countIn(rects[0], gray, 16) == 0,
+                 "inactive tab has a gray plate — must be white on blue");
+
+        // Active tab "hostname" (index 1): gray plate + WHITE text on it.
+        const int hostnameGray = countIn(rects[1], gray, 16);
+        QVERIFY2(hostnameGray >= 20,
+                 qPrintable(QStringLiteral("active tab plate not gray #AAAAAA: %1 px").arg(hostnameGray)));
+        const int hostnameWhite = countIn(rects[1], white, 24);
+        QVERIFY2(hostnameWhite >= 3,
+                 qPrintable(QStringLiteral("active tab text not white: %1 px").arg(hostnameWhite)));
+    }
+
+    // TV-revision spec 3: green [■] close box top-left and [↕] zoom box
+    // top-right, re-pinned to #19A819.
+    void close_zoom_boxes_are_tv_green() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "untitled", 0);
+        ts.resize(600, 26);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+        const QColor kGreen(0x19, 0xA8, 0x19);
+        auto greenIn = [&](const QRect& box) {
+            int n = 0;
+            for (int y = box.top(); y <= box.bottom(); ++y)
+                for (int x = box.left(); x <= box.right(); ++x) {
+                    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+                        continue;
+                    const QColor c = img.pixelColor(x, y);
+                    if (qAbs(c.red() - kGreen.red()) <= 24 &&
+                        qAbs(c.green() - kGreen.green()) <= 24 &&
+                        qAbs(c.blue() - kGreen.blue()) <= 24)
+                        ++n;
+                }
+            return n;
+        };
+        const int closeG = greenIn(ts.closeBoxRect());
+        const int zoomG = greenIn(ts.zoomBoxRect());
+        QVERIFY2(closeG >= 10,
+                 qPrintable(QStringLiteral("close box green #19A819 px=%1, expected >=10").arg(closeG)));
+        QVERIFY2(zoomG >= 6,
+                 qPrintable(QStringLiteral("zoom box green #19A819 px=%1, expected >=6").arg(zoomG)));
+    }
+
     void clicking_a_tab_emits_tabActivated() {
         TabStrip ts;
         ts.setTabs(QStringList() << "one" << "two" << "three", 0);
