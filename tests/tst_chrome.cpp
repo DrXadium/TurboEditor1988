@@ -65,6 +65,58 @@ private slots:
                  qPrintable(QStringLiteral("no white cursor-pos text in x[75,125]: %1 px").arg(white)));
     }
 
+    // TV-revision2 spec 3: the cursor position "L:C" is plain white text
+    // SITTING ON the double-line border rows (glyph tops drop into the lower
+    // half of the band), with no blue/gray backdrop box behind it (the band
+    // stays flat window blue under the text).
+    void cursor_position_drawn_into_double_line_border() {
+        BottomBand band;
+        band.setCursorPos(2, 1);
+        band.resize(640, 26);
+        const QImage img = band.grab().toImage();
+        QVERIFY(!img.isNull());
+        const int w = img.width(), h = img.height();
+        const int bot = h - 1;
+
+        // The pos text must be pushed DOWN onto the border: its topmost
+        // glyph row sits in the lower half of the band (>= h-14), unlike a
+        // vertically centered baseline which floats it mid-band. (The border
+        // lines themselves make "touches the bottom rows" undiscriminating,
+        // so we discriminate on the text TOP instead.)
+        int topMost = -1, whitePx = 0;
+        for (int x = 75; x <= 125 && x < w; ++x)
+            for (int y = 0; y < h - 2; ++y) {   // above the border lines
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() > 200 && c.green() > 200 && c.blue() > 200) {
+                    ++whitePx;
+                    if (topMost < 0)
+                        topMost = y;
+                }
+            }
+        QVERIFY2(whitePx >= 12,
+                 qPrintable(QStringLiteral("no cursor-pos glyphs above the border (%1 px)")
+                                .arg(whitePx)));
+        QVERIFY2(topMost >= h - 14,
+                 qPrintable(QStringLiteral(
+                     "cursor-pos text floats mid-band (top row %1, expected >= %2)")
+                                .arg(topMost).arg(h - 14)));
+
+        // No backdrop box: the rows ABOVE the border lines in the pos area
+        // stay dominated by flat window blue (a box would replace it).
+        int blue = 0, total = 0;
+        for (int y = 0; y < h - 2; ++y)
+            for (int x = 70; x <= 134 && x < w; ++x) {
+                const QColor c = img.pixelColor(x, y);
+                ++total;
+                if (qAbs(c.red() - 0x00) <= 40 && qAbs(c.green() - 0x00) <= 40
+                    && qAbs(c.blue() - 0xAA) <= 40)
+                    ++blue;
+            }
+        QVERIFY2(total > 0 && blue * 2 > total,
+                 qPrintable(QStringLiteral("cursor-pos has a backdrop box: blue %1/%2")
+                                .arg(blue).arg(total)));
+    }
+
     // TV-revision spec 5h: the horizontal scrollbar spans from ~col 18 (x≥180)
     // to the right edge, full band height.
     void horizontal_scrollbar_spans_from_col_18_to_right() {
@@ -80,7 +132,12 @@ private slots:
         QVERIFY2(hb->geometry().right() >= band.width() - 6,
                  qPrintable(QStringLiteral("hbar right=%1, expected >=%2 (right corner)")
                                 .arg(hb->geometry().right()).arg(band.width() - 6)));
-        QCOMPARE(hb->geometry().height(), band.height());
+        // TV-revision2 spec 3: the h-scrollbar is ONE CELL tall (the border
+        // row), not the full band height.
+        const int cell = band.fontMetrics().height();
+        QVERIFY2(qAbs(hb->geometry().height() - cell) <= 2,
+                 qPrintable(QStringLiteral("hbar height=%1, one cell=%2")
+                                .arg(hb->geometry().height()).arg(cell)));
     }
 
     // TV-revision spec 9: row order — menu bar, window top border (tabs),

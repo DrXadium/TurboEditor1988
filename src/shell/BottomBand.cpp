@@ -75,7 +75,9 @@ void BottomBand::layoutHBar()
     const int left = 180;                          // ~col 18 @10px cell
     const int right = width() - 4;                 // stop just short of the right
                                                    // frame edge (cols right-4..right-1)
-    m_hbar->setGeometry(QRect(QPoint(left, 0), QPoint(right, height() - 1)));
+    // ONE CELL tall (spec 3), bottom-aligned onto the double-line border rows.
+    const int cellH = fontMetrics().height();
+    m_hbar->setGeometry(QRect(QPoint(left, height() - cellH), QPoint(right, height() - 1)));
 }
 
 void BottomBand::resizeEvent(QResizeEvent* ev)
@@ -110,8 +112,10 @@ void BottomBand::paintEvent(QPaintEvent*)
 
     // Cursor position "L:C" white, left-anchored around column 8 (x≈75).
     p.setPen(kWhite);
-    const QFontMetrics fm(p.font());
-    const int baseline = (height() + fm.ascent() - fm.descent()) / 2 - 1;
+    // Plain white text SITTING ON the double-line border rows: the baseline
+    // is the band bottom, so the digits interrupt the border like TV's 26:24
+    // (and the glyph top drops into the lower half of the band).
+    const int baseline = height() - 1;
     p.drawText(QPoint(kCursorColX, baseline), cursorPosText());
 
     // Horizontal scrollbar spans from ~col 18 to the right edge, full band height.

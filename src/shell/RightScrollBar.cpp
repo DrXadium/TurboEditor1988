@@ -55,17 +55,16 @@ void RightScrollBar::paintEvent(QPaintEvent*)
     // Base: window blue everywhere (dither underlayer; no black anywhere).
     p.fillRect(rect(), kBlue);
 
-    // Track between the end cells: teal-on-blue ▒ dither (4 px check steps).
+    // Track between the end cells: teal-on-blue ▒ fine stipple (1 px).
     QRect track(0, cellH, w, height() - 2 * cellH);
     p.save();
     p.setPen(Qt::NoPen);
-    const int step = 4;
-    for (int y = track.top(); y <= track.bottom(); y += step)
-        for (int x = track.left(); x <= track.right(); x += step) {
-            const int ox = ((y / step) % 2) ? step / 2 : 0;
-            p.setBrush(((x / step) + (y / step)) % 2 ? kTeal : kBlue);
-            p.drawRect(QRect(x + ox, y, step, step));
-        }
+    // ▒ = an EVEN 1-px teal-on-blue stipple (classic medium-shade glyph
+    // texture: fine dots). NOT a coarse 4-px checker, which spec 3 bans.
+    for (int y = track.top(); y <= track.bottom(); ++y)
+        for (int x = track.left(); x <= track.right(); ++x)
+            if (x & 1)
+                p.fillRect(QRect(x, y, 1, 1), kTeal);
     p.restore();
 
     // End cells: solid teal + blue glyph ink.

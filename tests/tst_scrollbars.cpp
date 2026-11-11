@@ -249,6 +249,122 @@ private slots:
         delete sb;
     }
 
+    // TV-revision2 spec 3: the bottom band's horizontal scrollbar is ONE
+    // CELL tall, teal ◄ / ► end cells, a single-cell teal ■ thumb near the
+    // left, a fine teal-on-blue ▒ texture (NOT the coarse 4-px checker), and
+    // contains ZERO green pixels.
+    void horizontal_scrollbar_is_one_cell_tall() {
+        BottomBand band;
+        band.resize(640, 26);
+        band.show();
+        QCoreApplication::processEvents();
+        QScrollBar* hb = band.horizontalBar();
+        QVERIFY2(hb, "bottom band horizontal bar missing");
+
+        // One cell tall, bottom-aligned onto the border rows.
+        const int cell = band.fontMetrics().height();
+        QVERIFY2(qAbs(hb->height() - cell) <= 2,
+                 qPrintable(QStringLiteral("hbar height=%1, one cell=%2")
+                                .arg(hb->height()).arg(cell)));
+        QVERIFY2(hb->mapTo(&band, QPoint(0, hb->height() - 1)).y() == band.height() - 1,
+                 qPrintable(QStringLiteral("hbar bottom=%1, band bottom rows expected")
+                                .arg(hb->mapTo(&band, QPoint(0, hb->height() - 1)).y())));
+
+        const QImage img = hb->grab().toImage();
+        QVERIFY(!img.isNull());
+        const int w = img.width(), h = img.height();
+        const auto isBlue = [](const QColor& c) {
+            return c.blue() > 150 && c.red() < 90 && c.green() < 90;
+        };
+        const auto isGreen = [](const QColor& c) {
+            return c.green() > 140 && c.red() < 90 && c.blue() < 90;
+        };
+        // Ends: teal cell + blue-ink ◄ / ►.
+        const int thick = h;   // square end cells at this height
+        int lTeal = 0, lInk = 0, rTeal = 0, rInk = 0, green = 0;
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (isGreen(c))
+                    ++green;
+                if (x < thick) {
+                    if (isTeal(c)) ++lTeal;
+                    if (isBlue(c)) ++lInk;
+                } else if (x >= w - thick) {
+                    if (isTeal(c)) ++rTeal;
+                    if (isBlue(c)) ++rInk;
+                }
+            }
+        QVERIFY2(lTeal > (thick * h) / 4,
+                 qPrintable(QStringLiteral("left ◄ cell lacks teal (%1)").arg(lTeal)));
+        QVERIFY2(lInk >= 3,
+                 qPrintable(QStringLiteral("left ◄ lacks blue ink (%1)").arg(lInk)));
+        QVERIFY2(rTeal > (thick * h) / 4,
+                 qPrintable(QStringLiteral("right ► cell lacks teal (%1)").arg(rTeal)));
+        QVERIFY2(rInk >= 3,
+                 qPrintable(QStringLiteral("right ► lacks blue ink (%1)").arg(rInk)));
+        QVERIFY2(green == 0,
+                 qPrintable(QStringLiteral("green pixels in h-scrollbar: %1 (spec bans it)")
+                                .arg(green)));
+
+        // Thumb: contiguous run of FULLY teal columns inside the track,
+        // single-cell long, anchored at the left of the track.
+        int runStart = -1, runLen = 0, bestStart = -1, bestLen = 0;
+        for (int x = thick; x < w - thick; ++x) {
+            bool full = true;
+            for (int y = 0; y < h && full; ++y)
+                if (!isTeal(img.pixelColor(x, y)))
+                    full = false;
+            if (full) {
+                if (runStart < 0)
+                    runStart = x;
+                ++runLen;
+                if (runLen > bestLen) {
+                    bestLen = runLen;
+                    bestStart = runStart;
+                }
+            } else {
+                runStart = -1;
+                runLen = 0;
+            }
+        }
+        QVERIFY2(bestStart >= 0, "no solid teal thumb column in the track");
+        QVERIFY2(bestStart < w / 4,
+                 qPrintable(QStringLiteral("thumb not near the left (x=%1)").arg(bestStart)));
+        QVERIFY2(bestLen >= 6 && bestLen <= 24,
+                 qPrintable(QStringLiteral("thumb is %1 px long - expected a single cell")
+                                .arg(bestLen)));
+
+        // Track texture: ▒ = 1-px teal/blue stipple (transitions present in
+        // every 5 consecutive px), NOT the coarse 4-px checker.
+        const int midY = h / 2;
+        int midTeal = 0, midBlue = 0;
+        for (int x = thick; x < w - thick; ++x) {
+            const QColor c = img.pixelColor(x, midY);
+            if (isTeal(c)) ++midTeal;
+            if (isBlue(c)) ++midBlue;
+        }
+        QVERIFY2(midTeal > 0 && midBlue > 0,
+                 qPrintable(QStringLiteral("track not teal-on-blue: teal=%1 blue=%2")
+                                .arg(midTeal).arg(midBlue)));
+        const auto texAt = [&](int x0) {
+            int trans = 0;
+            for (int i = 1; i < 5; ++i) {
+                const QColor a = img.pixelColor(x0 + i - 1, midY);
+                const QColor b = img.pixelColor(x0 + i, midY);
+                if ((isTeal(a) && isBlue(b)) || (isBlue(a) && isTeal(b)))
+                    ++trans;
+            }
+            return trans;
+        };
+        bool fineStipple = false;
+        for (int x = thick + 1; x < w - thick - 5 && !fineStipple; ++x)
+            if (texAt(x) >= 3)
+                fineStipple = true;
+        QVERIFY2(fineStipple,
+                 "track is a coarse checker - spec 3 wants an even 1-px ▒ stipple");
+    }
+
     // TV-revision2 spec 1: the window's RIGHT BORDER COLUMN is a 1-cell
     // vertical scrollbar flush to the right edge, spanning the frame
     // interior (row under the top-right corner .. row above the bottom band).

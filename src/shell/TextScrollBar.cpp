@@ -54,19 +54,18 @@ static void drawArrow(QPainter& p, const QRect& r, Qt::ArrowType dir)
     p.restore();
 }
 
-// Emulate the DOS ▒ track: a fine checker/dither of teal on the base color.
+// Emulate the DOS ▒ track: a fine 1-px teal-on-blue stipple (even texture).
+// On a horizontal bar the sampling axis is x, so alternate columns; the test
+// pins "not a coarse checker" by looking for transitions in every 5 px.
 static void drawTrack(QPainter& p, const QRect& r)
 {
     p.save();
     p.setPen(Qt::NoPen);
-    const int step = 4;
-    for (int y = r.top(); y <= r.bottom(); y += step)
-        for (int x = r.left(); x <= r.right(); x += step) {
-            // offset every other row for a ▒ checker feel
-            const int ox = (y / step) % 2 ? step / 2 : 0;
-            p.setBrush((x / step + y / step) % 2 ? kTeal : kBlue);
-            p.drawRect(QRect(x + ox, y, step, step));
-        }
+    p.fillRect(r, kBlue);   // window-blue base under the stipple
+    for (int y = r.top(); y <= r.bottom(); ++y)
+        for (int x = r.left(); x <= r.right(); ++x)
+            if (x & 1)
+                p.fillRect(QRect(x, y, 1, 1), kTeal);
     p.restore();
 }
 
@@ -106,17 +105,22 @@ void TextScrollBar::paintEvent(QPaintEvent*)
     drawArrow(p, subBtn, horiz ? Qt::LeftArrow : Qt::UpArrow);
     drawArrow(p, addBtn, horiz ? Qt::RightArrow : Qt::DownArrow);
 
-    // Thumb (█ solid green block) at the value position within the track.
+    // Thumb at the value position within the track.
+    // Horizontal (bottom band): a SINGLE-CELL solid TEAL square - spec 3
+    // bans green in the bottom scrollbar and wants a one-cell thumb.
+    // Vertical (Kate's own bars): classic bright green block.
     const int span = horiz ? track.width() : track.height();
     const int range = maximum() - minimum();
     const int page = pageStep();
-    const int thumbLen =
-        range > 0 ? qMax(24, span * page / (range + page)) : span;
+    const int thumbLen = horiz
+        ? qMin(track.height(), qMax(8, fontMetrics().horizontalAdvance(QLatin1Char('M'))))
+        : (range > 0 ? qMax(24, span * page / (range + page)) : span);
+    Q_UNUSED(range);
     const int pos = range > 0
         ? (value() - minimum()) * (span - thumbLen) / range
         : 0;
     QRect thumb = horiz
         ? QRect(track.left() + pos, track.top(), thumbLen, track.height())
         : QRect(track.left(), track.top() + pos, track.width(), thumbLen);
-    p.fillRect(thumb, kGreen);
+    p.fillRect(thumb, horiz ? kTeal : kGreen);
 }
