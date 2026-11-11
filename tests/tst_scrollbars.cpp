@@ -7,14 +7,27 @@
 #include <QImage>
 #include <QColor>
 #include <QScrollBar>
+#include <QMenuBar>
+#include <QMenu>
 #include "src/shell/TextScrollBar.h"
 #include "src/shell/ShellWindow.h"
+#include "src/editor/EditorTabManager.h"
+#include <ktexteditor/view.h>
+#include <ktexteditor/document.h>
+#include <QScrollBar>
 
 namespace {
 // Teal track (#1AAFAF) and green handle (#19A819) — the TV scrollbar palette.
 bool isTeal(const QColor& c)
 {
     return c.blue() > 140 && c.green() > 140 && c.red() < 120;
+}
+// Off-palette light teal (#4FCFCF) — banned by the TV-revision spec (only the
+// 8 named colors are allowed: blue/gray/yellow/white/teal/green/red/black).
+bool isOffPaletteTeal(const QColor& c)
+{
+    return qAbs(c.red() - 0x4F) <= 14 && qAbs(c.green() - 0xCF) <= 14 &&
+           qAbs(c.blue() - 0xCF) <= 14;
 }
 // Dark glyph pixel (arrow/body drawn in black over teal/green).
 bool isDark(const QColor& c)
@@ -101,6 +114,101 @@ private slots:
                  qPrintable(QStringLiteral(
                      "scrollbar track is not TV teal (#1AAFAF): %1 teal px").arg(teal)));
     }
+    // TV-revision spec 5: the scrollbar palette is TV-PURE — no off-palette
+    // #4FCFCF anywhere; track dithers teal over blue; thumb green; arrow-block
+    // bases teal with a black glyph.
+    void scrollbar_palette_is_tv_pure() {
+        TextScrollBar v(Qt::Vertical);
+        v.setRange(0, 100);
+        v.setValue(50);
+        v.resize(14, 200);
+        v.show();
+        QCoreApplication::processEvents();
+        const QImage img = v.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        const QColor kTeal(0x1A, 0xAF, 0xAF);
+        const QColor kGreen(0x19, 0xA8, 0x19);
+        const QColor kBlue(0x1A, 0x1A, 0xAA);
+        int banned = 0, teal = 0, green = 0, blue = 0;
+        auto near = [](const QColor& c, const QColor& t, int tol) {
+            return qAbs(c.red() - t.red()) <= tol && qAbs(c.green() - t.green()) <= tol &&
+                   qAbs(c.blue() - t.blue()) <= tol;
+        };
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (isOffPaletteTeal(c))
+                    ++banned;
+                if (near(c, kTeal, 24))
+                    ++teal;
+                if (near(c, kGreen, 24))
+                    ++green;
+                if (near(c, kBlue, 24))
+                    ++blue;
+            }
+        QVERIFY2(banned == 0,
+                 qPrintable(QStringLiteral("off-palette #4FCFCF present: %1 px (spec forbids it)")
+                                .arg(banned)));
+        // Track dithers teal over blue: both present.
+        QVERIFY2(teal > 50, qPrintable(QStringLiteral("track lacks teal dither: %1 teal px").arg(teal)));
+        QVERIFY2(blue > 20,
+                 qPrintable(QStringLiteral("track lacks blue dither base: %1 blue px").arg(blue)));
+        // Thumb is green.
+        QVERIFY2(green > 50, qPrintable(QStringLiteral("thumb not green: %1 green px").arg(green)));
+    }
+
+    // TV-revision spec 5: the right border always carries the VERTICAL
+    // scrollbar — with a short document (no overflow, no horizontal need) the
+    // vertical bar is present and visible. Probe-verified: the doc bar is the
+    // one under KTextEditor::ViewPrivate with a real range; Kate exposes no
+    // scrollbar-policy API on the public View (see .relay/vbar2.cpp).
+    void vertical_scrollbar_forced_visible() {
+        ShellWindow shell;   // the bar's isVisible() depends on the real shell window
+        shell.show();
+        EditorTabManager m;
+        m.newDocument();
+        auto* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("reibot\n"));
+        v->resize(400, 200);
+        v->show();
+        QCoreApplication::processEvents();
+        QCOMPARE(v->document()->lines(), 2);
+
+        int docVert = 0, docVertShown = 0;
+        for (QScrollBar* b : v->findChildren<QScrollBar*>()) {
+            if (b->orientation() != Qt::Vertical)
+                continue;
+            if (b->width() >= 40 && b->height() >= 100) {   // the document bar
+                ++docVert;
+                // isVisibleTo(view): shown AND not hidden, independent of whether
+                // an ancestor top-level window is currently on-screen.
+                if (b->isVisibleTo(v) && !b->isHidden())
+                    ++docVertShown;
+            }
+        }
+        QVERIFY2(docVert >= 1, "no document vertical scrollbar found in the view");
+        QVERIFY2(docVertShown == docVert,
+                 qPrintable(QStringLiteral("vertical scrollbar hidden on a short doc: %1/%2 shown")
+                                .arg(docVertShown).arg(docVert)));
+    }
+
+    // TV-revision spec (minimap off by default): the Show Minimap action starts
+    // unchecked and the toggle roundtrip still works.
+    void minimap_hidden_by_default() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QAction* mm = nullptr;
+        for (QAction* a : mb->actions())
+            if (a->menu())
+                for (QAction* sub : a->menu()->findChildren<QAction*>())
+                    if (sub->objectName() == QLatin1String("actionViewMinimap"))
+                        mm = sub;
+        QVERIFY2(mm, "actionViewMinimap not found");
+        QVERIFY2(!mm->isChecked(), "Show Minimap starts checked — spec wants it off by default");
+    }
+
     // App-wide wiring: a plain QScrollBar (as KTextEditor/QScrollArea create)
     // is converted to a TextScrollBar so the DOS glyphs appear everywhere.
     void plain_qscrollbar_is_converted_to_text_scrollbar() {

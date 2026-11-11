@@ -173,7 +173,7 @@ add_test(NAME tst_fkeys COMMAND tst_fkeys)
 
 # Task 4: Turbo Vision text-mode scrollbars (ASCII arrow glyphs + teal track).
 add_executable(tst_scrollbars tests/tst_scrollbars.cpp)
-target_link_libraries(tst_scrollbars PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_scrollbars PRIVATE crt-shell crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_scrollbars COMMAND tst_scrollbars)
 
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).

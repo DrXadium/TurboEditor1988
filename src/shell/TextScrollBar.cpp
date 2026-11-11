@@ -7,11 +7,12 @@
 
 namespace {
 // Turbo Vision palette (matches borland.qss): teal track, green thumb,
-// black glyph ink.
+// black glyph ink. TV-revision spec restricts to the 8 named palette colors,
+// so the dither uses only teal over the blue base (no off-palette light teal).
 const QColor kTeal(0x1A, 0xAF, 0xAF);
 const QColor kGreen(0x19, 0xA8, 0x19);
 const QColor kBlack(0, 0, 0);
-const QColor kLightTeal(0x4F, 0xCF, 0xCF);
+const QColor kBlue(0x1A, 0x1A, 0xAA);   // window blue — the dither base
 } // namespace
 
 TextScrollBar::TextScrollBar(Qt::Orientation o, QWidget* parent)
@@ -61,7 +62,7 @@ static void drawTrack(QPainter& p, const QRect& r)
         for (int x = r.left(); x <= r.right(); x += step) {
             // offset every other row for a ▒ checker feel
             const int ox = (y / step) % 2 ? step / 2 : 0;
-            p.setBrush((x / step + y / step) % 2 ? kTeal : kLightTeal);
+            p.setBrush((x / step + y / step) % 2 ? kTeal : kBlue);
             p.drawRect(QRect(x + ox, y, step, step));
         }
     p.restore();
@@ -116,10 +117,4 @@ void TextScrollBar::paintEvent(QPaintEvent*)
         ? QRect(track.left() + pos, track.top(), thumbLen, track.height())
         : QRect(track.left(), track.top() + pos, track.width(), thumbLen);
     p.fillRect(thumb, kGreen);
-    // Light highlight line on the thumb's leading edge (raised handle).
-    p.setPen(kLightTeal);
-    if (horiz)
-        p.drawLine(thumb.topLeft(), thumb.bottomLeft());
-    else
-        p.drawLine(thumb.topLeft(), thumb.topRight());
 }

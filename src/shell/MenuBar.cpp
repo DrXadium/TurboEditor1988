@@ -75,7 +75,7 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     QAction* minimap = added(view, QStringLiteral("Show &Minimap"),
                              QStringLiteral("actionViewMinimap"));
     minimap->setCheckable(true);
-    minimap->setChecked(true);
+    minimap->setChecked(false);   // TV-revision: minimap off by default
     QAction* foldBar = added(view, QStringLiteral("Show &Folding Bar"),
                              QStringLiteral("actionViewFoldBar"));
     foldBar->setCheckable(true);
