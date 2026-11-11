@@ -11,6 +11,11 @@
 #include <QAction>
 #include <QWidget>
 #include <QInputDialog>
+#include <QScrollBar>
+#include <QTimer>
+#include <QPointer>
+#include <QEvent>
+#include <QScrollBar>
 #include <QLineEdit>
 
 EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
@@ -25,6 +30,64 @@ EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
 // Task 12: Turbo Vision editor styling — TV window-blue field, yellow text.
 // KTextEditor paints its own background from its syntax scheme, so the widget
 // palette is not enough; set the view's background/foreground/selection keys.
+namespace {
+// TV-revision2 spec 1: Kate re-shows its document vertical scrollbar when it
+// realizes overflow or relayouts, so a one-shot hide() does not stick. This
+// filter re-hides vertical bars on the view's Show/Resize/LayoutRequest and
+// hides any vertical bar the moment Kate adds it. The hide itself is deferred
+// one event-loop turn (the ScrollBarInstaller lesson: mutating a widget while
+// its own Show event is in flight is what segfaulted).
+class VerticalScrollHider : public QObject
+{
+public:
+    explicit VerticalScrollHider(QObject* target)
+        : QObject(target)
+    {
+        target->installEventFilter(this);
+    }
+    bool eventFilter(QObject* watched, QEvent* ev) override
+    {
+        const auto t = ev->type();
+        if (t == QEvent::ChildAdded) {
+            if (auto* ce = static_cast<QChildEvent*>(ev))
+                if (auto* sb = qobject_cast<QScrollBar*>(ce->child()))
+                    if (sb->orientation() == Qt::Vertical) {
+                        sb->installEventFilter(this);
+                        rehide(sb);
+                    }
+        } else if (t == QEvent::Show || t == QEvent::Resize
+                   || t == QEvent::LayoutRequest) {
+            if (auto* bar = qobject_cast<QScrollBar*>(watched)) {
+                // The bar itself re-shows (its own Show event) - catch it.
+                if (bar->orientation() == Qt::Vertical)
+                    rehide(bar);
+            } else if (auto* w = qobject_cast<QWidget*>(watched)) {
+                // Watch EVERY vertical bar, including ones that were born
+                // before this filter attached (ChildAdded never fires for them).
+                for (auto* sb : w->findChildren<QScrollBar*>())
+                    if (sb->orientation() == Qt::Vertical) {
+                        sb->installEventFilter(this);
+                        rehide(sb);
+                    }
+            }
+        }
+        return QObject::eventFilter(watched, ev);
+    }
+
+private:
+    static void rehide(QScrollBar* bar)
+    {
+        if (!bar || bar->isHidden())
+            return;
+        QPointer<QScrollBar> guard(bar);
+        QTimer::singleShot(0, bar, [guard]() {
+            if (guard && !guard->isHidden())
+                guard->hide();
+        });
+    }
+};
+} // namespace
+
 void EditorTabManager::applyTvStyle(KTextEditor::View* view)
 {
     if (!view)
@@ -58,6 +121,16 @@ void EditorTabManager::applyTvStyle(KTextEditor::View* view)
         if (qstrcmp(cls, "KateViewBar") == 0 || qstrcmp(cls, "KateStatusBar") == 0)
             w->hide();
     }
+    // TV-revision2 spec 1: the WINDOW border carries the vertical scrollbar
+    // (ShellWindow's 1-cell RightScrollBar mirrors this hidden bar), so
+    // Kate's own document vertical must never show.
+    for (QScrollBar* sb : view->findChildren<QScrollBar*>())
+        if (sb->orientation() == Qt::Vertical) {
+            sb->hide();
+            sb->installEventFilter(this);   // watch pre-existing bars now;
+                                            // the hider re-installs (no-op)
+        }
+    new VerticalScrollHider(view);   // re-hide stub is idempotent
     applyTvTheme(view);
 }
 

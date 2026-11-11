@@ -5,6 +5,7 @@
 #include "MenuBar.h"
 #include "TabStrip.h"
 #include "Minimap.h"
+#include "RightScrollBar.h"
 #include "FKeyStatusBar.h"
 #include "BottomBand.h"
 #include <QApplication>
@@ -16,6 +17,7 @@
 #include <QLayout>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QTimer>
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -51,18 +53,15 @@ protected:
         // Left vertical double-line.
         p.drawLine(1, 0, 1, bot);
         p.drawLine(2, 0, 2, bot);
-        // Right vertical double-line.
-        p.drawLine(right - 2, 0, right - 2, bot);
-        p.drawLine(right - 3, 0, right - 3, bot);
+        // No right verticals: TV-revision2 spec 1 hands the right border
+        // column to the 1-cell RightScrollBar (teal ▲/▒/■/▼).
         // Bottom horizontal double-line (last two rows).
         p.drawLine(0, bot - 1, right, bot - 1);
         p.drawLine(0, bot, right, bot);
         // Corner connectors (join to the TabStrip title-line top edge).
         p.drawLine(1, 0, 2, 0);
-        p.drawLine(right - 3, 0, right - 2, 0);
-        // Solid bottom corner joints (verticals meet the bottom pair).
+        // Solid bottom corner joint (left vertical meets the bottom pair).
         p.drawLine(1, bot - 1, 2, bot);
-        p.drawLine(right - 3, bot - 1, right - 2, bot);
     }
 };
 } // namespace
@@ -99,15 +98,32 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     // covers the 3px frame border the host paints at its edges.
     auto* central = new EditorHost(this);
     auto* lay = new QVBoxLayout(central);
-    lay->setContentsMargins(3, 0, 3, 3);   // expose the frame border on L/R/bottom
+    // Right margin 0: the 1-cell RightScrollBar IS the right border column;
+    // bottom 0: the BottomBand owns the bottom border (content reaches it).
+    lay->setContentsMargins(3, 0, 0, 0);
     lay->setSpacing(0);
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);
-    auto* placeholder = new QLabel(QStringLiteral("Editor"), central);
+    // Body row: editor slot (stretch) + the window-border scrollbar column.
+    auto* body = new QWidget(central);
+    body->setObjectName(QStringLiteral("editorBody"));
+    auto* bodyLay = new QHBoxLayout(body);
+    bodyLay->setContentsMargins(0, 0, 0, 0);
+    bodyLay->setSpacing(0);
+    auto* slot = new QWidget(body);
+    slot->setObjectName(QStringLiteral("editorSlot"));
+    auto* slotLay = new QVBoxLayout(slot);
+    slotLay->setContentsMargins(0, 0, 0, 0);
+    slotLay->setSpacing(0);
+    auto* placeholder = new QLabel(QStringLiteral("Editor"), slot);
     placeholder->setAlignment(Qt::AlignCenter);
     placeholder->setObjectName("editorPlaceholder");
-    lay->addWidget(placeholder, 1);
-    m_editorLayout = lay;   // slot below TabStrip (setEditorWidget swaps here)
+    slotLay->addWidget(placeholder, 1);
+    m_rightBar = new RightScrollBar(body);
+    bodyLay->addWidget(slot, 1);
+    bodyLay->addWidget(m_rightBar, 0);
+    lay->addWidget(body, 1);
+    m_editorLayout = slotLay;   // slot below TabStrip (setEditorWidget swaps here)
     setCentralWidget(central);
 
     // Bottom band (cursor position + horizontal scrollbar) sits between the
@@ -137,7 +153,7 @@ void ShellWindow::setEditorWidget(QWidget* w)
         return;
     // Remove the current placeholder/editor row (everything below the TabStrip)
     // and replace it with an editor+minimap row. Index 0 is always the TabStrip.
-    while (m_editorLayout->count() > 1) {
+    while (m_editorLayout->count() > 0) {   // drain placeholder + stale rows alike
         QLayoutItem* old = m_editorLayout->takeAt(1);
         if (old) {
             if (old->widget() && old->widget() != w && !qobject_cast<Minimap*>(old->widget()))
@@ -159,6 +175,38 @@ void ShellWindow::setEditorWidget(QWidget* w)
     h->addWidget(mini, 0);
     m_minimap = mini;
     m_editorLayout->addWidget(row);
+
+    // TV-revision2 spec 1: Kate's own document vertical is HIDDEN (see
+    // EditorTabManager::applyTvStyle); the window-border RightScrollBar is
+    // now the visible control — bind both directions to the hidden bar.
+    // Geometry-based identification runs once now and once queued, because
+    // the view often has no real size until the layout has run.
+    auto wire = [this, wq = QPointer<QWidget>(w)]() {
+        QWidget* ww = wq.data();
+        if (!m_rightBar || !ww)
+            return;
+        QScrollBar* doc = nullptr;
+        for (QScrollBar* b : ww->findChildren<QScrollBar*>())
+            if (b->orientation() == Qt::Vertical) {
+                doc = b;
+                break;
+            }
+        if (!doc || doc == m_docV)
+            return;
+        if (m_docV) {
+            disconnect(m_docV, nullptr, m_rightBar, nullptr);
+            disconnect(m_rightBar, nullptr, m_docV, nullptr);
+        }
+        m_docV = doc;
+        m_rightBar->setRange(doc->minimum(), doc->maximum());
+        m_rightBar->setPageStep(doc->pageStep());
+        m_rightBar->setValue(doc->value());
+        connect(doc, &QScrollBar::rangeChanged, m_rightBar, &QScrollBar::setRange);
+        connect(doc, &QScrollBar::valueChanged, m_rightBar, &QScrollBar::setValue);
+        connect(m_rightBar, &QScrollBar::valueChanged, doc, &QScrollBar::setValue);
+    };
+    wire();
+    QTimer::singleShot(0, this, wire);
 }
 
 void ShellWindow::setCentralWidget(QWidget* w)

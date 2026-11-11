@@ -102,9 +102,10 @@ private slots:
         const int hostnameGray = countIn(rects[1], gray, 16);
         QVERIFY2(hostnameGray >= 20,
                  qPrintable(QStringLiteral("active tab plate not gray #AAAAAA: %1 px").arg(hostnameGray)));
-        const int hostnameWhite = countIn(rects[1], white, 24);
-        QVERIFY2(hostnameWhite >= 3,
-                 qPrintable(QStringLiteral("active tab text not white: %1 px").arg(hostnameWhite)));
+        // TV-revision2 spec 2: active tab = BLACK text on the gray plate.
+        const int hostnameBlack = countIn(rects[1], QColor(0, 0, 0), 24);
+        QVERIFY2(hostnameBlack >= 3,
+                 qPrintable(QStringLiteral("active tab text not black: %1 px").arg(hostnameBlack)));
     }
 
     // TV-revision spec 3: green [■] close box top-left and [↕] zoom box

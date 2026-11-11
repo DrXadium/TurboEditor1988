@@ -5,6 +5,8 @@
 #include <QtTest>
 #include <QImage>
 #include <QColor>
+#include <QMenuBar>
+#include <QStatusBar>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
 #include "src/shell/BottomBand.h"
@@ -45,10 +47,9 @@ private slots:
 
         // Close/zoom boxes are in TabStrip-local coords; map to the shell grab.
         const QPoint stripOrigin = ts->mapTo(&w, QPoint(0, 0));
-        auto sampleGreenLocal = [&](const QRect& box) {
-            const QPoint pts[] = { QPoint(2, 2), QPoint(box.width() - 4, 2),
-                                   QPoint(2, box.height() - 4) };
-            for (const QPoint& local : pts) {
+        auto sampleGreenLocal = [&](const QRect& box, const QPoint* pts, int n) {
+            for (int i = 0; i < n; ++i) {
+                const QPoint local = pts[i];
                 const QPoint shell = stripOrigin + box.topLeft() + local;
                 if (shell.x() < 0 || shell.y() < 0 ||
                     shell.x() >= img.width() || shell.y() >= img.height())
@@ -59,8 +60,16 @@ private slots:
             }
             return false;
         };
-        const bool closeGreen = sampleGreenLocal(ts->closeBoxRect());
-        const bool zoomGreen = sampleGreenLocal(ts->zoomBoxRect());
+        const QRect cb = ts->closeBoxRect(), zb = ts->zoomBoxRect();
+        const QPoint closePts[] = { QPoint(2, 2), QPoint(cb.width() - 4, 2),
+                                    QPoint(2, cb.height() - 4) };
+        // Zoom face is window blue with green ↕ strokes — sample the stem
+        // and the diagonal joints (spec 1: green glyphs, no black ink).
+        const QPoint zoomPts[] = { QPoint(zb.width() / 2, 4),
+                                   QPoint(zb.width() / 2, zb.height() - 5),
+                                   QPoint(zb.width() / 2 - 3, 4) };
+        const bool closeGreen = sampleGreenLocal(cb, closePts, 3);
+        const bool zoomGreen = sampleGreenLocal(zb, zoomPts, 3);
         QVERIFY2(closeGreen && zoomGreen,
                  qPrintable(QStringLiteral("green boxes missing (close=%1 zoom=%2)")
                                 .arg(closeGreen).arg(zoomGreen)));
@@ -114,7 +123,7 @@ private slots:
         }
     }
 
-    void editor_host_paints_left_right_frame_edges() {
+    void editor_host_paints_left_frame_edge() {
         ShellWindow w;
         w.resize(800, 600);
         const QImage img = w.grab().toImage();
@@ -125,12 +134,46 @@ private slots:
         bool leftWhite = false;
         for (int x = 0; x < 12 && x < img.width(); ++x)
             if (isFrameWhite(img.pixelColor(x, midY))) { leftWhite = true; break; }
-        bool rightWhite = false;
-        for (int x = img.width() - 1; x >= img.width() - 12 && x >= 0; --x)
-            if (isFrameWhite(img.pixelColor(x, midY))) { rightWhite = true; break; }
 
         QVERIFY2(leftWhite, "no WHITE left frame edge found");
-        QVERIFY2(rightWhite, "no WHITE right frame edge found");
+        // Right border: NO white verticals — spec 1 hands that column to the
+        // 1-cell vertical scrollbar (covered by tst_scrollbars).
+        for (int x = img.width() - 12; x < img.width(); ++x)
+            QVERIFY2(!isFrameWhite(img.pixelColor(x, midY)),
+                     qPrintable(QStringLiteral("WHITE right frame edge still painted at x=%1")
+                                    .arg(x)));
+    }
+
+    // TV-revision2 spec 1: no black anywhere inside the window — between the
+    // menu bar and the status line every pixel is painted (no voids/gutters).
+    void no_black_inside_window() {
+        ShellWindow w;
+        w.resize(800, 600);
+        w.show();
+        QCoreApplication::processEvents();
+        const QImage img = w.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        const int y0 = w.menuBar()->mapTo(&w, QPoint(0, 0)).y() + w.menuBar()->height();
+        const QPoint stl = w.statusBar()->mapTo(&w, QPoint(0, 0));
+        const int y1 = stl.y() - 1;
+        QVERIFY(y1 >= y0);
+        int black = 0;
+        for (int y = y0; y <= y1; ++y)
+            for (int x = 0; x < img.width(); ++x)
+                if (img.pixelColor(x, y) == QColor(0, 0, 0))
+                    ++black;
+        QString samples;
+        int shown = 0;
+        for (int y = y0; y <= y1 && shown < 8; ++y)
+            for (int x = 0; x < img.width() && shown < 8; ++x)
+                if (img.pixelColor(x, y) == QColor(0, 0, 0)) {
+                    samples += QStringLiteral(" (%1,%2)").arg(x).arg(y);
+                    ++shown;
+                }
+        QVERIFY2(black == 0,
+                 qPrintable(QStringLiteral("pure black inside window: %1 px (rows %2..%3), first:%4")
+                                .arg(black).arg(y0).arg(y1).arg(samples)));
     }
 };
 

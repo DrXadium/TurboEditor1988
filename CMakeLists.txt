@@ -46,6 +46,8 @@ add_library(crt-shell STATIC
   src/shell/FKeyStatusBar.h
   src/shell/TextScrollBar.cpp
   src/shell/TextScrollBar.h
+  src/shell/RightScrollBar.cpp
+  src/shell/RightScrollBar.h
   src/shell/BottomBand.cpp
   src/shell/BottomBand.h
   src/shell/ScrollBarInstaller.cpp

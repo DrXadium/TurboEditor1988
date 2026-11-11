@@ -11,6 +11,8 @@
 #include <QMenu>
 #include "src/shell/TextScrollBar.h"
 #include "src/shell/ShellWindow.h"
+#include "src/shell/TabStrip.h"
+#include "src/shell/BottomBand.h"
 #include "src/editor/EditorTabManager.h"
 #include <ktexteditor/view.h>
 #include <ktexteditor/document.h>
@@ -29,10 +31,11 @@ bool isOffPaletteTeal(const QColor& c)
     return qAbs(c.red() - 0x4F) <= 14 && qAbs(c.green() - 0xCF) <= 14 &&
            qAbs(c.blue() - 0xCF) <= 14;
 }
-// Dark glyph pixel (arrow/body drawn in black over teal/green).
-bool isDark(const QColor& c)
+// Glyph ink pixel (window-blue arrow/body over teal/green - spec 1 bans
+// pure-black pixels inside the window, so ink is drawn in #0000AA).
+bool isInk(const QColor& c)
 {
-    return c.red() < 60 && c.green() < 60 && c.blue() < 60;
+    return c.blue() > 110 && c.red() < 90 && c.green() < 90;
 }
 } // namespace
 
@@ -59,7 +62,7 @@ private slots:
             for (int x = 2; x < v.width() - 2; ++x) {
                 if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
                     continue;
-                if (isDark(img.pixelColor(x, y)))
+                if (isInk(img.pixelColor(x, y)))
                     ++darkInBottom;
             }
         QVERIFY2(darkInBottom >= 4,
@@ -85,7 +88,7 @@ private slots:
             for (int x = h.width() - btnW; x < h.width(); ++x) {
                 if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
                     continue;
-                if (isDark(img.pixelColor(x, y)))
+                if (isInk(img.pixelColor(x, y)))
                     ++darkInRight;
             }
         QVERIFY2(darkInRight >= 4,
@@ -163,7 +166,7 @@ private slots:
     // vertical bar is present and visible. Probe-verified: the doc bar is the
     // one under KTextEditor::ViewPrivate with a real range; Kate exposes no
     // scrollbar-policy API on the public View (see .relay/vbar2.cpp).
-    void vertical_scrollbar_forced_visible() {
+    void kate_doc_vertical_hidden_by_window_bar() {
         ShellWindow shell;   // the bar's isVisible() depends on the real shell window
         shell.show();
         EditorTabManager m;
@@ -173,7 +176,20 @@ private slots:
         v->document()->setText(QStringLiteral("reibot\n"));
         v->resize(400, 200);
         v->show();
-        QCoreApplication::processEvents();
+        // The hide is deliberately deferred one event-loop turn (mutating a
+        // widget mid-Show is the ScrollBarInstaller segfault lesson) and Kate
+        // may re-show the bar once more in between — let the
+        // show/hide/reshow chain settle (bounded).
+        const auto docVertShownCount = [&]() {
+            int shown = 0;
+            for (QScrollBar* b : v->findChildren<QScrollBar*>())
+                if (b->orientation() == Qt::Vertical && b->width() >= 40
+                    && b->height() >= 100 && b->isVisibleTo(v) && !b->isHidden())
+                    ++shown;
+            return shown;
+        };
+        for (int turn = 0; turn < 8 && docVertShownCount() > 0; ++turn)
+            QCoreApplication::processEvents();
         QCOMPARE(v->document()->lines(), 2);
 
         int docVert = 0, docVertShown = 0;
@@ -189,8 +205,10 @@ private slots:
             }
         }
         QVERIFY2(docVert >= 1, "no document vertical scrollbar found in the view");
-        QVERIFY2(docVertShown == docVert,
-                 qPrintable(QStringLiteral("vertical scrollbar hidden on a short doc: %1/%2 shown")
+        // TV-revision2 spec 1 hijacks the border: Kate's own document
+        // vertical is HIDDEN — the 1-cell window-border bar replaces it.
+        QVERIFY2(docVertShown == 0,
+                 qPrintable(QStringLiteral("Kate doc vertical still visible: %1/%2 shown")
                                 .arg(docVertShown).arg(docVert)));
     }
 
@@ -229,6 +247,125 @@ private slots:
         QVERIFY2(found || qobject_cast<TextScrollBar*>(sb),
                  "plain QScrollBar was not converted to TextScrollBar");
         delete sb;
+    }
+
+    // TV-revision2 spec 1: the window's RIGHT BORDER COLUMN is a 1-cell
+    // vertical scrollbar flush to the right edge, spanning the frame
+    // interior (row under the top-right corner .. row above the bottom band).
+    void vertical_scrollbar_is_one_cell_at_window_right_edge() {
+        ShellWindow shell;
+        shell.resize(900, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        auto* bar = shell.findChild<QScrollBar*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(bar, "window right-border scrollbar (objectName rightScrollBar) not found");
+        QCOMPARE(QString::fromLatin1(bar->metaObject()->className()),
+                 QStringLiteral("RightScrollBar"));
+        // One cell wide: the mono grid cell is ~12 px at the app's 16 px font.
+        QVERIFY2(bar->width() <= 12,
+                 qPrintable(QStringLiteral("right border bar is %1 px wide (> 1 cell)")
+                                .arg(bar->width())));
+        QVERIFY(bar->width() > 0);
+
+        const QPoint tl = bar->mapTo(&shell, QPoint(0, 0));
+        const int rightEdge = tl.x() + bar->width() - 1;
+        QVERIFY2(rightEdge == shell.width() - 1,
+                 qPrintable(QStringLiteral("bar right edge %1 != window width %2")
+                                .arg(rightEdge).arg(shell.width() - 1)));
+
+        // Under the title row (top-right corner) ... above the BottomBand.
+        TabStrip* strip = shell.tabStrip();
+        QVERIFY(strip);
+        const QPoint stl = strip->mapTo(&shell, QPoint(0, 0));
+        QVERIFY2(tl.y() == stl.y() + strip->height(),
+                 qPrintable(QStringLiteral("bar top %1 not directly below title row bottom %2")
+                                .arg(tl.y()).arg(stl.y() + strip->height())));
+        const QPoint btl = shell.bottomBand()->mapTo(&shell, QPoint(0, 0));
+        const int barBottom = bar->mapTo(&shell, QPoint(0, bar->height() - 1)).y();
+        QVERIFY2(barBottom == btl.y() - 1,
+                 qPrintable(QStringLiteral("bar bottom %1 does not end just above the band (%2)")
+                                .arg(barBottom).arg(btl.y() - 1)));
+    }
+
+    // TV-revision2 spec 1: the border bar draws teal ▲/▼ end cells, a
+    // teal-on-blue ▒ track, and a SINGLE-CELL solid teal ■ thumb near the top.
+    void vertical_scrollbar_arrow_blocks_and_thumb() {
+        ShellWindow shell;
+        shell.resize(900, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+        auto* bar = shell.findChild<QScrollBar*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(bar, "right-border scrollbar not found");
+
+        const QImage img = bar->grab().toImage();
+        QVERIFY(!img.isNull());
+        const int w = img.width(), h = img.height();
+        QVERIFY(w > 0 && h >= 6 * w);   // room for arrow cell + thumb + track
+        const auto isBlue = [](const QColor& c) {
+            return c.blue() > 150 && c.red() < 90 && c.green() < 90;
+        };
+        auto count = [&](int y0, int y1, bool (*pred)(const QColor&)) {
+            int n = 0;
+            for (int y = y0; y < y1; ++y)
+                for (int x = 0; x < w; ++x)
+                    if (pred(img.pixelColor(x, y)))
+                        ++n;
+            return n;
+        };
+        const int cellH = qMin(w + 6, h / 6);   // ~1 char tall end cells
+
+        // Top cell: teal ▲ — teal background, arrow ink drawn in WINDOW BLUE
+        // (spec 1: zero pure-black pixels anywhere inside the window, so the
+        // glyphs cannot use black ink).
+        const int topTeal = count(0, cellH, isTeal);
+        const int topInk = count(0, cellH, isBlue);
+        QVERIFY2(topTeal > (cellH * w) / 4,
+                 qPrintable(QStringLiteral("top cell lacks teal ▲ bg (%1 teal px)").arg(topTeal)));
+        QVERIFY2(topInk >= 3,
+                 qPrintable(QStringLiteral("top cell lacks ▲ ink (%1 blue px)").arg(topInk)));
+
+        // Bottom cell: teal ▼ same recipe.
+        const int botTeal = count(h - cellH, h, isTeal);
+        const int botInk = count(h - cellH, h, isBlue);
+        QVERIFY2(botTeal > (cellH * w) / 4,
+                 qPrintable(QStringLiteral("bottom cell lacks teal ▼ bg (%1 teal px)").arg(botTeal)));
+        QVERIFY2(botInk >= 3,
+                 qPrintable(QStringLiteral("bottom cell lacks ▼ ink (%1 blue px)").arg(botInk)));
+
+        // Track middle: ▒ = teal dithered over blue (both present).
+        const int midTeal = count(h / 2 - 1, h / 2 + 1, isTeal);
+        const int midBlue = count(h / 2 - 1, h / 2 + 1, isBlue);
+        QVERIFY2(midTeal > 0 && midBlue > 0,
+                 qPrintable(QStringLiteral("track is not teal-on-blue dither: teal=%1 blue=%2")
+                                .arg(midTeal).arg(midBlue)));
+
+        // Thumb: contiguous run of FULLY teal rows (single ■ cell) near the top.
+        int runStart = -1, runLen = 0, bestStart = -1, bestLen = 0;
+        for (int y = cellH; y < h - cellH; ++y) {
+            bool full = true;
+            for (int x = 0; x < w && full; ++x)
+                if (!isTeal(img.pixelColor(x, y)))
+                    full = false;
+            if (full) {
+                if (runStart < 0)
+                    runStart = y;
+                ++runLen;
+                if (runLen > bestLen) {
+                    bestLen = runLen;
+                    bestStart = runStart;
+                }
+            } else {
+                runStart = -1;
+                runLen = 0;
+            }
+        }
+        QVERIFY2(bestStart >= 0, "no solid teal thumb row in the track");
+        QVERIFY2(bestStart < h / 4,
+                 qPrintable(QStringLiteral("thumb not near the top (y=%1)").arg(bestStart)));
+        QVERIFY2(bestLen >= 8 && bestLen <= 30,
+                 qPrintable(QStringLiteral("thumb is %1 px tall — expected a single ~1-cell block")
+                                .arg(bestLen)));
     }
 };
 

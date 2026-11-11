@@ -2,6 +2,8 @@
 #pragma once
 #include <QMainWindow>
 #include <QVBoxLayout>
+#include <QPointer>
+#include <QScrollBar>
 class MenuBar;
 class TabStrip;
 class FKeyStatusBar;
@@ -37,4 +39,8 @@ private:
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     Minimap* m_minimap = nullptr;
     class BottomBand* m_bottomBand = nullptr;
+    // TV-revision2 spec 1: 1-cell right-border scrollbar + the (hidden) Kate
+    // document vertical it mirrors. QPointer: the view can die on tab close.
+    class RightScrollBar* m_rightBar = nullptr;
+    QPointer<QScrollBar> m_docV;
 };

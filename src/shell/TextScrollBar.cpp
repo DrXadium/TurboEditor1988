@@ -11,8 +11,10 @@ namespace {
 // so the dither uses only teal over the blue base (no off-palette light teal).
 const QColor kTeal(0x00, 0xAA, 0xAA);
 const QColor kGreen(0x00, 0xAA, 0x00);
-const QColor kBlack(0, 0, 0);
 const QColor kBlue(0x00, 0x00, 0xAA);   // window blue — the dither base
+// Arrow/glyph ink: window BLUE, never black — TV-revision2 spec 1 forbids
+// any pure-black pixel inside the window (bars live in window rows).
+const QColor kInk(0x00, 0x00, 0xAA);
 } // namespace
 
 TextScrollBar::TextScrollBar(Qt::Orientation o, QWidget* parent)
@@ -26,7 +28,7 @@ static void drawArrow(QPainter& p, const QRect& r, Qt::ArrowType dir)
 {
     p.save();
     p.setPen(Qt::NoPen);
-    p.setBrush(kBlack);
+    p.setBrush(kInk);
     QPolygon tri;
     const int cx = r.center().x(), cy = r.center().y();
     const int hw = r.width() / 2 - 1, hh = r.height() / 2 - 1;

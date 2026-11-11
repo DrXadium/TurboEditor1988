@@ -84,18 +84,20 @@ void TabStrip::paintEvent(QPaintEvent*)
     p.drawLine(width() - 2, 0, width() - 2, height() - 1);
     p.drawLine(width() - 3, 0, width() - 3, height() - 1);
 
-    // Close box [■] (green fill, black square) — top-left.
+    // Close box [■] — top-left: white brackets around a bright green cell
+    // (TV-revision2 spec 1: white brackets + green ■; no black ink).
     const QRect cb = closeBoxRect();
     p.fillRect(cb, kGreen);
-    p.setPen(kBlack);
+    p.setPen(kWhite);
     p.drawRect(cb);
-    p.fillRect(QRect(cb.center().x() - 3, cb.center().y() - 3, 7, 7), kBlack);
 
-    // Zoom box [↕] (green fill, black up/down arrows) — top-right.
+    // Zoom box [↕] — top-right: white brackets, window-blue face, GREEN ↕
+    // glyphs (spec: white brackets, green arrow).
     const QRect zb = zoomBoxRect();
-    p.fillRect(zb, kGreen);
-    p.setPen(kBlack);
+    p.fillRect(zb, kBgBlue);
+    p.setPen(kWhite);
     p.drawRect(zb);
+    p.setPen(kGreen);
     {
         const int cx = zb.center().x();
         const int top = zb.top() + 3;
@@ -118,9 +120,7 @@ void TabStrip::paintEvent(QPaintEvent*)
         if (active) {
             // Active tab: gray plate with WHITE text (spec 3).
             p.fillRect(r, kFrameGray);
-            p.setPen(kBlack);
-            p.drawRect(r);
-            p.setPen(kWhite);
+            p.setPen(kBlack);              // spec 2: black text ON the gray plate
             p.drawText(r, Qt::AlignCenter, m_titles.at(i));
         } else {
             // Inactive tab: transparent over blue, white label (spec 3).

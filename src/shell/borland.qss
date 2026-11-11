@@ -100,6 +100,9 @@ QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel {
     background: transparent;
     color: #000000;
 }
+/* Editor placeholder glyph text: yellow like editor text (spec 4). Also
+   never black — spec 1 bans pure black inside the window. */
+QLabel#editorPlaceholder { background: transparent; color: #FFFF55; }
 /* TV push buttons: green field, white/black label (raised bevel via style). */
 QPushButton {
     background-color: #00AA00;
