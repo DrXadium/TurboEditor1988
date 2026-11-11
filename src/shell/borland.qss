@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * CRT-Kate Turbo Vision chrome — DOS/Borland TV 2.0 palette.
- * window blue #1A1AAA, gray bars #AAAAAA (black text, red hotkeys),
- * yellow #FFFF55, teal #1AAFAF, green #19A819, red hotkey #C41E1E.
+ * window blue #0000AA, gray bars #AAAAAA (black text, red hotkeys),
+ * yellow #FFFF55, teal #00AAAA, green #00AA00, red hotkey #AA0000.
  * No bezel (CRT effects apply over all).
  */
 QWidget {
-    background-color: #1A1AAA;          /* TV window blue desktop */
+    background-color: #0000AA;          /* TV window blue desktop */
     color: #FFFF55;
     font-family: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
     font-size: 16px;
@@ -44,48 +44,48 @@ QStatusBar {
 }
 /* Editor / central placeholder = TV window-blue field. */
 QPlainTextEdit, QTextEdit, QWidget#editorHost {
-    background-color: #1A1AAA;
+    background-color: #0000AA;
     color: #FFFF55;
     border: 1px solid #AAAAAA;
 }
 /* TV teal scrollbars: track + arrow/thumb blocks. */
 QScrollBar:vertical {
-    background: #1AAFAF;
+    background: #00AAAA;
     width: 14px;
     margin: 0;
     border: none;
 }
 QScrollBar::handle:vertical {
-    background: #19A819;
+    background: #00AA00;
     min-height: 24px;
     border: 1px solid #000000;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    background: #1AAFAF;
+    background: #00AAAA;
     height: 14px;
     border: 1px solid #000000;
 }
 QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
-    background: #19A819;
+    background: #00AA00;
 }
 QScrollBar:horizontal {
-    background: #1AAFAF;
+    background: #00AAAA;
     height: 14px;
     margin: 0;
     border: none;
 }
 QScrollBar::handle:horizontal {
-    background: #19A819;
+    background: #00AA00;
     min-width: 24px;
     border: 1px solid #000000;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-    background: #1AAFAF;
+    background: #00AAAA;
     width: 14px;
     border: 1px solid #000000;
 }
 QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
-    background: #19A819;
+    background: #00AA00;
 }
 /* Turbo Vision modal dialogs (Settings/About/recovery): gray panel, white
  * double-line frame (approximated as a 2px white border), black text.
@@ -102,7 +102,7 @@ QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel {
 }
 /* TV push buttons: green field, white/black label (raised bevel via style). */
 QPushButton {
-    background-color: #19A819;
+    background-color: #00AA00;
     color: #FFFFFF;
     border: 1px solid #000000;
     padding: 3px 14px;
@@ -116,5 +116,5 @@ QLineEdit, QSpinBox, QComboBox {
     color: #FFFFFF;
     border: 1px solid #000000;
     selection-background-color: #FFFF55;
-    selection-color: #1A1AAA;
+    selection-color: #0000AA;
 }

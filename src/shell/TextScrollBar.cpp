@@ -9,10 +9,10 @@ namespace {
 // Turbo Vision palette (matches borland.qss): teal track, green thumb,
 // black glyph ink. TV-revision spec restricts to the 8 named palette colors,
 // so the dither uses only teal over the blue base (no off-palette light teal).
-const QColor kTeal(0x1A, 0xAF, 0xAF);
-const QColor kGreen(0x19, 0xA8, 0x19);
+const QColor kTeal(0x00, 0xAA, 0xAA);
+const QColor kGreen(0x00, 0xAA, 0x00);
 const QColor kBlack(0, 0, 0);
-const QColor kBlue(0x1A, 0x1A, 0xAA);   // window blue — the dither base
+const QColor kBlue(0x00, 0x00, 0xAA);   // window blue — the dither base
 } // namespace
 
 TextScrollBar::TextScrollBar(Qt::Orientation o, QWidget* parent)

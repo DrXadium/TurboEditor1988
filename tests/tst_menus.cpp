@@ -146,7 +146,7 @@ private slots:
     }
 
     // Task 12 (Turbo Vision spec): menu bar = light-gray #AAAAAA bg, BLACK
-    // label text; window blue = #1A1AAA; hotkey = red #C41E1E (a QAction's
+    // label text; window blue = #0000AA; hotkey = red #AA0000 (a QAction's
     // highlighted role doubles as the hotkey letter in this theme).
     // Task 3: canonical Turbo Vision placement — the first top-level title
     // starts at ~column 2 (2 cell widths from the left) and consecutive titles
@@ -221,7 +221,7 @@ private slots:
     }
 
     // TV-revision spec 2: FIRST letter of every title (F, E, S, V, S, S, H)
-    // is hotkey red #C41E1E; the rest of the label stays black.
+    // is hotkey red #AA0000; the rest of the label stays black.
     void menu_first_letter_of_each_item_is_red() {
         ShellWindow w;
         w.resize(900, 600);
@@ -330,14 +330,15 @@ private slots:
                                 .arg(txt.green(), 2, 16, QLatin1Char('0'))
                                 .arg(txt.blue(), 2, 16, QLatin1Char('0'))));
         const QColor hl = pal.color(QPalette::Active, QPalette::HighlightedText);
-        QVERIFY2(hl.red() > 0x9E && hl.green() < 0x50 && hl.blue() < 0x50,
-                 qPrintable(QStringLiteral("hotkey is not TV red #C41E1E: #%1%2%3")
+        QVERIFY2(hl.red() > 0x9E && hl.red() < 0xC0 &&
+                 hl.green() < 0x18 && hl.blue() < 0x18,
+                 qPrintable(QStringLiteral("hotkey is not TV red #AA0000: #%1%2%3")
                                 .arg(hl.red(), 2, 16, QLatin1Char('0'))
                                 .arg(hl.green(), 2, 16, QLatin1Char('0'))
                                 .arg(hl.blue(), 2, 16, QLatin1Char('0'))));
     }
 
-    // Task 12: window/desktop blue is TV #1A1AAA (not old navy #0000aa),
+    // Task 12: window/desktop blue is TV #0000AA (not old navy #0000aa),
     // verified on real painted pixels via ContentBridge frame.
     void window_surface_is_tv_blue() {
         ShellWindow w;
@@ -351,12 +352,12 @@ private slots:
         for (int y = 0; y < f.height(); ++y)
             for (int x = 0; x < f.width(); ++x) {
                 const QColor c = f.pixelColor(x, y);
-                if (qAbs(c.red() - 0x1A) <= 8 && qAbs(c.green() - 0x1A) <= 8 &&
+                if (qAbs(c.red() - 0x00) <= 8 && qAbs(c.green() - 0x00) <= 8 &&
                     qAbs(c.blue() - 0xAA) <= 10)
                     ++blue;
             }
         QVERIFY2(blue > 1000,
-                 qPrintable(QStringLiteral("TV-blue #1A1AAA px=%1, expected >1000").arg(blue)));
+                 qPrintable(QStringLiteral("TV-blue #0000AA px=%1, expected >1000").arg(blue)));
     }
 };
 

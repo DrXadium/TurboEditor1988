@@ -20,7 +20,7 @@
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
 const QColor kFrameWhite(0xFF, 0xFF, 0xFF);   // TV-revision spec 3: white double line
-const QColor kBgBlue(0x1A, 0x1A, 0xAA);
+const QColor kBgBlue(0x00, 0x00, 0xAA);
 
 // Central editor host: fills the TV window-blue desktop, then draws the
 // left/right/bottom double-line frame edges as part of its OWN paint (so a

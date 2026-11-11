@@ -5,7 +5,7 @@
 // 90x30 anchor grid:
 //   row 0      = light-gray menu bar (black text)
 //   row 29     = light-gray status line
-//   mid rows   = TV window-blue #1A1AAA editor field
+//   mid rows   = TV window-blue #0000AA editor field
 //   palette    = yellow text present
 // The window stays resizable (two sizes prove it); 90x30 is only the anchor.
 #include <QtTest>
@@ -90,9 +90,9 @@ private slots:
                                 .arg(statusBg.green(), 2, 16, QLatin1Char('0'))
                                 .arg(statusBg.blue(), 2, 16, QLatin1Char('0'))));
 
-        // Middle of the editor = TV window blue #1A1AAA.
+        // Middle of the editor = TV window blue #0000AA.
         const QColor mid = bandColor(scaled, 15);
-        QVERIFY2(qAbs(mid.red() - 0x1A) <= 26 && qAbs(mid.green() - 0x1A) <= 26 &&
+        QVERIFY2(qAbs(mid.red() - 0x00) <= 8 && qAbs(mid.green() - 0x00) <= 8 &&
                  qAbs(mid.blue() - 0xAA) <= 30,
                  qPrintable(QStringLiteral("row 15 is not TV blue: #%1%2%3")
                                 .arg(mid.red(), 2, 16, QLatin1Char('0'))
@@ -100,8 +100,8 @@ private slots:
                                 .arg(mid.blue(), 2, 16, QLatin1Char('0'))));
 
         // Full-res palette presence.
-        QVERIFY2(countColor(frame, QColor(0x1A, 0x1A, 0xAA), 6) > 5000,
-                 "TV window blue #1A1AAA not dominant in frame");
+        QVERIFY2(countColor(frame, QColor(0x00, 0x00, 0xAA), 6) > 5000,
+                 "TV window blue #0000AA not dominant in frame");
         QVERIFY2(countColor(frame, QColor(0xAA, 0xAA, 0xAA), 8) > 2000,
                  "gray bars #AAAAAA not present in frame");
         // TV-revision spec 4+7: yellow lives ONLY in the editor text area —
@@ -147,7 +147,7 @@ private slots:
                                 .arg(menuBg.red(), 2, 16, QLatin1Char('0'))
                                 .arg(menuBg.green(), 2, 16, QLatin1Char('0'))
                                 .arg(menuBg.blue(), 2, 16, QLatin1Char('0'))));
-        QVERIFY2(qAbs(mid.blue() - 0xAA) <= 30 && qAbs(mid.red() - 0x1A) <= 26,
+        QVERIFY2(qAbs(mid.blue() - 0xAA) <= 30 && qAbs(mid.red() - 0x00) <= 8,
                  qPrintable(QStringLiteral("resized row 15 not TV blue: #%1%2%3")
                                 .arg(mid.red(), 2, 16, QLatin1Char('0'))
                                 .arg(mid.green(), 2, 16, QLatin1Char('0'))

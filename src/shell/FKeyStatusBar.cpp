@@ -5,7 +5,7 @@
 #include <QRegularExpression>
 
 namespace {
-// Turbo Vision status line rich text: key names red (#C41E1E), words black.
+// Turbo Vision status line rich text: key names red (#AA0000), words black.
 // The status text is a fixed ASCII literal, so no HTML escaping is needed.
 QString tvRich(const QString& text)
 {
@@ -18,7 +18,7 @@ QString tvRich(const QString& text)
         const auto m = it.next();
         html += QStringLiteral("<span style=\"color:#000000;\">")
               + text.mid(last, m.capturedStart() - last) + QStringLiteral("</span>");
-        html += QStringLiteral("<span style=\"color:#C41E1E;\">")
+        html += QStringLiteral("<span style=\"color:#AA0000;\">")
               + m.captured() + QStringLiteral("</span>");
         last = m.capturedEnd();
     }

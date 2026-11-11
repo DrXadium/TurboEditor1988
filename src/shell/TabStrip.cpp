@@ -8,9 +8,9 @@
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);   // active-tab plate
 const QColor kFrameWhite(0xFF, 0xFF, 0xFF);  // TV-revision spec 3: white double line
-const QColor kBgBlue(0x1A, 0x1A, 0xAA);      // TV window blue desktop
+const QColor kBgBlue(0x00, 0x00, 0xAA);      // TV window blue desktop
 const QColor kBlack(0, 0, 0);
-const QColor kGreen(0x19, 0xA8, 0x19);       // close/zoom box fill
+const QColor kGreen(0x00, 0xAA, 0x00);       // close/zoom box fill
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // inactive tab label (spec 3)
 } // namespace
 

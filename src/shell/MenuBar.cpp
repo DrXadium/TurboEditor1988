@@ -5,18 +5,18 @@
 #include <QPainter>
 
 namespace {
-// Turbo Vision palette: window blue #1A1AAA desktop, gray #AAAAAA bars,
-// yellow #FFFF55 text, red #C41E1E hotkey — mirrors borland.qss so the
+// Turbo Vision palette: window blue #0000AA desktop, gray #AAAAAA bars,
+// yellow #FFFF55 text, red #AA0000 hotkey — mirrors borland.qss so the
 // widget's own palette agrees with the stylesheet visuals (tests assert
 // on the palette directly).
 void applyBorlandPalette(QWidget* w)
 {
     QPalette pal = w->palette();
-    const QColor windowBlue(0x1A, 0x1A, 0xAA);
+    const QColor windowBlue(0x00, 0x00, 0xAA);
     const QColor gray(0xAA, 0xAA, 0xAA);
     const QColor black(0, 0, 0);
     const QColor yellow(0xFF, 0xFF, 0x55);
-    const QColor red(0xC4, 0x1E, 0x1E);
+    const QColor red(0xAA, 0x00, 0x00);
     for (auto group : { QPalette::Active, QPalette::Inactive, QPalette::Disabled }) {
         pal.setColor(group, QPalette::Window, windowBlue);
         pal.setColor(group, QPalette::Button, gray);

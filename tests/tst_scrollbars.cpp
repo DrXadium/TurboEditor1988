@@ -17,7 +17,7 @@
 #include <QScrollBar>
 
 namespace {
-// Teal track (#1AAFAF) and green handle (#19A819) — the TV scrollbar palette.
+// Teal track (#00AAAA) and green handle (#00AA00) — the TV scrollbar palette.
 bool isTeal(const QColor& c)
 {
     return c.blue() > 140 && c.green() > 140 && c.red() < 120;
@@ -94,7 +94,7 @@ private slots:
                                 .arg(darkInRight)));
     }
 
-    // The scrollbar track is the TV teal (#1AAFAF), not the default gray.
+    // The scrollbar track is the TV teal (#00AAAA), not the default gray.
     void scrollbar_track_is_tv_teal() {
         TextScrollBar v(Qt::Vertical);
         v.setRange(0, 100);
@@ -112,7 +112,7 @@ private slots:
                     ++teal;
         QVERIFY2(teal > 20,
                  qPrintable(QStringLiteral(
-                     "scrollbar track is not TV teal (#1AAFAF): %1 teal px").arg(teal)));
+                     "scrollbar track is not TV teal (#00AAAA): %1 teal px").arg(teal)));
     }
     // TV-revision spec 5: the scrollbar palette is TV-PURE — no off-palette
     // #4FCFCF anywhere; track dithers teal over blue; thumb green; arrow-block
@@ -127,9 +127,9 @@ private slots:
         const QImage img = v.grab().toImage();
         QVERIFY(!img.isNull());
 
-        const QColor kTeal(0x1A, 0xAF, 0xAF);
-        const QColor kGreen(0x19, 0xA8, 0x19);
-        const QColor kBlue(0x1A, 0x1A, 0xAA);
+        const QColor kTeal(0x00, 0xAA, 0xAA);
+        const QColor kGreen(0x00, 0xAA, 0x00);
+        const QColor kBlue(0x00, 0x00, 0xAA);
         int banned = 0, teal = 0, green = 0, blue = 0;
         auto near = [](const QColor& c, const QColor& t, int tol) {
             return qAbs(c.red() - t.red()) <= tol && qAbs(c.green() - t.green()) <= tol &&

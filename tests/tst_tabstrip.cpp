@@ -10,7 +10,7 @@
 #include "src/shell/TabStrip.h"
 
 namespace {
-const QColor kGreen(0x19, 0xA8, 0x19);
+const QColor kGreen(0x00, 0xAA, 0x00);
 
 int countColor(const QImage& img, const QColor& t, int tol)
 {
@@ -88,7 +88,7 @@ private slots:
         };
         const QColor white(255, 255, 255);
         const QColor gray(0xAA, 0xAA, 0xAA);
-        const QColor blue(0x1A, 0x1A, 0xAA);
+        const QColor blue(0x00, 0x00, 0xAA);
 
         // Inactive tab "untitled" (index 0): white text, blue behind (no plate).
         const int untitledWhite = countIn(rects[0], white, 24);
@@ -108,14 +108,14 @@ private slots:
     }
 
     // TV-revision spec 3: green [■] close box top-left and [↕] zoom box
-    // top-right, re-pinned to #19A819.
+    // top-right, re-pinned to #00AA00.
     void close_zoom_boxes_are_tv_green() {
         TabStrip ts;
         ts.setTabs(QStringList() << "untitled", 0);
         ts.resize(600, 26);
         const QImage img = ts.grab().toImage();
         QVERIFY(!img.isNull());
-        const QColor kGreen(0x19, 0xA8, 0x19);
+        const QColor kGreen(0x00, 0xAA, 0x00);
         auto greenIn = [&](const QRect& box) {
             int n = 0;
             for (int y = box.top(); y <= box.bottom(); ++y)
@@ -133,9 +133,9 @@ private slots:
         const int closeG = greenIn(ts.closeBoxRect());
         const int zoomG = greenIn(ts.zoomBoxRect());
         QVERIFY2(closeG >= 10,
-                 qPrintable(QStringLiteral("close box green #19A819 px=%1, expected >=10").arg(closeG)));
+                 qPrintable(QStringLiteral("close box green #00AA00 px=%1, expected >=10").arg(closeG)));
         QVERIFY2(zoomG >= 6,
-                 qPrintable(QStringLiteral("zoom box green #19A819 px=%1, expected >=6").arg(zoomG)));
+                 qPrintable(QStringLiteral("zoom box green #00AA00 px=%1, expected >=6").arg(zoomG)));
     }
 
     void clicking_a_tab_emits_tabActivated() {

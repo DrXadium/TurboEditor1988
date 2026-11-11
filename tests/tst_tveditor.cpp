@@ -86,7 +86,7 @@ private slots:
         QVERIFY2(KTextEditor::Editor::instance(), "no KTextEditor");
     }
 
-    // Spec 1: editor area is ONE flat #1A1AAA — zero black anywhere (catches a
+    // Spec 1: editor area is ONE flat #0000AA — zero black anywhere (catches a
     // black gutter or black current-line band).
     void editor_field_is_flat_tv_blue()
     {
@@ -107,8 +107,8 @@ private slots:
                                 .arg(bs.fraction * 100, 0, 'f', 3)
                                 .arg(bs.detail)));
 
-        // Interior background must be TV window blue #1A1AAA.
-        const QColor blue(0x1A, 0x1A, 0xAA);
+        // Interior background must be TV window blue #0000AA.
+        const QColor blue(0x00, 0x00, 0xAA);
         const int bg = countColor(img, blue, 12);
         QVERIFY2(bg > (img.width() * img.height()) / 3,
                  qPrintable(QStringLiteral("only %1 px of window-blue (expected a large flat field)").arg(bg)));

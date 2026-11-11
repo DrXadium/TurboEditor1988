@@ -7,7 +7,7 @@
 namespace {
 const QColor kBevelLight(190, 190, 190);
 const QColor kBevelDark(70, 70, 70);
-const QColor kNavy(0x1A, 0x1A, 0xAA);   // TV window blue desktop
+const QColor kNavy(0x00, 0x00, 0xAA);   // TV window blue desktop
 }
 
 BorlandStyle::BorlandStyle(QStyle* base) : QProxyStyle(base) {}
@@ -61,7 +61,7 @@ void BorlandStyle::drawControl(ControlElement ce, const QStyleOption* opt,
             p->fillRect(o->rect, QColor(0, 0, 0));   // inverse plate (was QSS)
         const QColor base = selected ? QColor(0xAA, 0xAA, 0xAA) : QColor(0, 0, 0);
         const QColor hot = selected ? QColor(0xAA, 0xAA, 0xAA)
-                                    : QColor(0xC4, 0x1E, 0x1E);
+                                    : QColor(0xAA, 0x00, 0x00);
         const QFontMetrics fm(p->font());
         // Vertical centering: baseline = top + (h - (ascent+descent))/2 + ascent.
         const int baseline = o->rect.y()

@@ -47,7 +47,7 @@ SettingsDialog::SettingsDialog(CrtSettings* settings, QWidget* parent)
     if (QPushButton* pb = closeBtn->button(QDialogButtonBox::Close)) {
         pb->setObjectName(QStringLiteral("tvButton"));
         pb->setStyleSheet(QStringLiteral(
-            "QPushButton { background-color: #19A819; color: #FFFFFF; "
+            "QPushButton { background-color: #00AA00; color: #FFFFFF; "
             "border: 1px solid #000000; padding: 3px 18px; min-width: 60px; } "
             "QPushButton:hover { background-color: #1FBE1F; } "
             "QPushButton:pressed { background-color: #148A14; }"));

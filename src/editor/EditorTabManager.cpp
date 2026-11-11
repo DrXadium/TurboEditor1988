@@ -29,7 +29,7 @@ void EditorTabManager::applyTvStyle(KTextEditor::View* view)
 {
     if (!view)
         return;
-    const QColor blue(0x1A, 0x1A, 0xAA);
+    const QColor blue(0x00, 0x00, 0xAA);
     const QColor yellow(0xFF, 0xFF, 0x55);
     view->setAutoFillBackground(true);
     QPalette pal = view->palette();

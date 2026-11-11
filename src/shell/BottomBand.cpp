@@ -6,7 +6,7 @@
 #include <QResizeEvent>
 
 namespace {
-const QColor kBgBlue(0x1A, 0x1A, 0xAA);      // band sits on the window blue
+const QColor kBgBlue(0x00, 0x00, 0xAA);      // band sits on the window blue
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // cursor-position text (spec 6) + frame
 const int kBandHeight = 26;                  // one text row @16px + padding
 const int kCursorColX = 75;                  // spec: white text at cols 8-12 (x in [75,125])
