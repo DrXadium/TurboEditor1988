@@ -195,6 +195,23 @@ int main(int argc, char** argv)
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
         on(act("actionFileSaveAs"), [&tabs] { tabs.saveActiveAs(); });
 
+        // Edit: standard clipboard block. Shortcuts are bound on the QAction
+        // (ApplicationShortcut) so Ctrl+X/C/V work from the QML window too.
+        for (auto [name, fn] : { std::pair{ "actionEditCut", &EditorTabManager::cut },
+                                 std::pair{ "actionEditCopy", &EditorTabManager::copy },
+                                 std::pair{ "actionEditPaste", &EditorTabManager::paste } }) {
+            if (QAction* a = act(name)) {
+                on(a, [&tabs, fn] { (tabs.*fn)(); });
+                a->setShortcutContext(Qt::ApplicationShortcut);
+            }
+        }
+        if (QAction* a = act("actionEditCut"))
+            a->setShortcut(QKeySequence::Cut);
+        if (QAction* a = act("actionEditCopy"))
+            a->setShortcut(QKeySequence::Copy);
+        if (QAction* a = act("actionEditPaste"))
+            a->setShortcut(QKeySequence::Paste);
+
         // Edit: case/sort tools + on-the-fly spellcheck config toggle
         on(act("actionEditUpper"),
            [&tabs] { tabs.changeCase(EditorTabManager::Upper); });

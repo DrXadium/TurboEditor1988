@@ -126,6 +126,8 @@ private slots:
         const QStringList required = {
             QStringLiteral("actionFileNew"),   QStringLiteral("actionFileOpen"),
             QStringLiteral("actionFileSave"),  QStringLiteral("actionFileSaveAs"),
+            QStringLiteral("actionEditCut"),   QStringLiteral("actionEditCopy"),
+            QStringLiteral("actionEditPaste"),
             QStringLiteral("actionEditUpper"), QStringLiteral("actionEditLower"),
             QStringLiteral("actionEditSort"),  QStringLiteral("actionEditSpellcheck"),
             QStringLiteral("actionSearchFind"),

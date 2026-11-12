@@ -5,6 +5,7 @@
 #include <QtTest>
 #include <QApplication>
 #include <QImage>
+#include <QClipboard>
 #include <QHash>
 #include <algorithm>
 #include <ktexteditor/editor.h>
@@ -84,6 +85,53 @@ private slots:
         if (qgetenv("QT_QPA_PLATFORM").isEmpty())
             qputenv("QT_QPA_PLATFORM", "offscreen");
         QVERIFY2(KTextEditor::Editor::instance(), "no KTextEditor");
+    }
+
+    // Edit menu must offer standard Cut / Copy / Paste. This KTextEditor build
+    // ships no ClipboardInterface and no action hooks, so the functions are
+    // implemented over Document::text/removeText/insertText + QClipboard.
+    void cut_copy_paste_round_trip()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        KTextEditor::Document* doc = v->document();
+
+        doc->setText(QStringLiteral("alpha beta\nsecond\n"));
+        // Select "beta" on line 0 (columns 6..10).
+        const KTextEditor::Range sel(0, 6, 0, 10);
+        QVERIFY(v->setSelection(sel));
+
+        // COPY: selection survives, clipboard now holds "beta".
+        m.copy();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("beta"));
+        QCOMPARE(doc->text(sel), QStringLiteral("beta"));
+
+        // CUT: selection is removed, clipboard still holds "beta".
+        m.cut();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("beta"));
+        QCOMPARE(doc->text().left(6), QStringLiteral("alpha "));
+
+        // PASTE: the clipboard text lands at the cursor.
+        doc->setText(QStringLiteral("alpha second\n"));
+        v->setCursorPosition(KTextEditor::Cursor(0, 6));
+        m.paste();
+        QCOMPARE(doc->text().left(10), QStringLiteral("alpha beta"));
+    }
+
+    // Paste must work when the clipboard was filled by ANOTHER application -
+    // that is the user's actual path ("can't paste into the app to test").
+    void paste_accepts_external_clipboard_text()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QGuiApplication::clipboard()->setText(QStringLiteral("from elsewhere"));
+        v->document()->setText(QString());
+        v->setCursorPosition(KTextEditor::Cursor(0, 0));
+        m.paste();
+        QVERIFY2(v->document()->text().startsWith(QStringLiteral("from elsewhere")),
+                 qPrintable(v->document()->text()));
     }
 
     // Spec 1: editor area is ONE flat #0000AA — zero black anywhere (catches a

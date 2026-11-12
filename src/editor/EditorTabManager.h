@@ -58,6 +58,13 @@ public:
     void changeCase(CaseKind kind);
     void sortLines();
 
+    // Standard clipboard editing (Edit menu + Ctrl+X/C/V). This KTextEditor
+    // build ships no ClipboardInterface and no action hooks, so these are
+    // implemented over Document::text/removeText/insertText and QClipboard.
+    void cut();
+    void copy();
+    void paste();
+
     // File ops for the File menu (Task 10): documentSave/documentSaveAs on the
     // active document. NOTE: both can open a native file dialog (save-as, or
     // save of an untitled buffer) - never call them from automated tests.

@@ -56,6 +56,11 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(file, QStringLiteral("Save &As..."), QStringLiteral("actionFileSaveAs"));
 
     QMenu* edit = addMenu(QStringLiteral("Edit"));
+    // Standard clipboard block first, as in Kate (and Turbo Vision).
+    added(edit, QStringLiteral("&Cut\tCtrl+X"), QStringLiteral("actionEditCut"));
+    added(edit, QStringLiteral("C&opy\tCtrl+C"), QStringLiteral("actionEditCopy"));
+    added(edit, QStringLiteral("&Paste\tCtrl+V"), QStringLiteral("actionEditPaste"));
+    edit->addSeparator();
     added(edit, QStringLiteral("&UPPERCASE"), QStringLiteral("actionEditUpper"));
     added(edit, QStringLiteral("&lowercase"), QStringLiteral("actionEditLower"));
     added(edit, QStringLiteral("&Sort Lines"), QStringLiteral("actionEditSort"));

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <QGuiApplication>
+#include <QClipboard>
 #include "EditorTabManager.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
@@ -345,6 +347,60 @@ void EditorTabManager::changeCase(CaseKind kind)
     }
     }
     doc->replaceText(range, text);
+}
+
+void EditorTabManager::copy()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc)
+        return;
+    const QList<KTextEditor::Range> ranges = v->selectionRanges();
+    if (ranges.isEmpty())
+        return;                       // nothing selected: leave the clipboard
+    QStringList parts;
+    for (const KTextEditor::Range& r : ranges)
+        parts << doc->text(r);
+    QGuiApplication::clipboard()->setText(parts.join(QLatin1Char('\n')));
+}
+
+void EditorTabManager::cut()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc)
+        return;
+    const QList<KTextEditor::Range> ranges = v->selectionRanges();
+    if (ranges.isEmpty())
+        return;
+    copy();
+    // Remove bottom-up so earlier ranges keep valid coordinates.
+    QList<KTextEditor::Range> sorted = ranges;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const KTextEditor::Range& a, const KTextEditor::Range& b) {
+                  return a.start() > b.start();
+              });
+    for (const KTextEditor::Range& r : sorted)
+        doc->removeText(r);
+}
+
+void EditorTabManager::paste()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc)
+        return;
+    const QString text = QGuiApplication::clipboard()->text();
+    if (text.isEmpty())
+        return;
+    const KTextEditor::Range sel = v->selectionRange();
+    if (sel.isValid() && !sel.isEmpty()) {
+        // Paste over a selection replaces it (standard behaviour).
+        doc->replaceText(sel, text);
+        v->setCursorPosition(sel.start());
+    } else {
+        v->insertText(text);
+    }
 }
 
 void EditorTabManager::sortLines()
