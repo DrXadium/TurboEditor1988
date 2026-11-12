@@ -12,32 +12,49 @@ const QColor kHotRed(0xAA, 0x00, 0x00);
 BorlandMenu::BorlandMenu(QWidget* parent) : QMenu(parent)
 {
     setWindowFlags(windowFlags() | Qt::NoDropShadowWindowHint);
+    // Reference screenshot: the gray panel carries a SINGLE black border with
+    // one cell of padding between that border and the item text. The padding
+    // is the menu's content margin, so Qt sizes the popup to include it and
+    // every action geometry is already inset.
+    const QFontMetrics fm = fontMetrics();
+    const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
+    setContentsMargins(cell, cell, cell, cell);
 }
 
 void BorlandMenu::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    // Spec 6: solid gray panel, no border, flat fills only.
+    // Solid gray panel, flat fills only.
     p.fillRect(rect(), kMenuGray);
+    // Single black ASCII border around the panel (reference screenshot). The
+    // item text sits one cell inside it (see the content margins in the ctor).
+    p.setPen(QPen(kBlack, 1));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(rect().adjusted(0, 0, -1, -1));
 
     const QFontMetrics fm = fontMetrics();
     const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
+    // Item band spans the padded content area, i.e. just inside the border.
+    const int contentLeft = cell;
+    const int contentRight = width() - cell;
 
     for (QAction* a : actions()) {
         if (!a->isVisible())
             continue;
         const QRect r = actionGeometry(a);
 
-        // Spec 6: separator = one full-width single black line, edge to edge.
+        // Separator: one full-width single black line across the content area.
         if (a->isSeparator()) {
-            p.fillRect(QRect(0, r.center().y(), width(), 1), kBlack);
+            p.fillRect(QRect(contentLeft, r.center().y(),
+                             contentRight - contentLeft, 1), kBlack);
             continue;
         }
 
         const bool selected = (a == activeAction()) && a->isEnabled();
         // Spec 6: the highlighted row is a solid green bar spanning the FULL
         // width of the dropdown, exactly one cell tall.
-        p.fillRect(QRect(0, r.top(), width(), r.height()),
+        p.fillRect(QRect(contentLeft, r.top(),
+                         contentRight - contentLeft, r.height()),
                    selected ? kSelectGreen : kMenuGray);
 
         const int baseline = r.y() + (r.height() - fm.height()) / 2 + fm.ascent();
