@@ -447,6 +447,34 @@ private slots:
                                 .arg(underline)));
     }
 
+    // Clicking anywhere OUTSIDE an open dropdown must dismiss it. The app
+    // synthesizes mouse events (the shell is composited offscreen), so a press
+    // that misses the popup used to be routed straight to the editor and the
+    // menu stayed open - QMenu's own outside-click handling never saw it.
+    void click_outside_dropdown_dismisses_it() {
+        ShellWindow w;
+        w.resize(900, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QMenu* view = openViewMenu(w, b);
+        QVERIFY2(view, "View menu missing");
+        QVERIFY2(view->isVisible(), "menu should be open before the click");
+
+        // A point in the editor body, well clear of the dropdown.
+        const QPoint outside(120, 520);
+        QVERIFY2(!view->rect().translated(view->pos()).contains(outside),
+                 "test point must be outside the popup");
+
+        b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                            Qt::NoModifier, outside.x(), outside.y());
+        b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier, outside.x(), outside.y());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(!view->isVisible(),
+                 "dropdown stayed open after a click outside it");
+    }
+
     // Reference screenshot: dropdown is a solid light-gray panel whose single
     // border is BLACK and inset (never a white line-drawing border). The gray
     // fill must still dominate the panel.
@@ -519,7 +547,10 @@ private slots:
         };
         // p13: the green bar spans the full width of the area INSIDE the inset
         // black border (the gray margin outside the border is not highlighted).
-        const int edge = BorlandMenu::borderInset() + BorlandMenu::borderWidth();
+        // The green bar is inset from the stroke by highlightInset() on both
+        // sides, leaving panel gray either side of it.
+        const int edge = BorlandMenu::borderInset() + BorlandMenu::borderWidth()
+            + BorlandMenu::highlightInset();
         const int innerLeft = edge, innerRight = img.width() - edge - 1;
         QVERIFY2(isGreen(img.pixelColor(innerLeft, y)) && isGreen(img.pixelColor(innerRight, y)),
                  qPrintable(QStringLiteral("selected row not edge-to-edge green inside the border "
@@ -529,6 +560,16 @@ private slots:
         // And the margin OUTSIDE the border stays panel gray.
         QVERIFY2(!isGreen(img.pixelColor(0, y)),
                  "highlight must not run outside the inset border");
+        // A gray gap separates the green bar from the border stroke on both
+        // sides (reference screenshot: ~3 px either side).
+        const int strokeEdge = BorlandMenu::borderInset() + BorlandMenu::borderWidth();
+        const auto isGrayPx = [](const QColor& c) {
+            return qAbs(c.red() - 0xAA) < 20 && qAbs(c.green() - 0xAA) < 20
+                && qAbs(c.blue() - 0xAA) < 20;
+        };
+        QVERIFY2(isGrayPx(img.pixelColor(strokeEdge, y))
+                     && isGrayPx(img.pixelColor(img.width() - strokeEdge - 1, y)),
+                 "expected gray between the border stroke and the green bar");
         const int innerW = innerRight - innerLeft + 1;
         QVERIFY2(green * 10 >= innerW * 7,
                  qPrintable(QStringLiteral("selected row mostly not green: %1/%2")

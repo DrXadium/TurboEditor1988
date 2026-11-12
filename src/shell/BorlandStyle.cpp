@@ -32,6 +32,17 @@ static void drawRaisedBevel(QPainter* p, const QRect& r)
     p->restore();
 }
 
+QSize BorlandStyle::sizeFromContents(ContentsType type, const QStyleOption* opt,
+                                    const QSize& size, const QWidget* w) const
+{
+    QSize s = QProxyStyle::sizeFromContents(type, opt, size, w);
+    // Menu-bar titles carry symmetric padding so the selected plate's green
+    // reads evenly on both sides of the label.
+    if (type == CT_MenuBarItem)
+        s.rwidth() += 2 * menuBarItemPad();
+    return s;
+}
+
 int BorlandStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
                               const QWidget* widget) const
 {
@@ -74,9 +85,25 @@ void BorlandStyle::drawControl(ControlElement ce, const QStyleOption* opt,
         // Vertical centering: baseline = top + (h - (ascent+descent))/2 + ascent.
         const int baseline = o->rect.y()
             + (o->rect.height() - fm.height()) / 2 + fm.ascent();
-        int x = o->rect.x();
-        bool firstVisible = true;
+        // Centre the label in the item rect so the selected plate shows the
+        // SAME amount of green before the text as after it. A fixed left pad
+        // was not enough: QMenuBar's own spacing left ~4px on the left against
+        // ~12px on the right.
         const QString title = o->text;
+        QString plain;
+        for (int i = 0; i < title.size(); ++i) {
+            if (title.at(i) == QLatin1Char('&')) {
+                if (i + 1 < title.size() && title.at(i + 1) == QLatin1Char('&')) {
+                    plain += QLatin1Char('&');
+                    ++i;
+                }
+                continue;
+            }
+            plain += title.at(i);
+        }
+        const int textW = fm.horizontalAdvance(plain);
+        int x = o->rect.x() + qMax(0, (o->rect.width() - textW) / 2);
+        bool firstVisible = true;
         for (int i = 0; i < title.size(); ++i) {
             const QChar c = title.at(i);
             if (c == QLatin1Char('&')) {

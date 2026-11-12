@@ -7,6 +7,7 @@
 #include <QMenu>
 #include <QFontMetrics>
 #include <QMouseEvent>
+#include <QMenuBar>
 #include <QKeyEvent>
 #include <QApplication>
 
@@ -170,6 +171,34 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
         if (popup->rect().contains(inPopup)) {
             target = popup;
             break;
+        }
+    }
+    // A press that MISSES an open popup must still reach the popup: QMenu hides
+    // itself when it receives a press outside its rect. This app synthesizes
+    // mouse events rather than relying on the popup's mouse grab, so without
+    // this the dropdown stayed open when the user clicked the editor.
+    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress) {
+        for (QWidget* popup : std::as_const(m_popups)) {
+            if (!popup || !popup->isVisible())
+                continue;
+            const QPoint inPopup = popup->mapFromGlobal(shellGlobal);
+            if (popup->rect().contains(inPopup))
+                continue;               // inside: handled as a normal target
+            auto* ev = new QMouseEvent(QEvent::MouseButtonPress, QPointF(inPopup),
+                                       QPointF(shellGlobal),
+                                       static_cast<Qt::MouseButton>(button),
+                                       static_cast<Qt::MouseButtons>(buttons),
+                                       static_cast<Qt::KeyboardModifiers>(modifiers));
+            QApplication::sendEvent(popup, ev);
+            delete ev;
+            // Swallow the click, EXCEPT over the menu bar: there the press must
+            // also open the menu under the cursor (switching between menus).
+            QWidget* mb = m_shell->menuBar();
+            if (mb && mb->isVisible()
+                && mb->rect().contains(mb->mapFromGlobal(shellGlobal)))
+                break;
+            update();
+            return;
         }
     }
     if (!target)

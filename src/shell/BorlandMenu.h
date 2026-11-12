@@ -23,6 +23,8 @@ public:
     // the stroke is. Content geometry is derived from both.
     static int borderInset() { return 12; }
     static int borderWidth() { return 2; }
+    // Gray gap between the border stroke and the selected row's green bar.
+    static int highlightInset() { return 3; }
 
 protected:
     void paintEvent(QPaintEvent* ev) override;

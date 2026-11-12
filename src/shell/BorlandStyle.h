@@ -16,4 +16,11 @@ public:
                        QPainter* p, const QWidget* w) const override;
     int pixelMetric(PixelMetric metric, const QStyleOption* option,
                     const QWidget* widget) const override;
+    QSize sizeFromContents(ContentsType type, const QStyleOption* opt,
+                           const QSize& size, const QWidget* w) const override;
+    // Horizontal padding each side of a menu-bar title. The OPEN title's green
+    // plate must show the same amount of green before the text as after it, so
+    // the item has to be SIZED wider, not just drawn further in (drawing alone
+    // would clip the label against the plate edge).
+    static int menuBarItemPad() { return 4; }
 };

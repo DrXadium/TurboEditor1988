@@ -54,19 +54,22 @@ void BorlandMenu::paintEvent(QPaintEvent*)
 
         // Separator: one full-width single black line across the content area.
         if (a->isSeparator()) {
-            p.fillRect(QRect(contentLeft, r.center().y(),
-                             contentRight - contentLeft + 1, 1), kBlack);
+            // Divider matches the border stroke thickness (reference: the rule
+            // and the box read as the same weight).
+            p.fillRect(QRect(contentLeft, r.center().y() - bw / 2,
+                             contentRight - contentLeft + 1, bw), kBlack);
             continue;
         }
 
         const bool selected = (a == activeAction()) && a->isEnabled();
         // Spec 6: the highlighted row is a solid green bar spanning the FULL
         // width of the dropdown, exactly one cell tall.
-        // +1 on the width so the bar reaches the last pixel inside the border
-        // (fillRect's width is exclusive; the old exclusive end left a 1 px gray
-        // sliver against the border's right stroke).
-        p.fillRect(QRect(contentLeft, r.top(),
-                         contentRight - contentLeft + 1, r.height()),
+        // The highlight sits inside the border with a small gray gap on BOTH
+        // sides (reference screenshot: ~3 px of panel gray either side of the
+        // green bar), so it never butts up against the stroke.
+        const int hi = highlightInset();
+        p.fillRect(QRect(contentLeft + hi, r.top(),
+                         contentRight - contentLeft + 1 - 2 * hi, r.height()),
                    selected ? kSelectGreen : kMenuGray);
 
         const int baseline = r.y() + (r.height() - fm.height()) / 2 + fm.ascent();
