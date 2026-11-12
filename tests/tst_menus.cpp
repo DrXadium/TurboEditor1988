@@ -465,14 +465,34 @@ private slots:
         QVERIFY2(!view->rect().translated(view->pos()).contains(outside),
                  "test point must be outside the popup");
 
+        // Count presses that land anywhere OTHER than the popup (the popup's
+        // own dismissal press must not be mistaken for the editor's).
+        struct PressCounter : QObject {
+            QMenu* popup = nullptr;
+            bool reached = false;
+            bool eventFilter(QObject* o, QEvent* e) override {
+                if (e->type() == QEvent::MouseButtonPress && o != popup)
+                    reached = true;
+                return false;
+            }
+        } counter;
+        counter.popup = view;
+        qApp->installEventFilter(&counter);
+
         b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
                             Qt::NoModifier, outside.x(), outside.y());
+        qApp->removeEventFilter(&counter);
+        const bool reachedEditor = counter.reached;
         b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
                             Qt::NoModifier, outside.x(), outside.y());
         QCoreApplication::processEvents();
 
         QVERIFY2(!view->isVisible(),
                  "dropdown stayed open after a click outside it");
+        // The dismissing click must ALSO reach the widget underneath, so it
+        // places the caret instead of being swallowed.
+        QVERIFY2(reachedEditor,
+                 "dismissing click was swallowed - it must also reach the editor");
     }
 
     // Reference screenshot: dropdown is a solid light-gray panel whose single

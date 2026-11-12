@@ -191,14 +191,12 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
                                        static_cast<Qt::KeyboardModifiers>(modifiers));
             QApplication::sendEvent(popup, ev);
             delete ev;
-            // Swallow the click, EXCEPT over the menu bar: there the press must
-            // also open the menu under the cursor (switching between menus).
-            QWidget* mb = m_shell->menuBar();
-            if (mb && mb->isVisible()
-                && mb->rect().contains(mb->mapFromGlobal(shellGlobal)))
-                break;
             update();
-            return;
+            // Fall through: the SAME click also goes to whatever is under the
+            // cursor, so a click that dismisses the menu still places the caret
+            // in the editor (and clicking another title switches menus). The
+            // popup is hidden by now, so target resolution skips it.
+            break;
         }
     }
     if (!target)
