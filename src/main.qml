@@ -85,12 +85,15 @@ Window {
             onReleased: (mouse) => bridge.forwardMouseEvent(
                 3 /*QEvent::MouseButtonRelease*/, mouse.button, mouse.buttons,
                 mouse.modifiers, mouse.x, mouse.y)
-            onPositionChanged: (mouse) => {
-                if (mouse.buttons !== Qt.NoButton)
-                    bridge.forwardMouseEvent(
-                        5 /*QEvent::MouseMove*/, mouse.button, mouse.buttons,
-                        mouse.modifiers, mouse.x, mouse.y)
-            }
+            // Forward EVERY move, including button-less hover. Gating this on
+            // `mouse.buttons !== Qt.NoButton` (drag-only) meant QMenuBar and
+            // QMenu never saw a move with no button held, so neither the menu
+            // bar title nor the dropdown row highlighted on hover. The popups
+            // are shown with WA_DontShowOnScreen, so there is no real window
+            // grab delivering hover events either - this is the only path.
+            onPositionChanged: (mouse) => bridge.forwardMouseEvent(
+                5 /*QEvent::MouseMove*/, mouse.button, mouse.buttons,
+                mouse.modifiers, mouse.x, mouse.y)
             onWheel: (wheel) => { /* scroll: not forwarded in this pass */ }
         }
 
