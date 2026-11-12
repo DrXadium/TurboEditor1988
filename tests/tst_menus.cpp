@@ -519,8 +519,8 @@ private slots:
         };
         // p13: the green bar spans the full width of the area INSIDE the inset
         // black border (the gray margin outside the border is not highlighted).
-        const int inset = BorlandMenu::borderInset();
-        const int innerLeft = inset + 1, innerRight = img.width() - inset - 2;
+        const int edge = BorlandMenu::borderInset() + BorlandMenu::borderWidth();
+        const int innerLeft = edge, innerRight = img.width() - edge - 1;
         QVERIFY2(isGreen(img.pixelColor(innerLeft, y)) && isGreen(img.pixelColor(innerRight, y)),
                  qPrintable(QStringLiteral("selected row not edge-to-edge green inside the border "
                                            "(edges: %1/%2)")
@@ -568,7 +568,8 @@ private slots:
         }
         // p13: the rule runs edge to edge across the area INSIDE the inset
         // border (the border's own vertical strokes are separate ink).
-        const int sepInner = img.width() - 2 * (BorlandMenu::borderInset() + 1) - 2;
+        const int sepInner = img.width()
+            - 2 * (BorlandMenu::borderInset() + BorlandMenu::borderWidth()) - 2;
         QVERIFY2(bestBlack >= sepInner - 2,
                  qPrintable(QStringLiteral("separator not full width inside the border: %1/%2 px black")
                                 .arg(bestBlack).arg(sepInner)));
@@ -705,11 +706,18 @@ private slots:
                 borderX = x;
                 break;
             }
-        QVERIFY2(borderX >= 3,
-                 qPrintable(QStringLiteral("black border must be inset inside the panel "
+        QVERIFY2(borderX >= 8,
+                 qPrintable(QStringLiteral("black border must be inset well inside the panel "
                                            "(found at x=%1)").arg(borderX)));
-        // And there must still be gray between the border and the text.
-        QVERIFY2(isGray(img.pixelColor(borderX + 1, img.height() / 2)),
+        // The stroke is 2px: the pixel after it must still be black, and only
+        // then does the padding (gray) resume.
+        const int bw = BorlandMenu::borderWidth();
+        QVERIFY2(bw >= 2, "border stroke should be at least 2px");
+        for (int i = 1; i < bw; ++i)
+            QVERIFY2(isBlack(img.pixelColor(borderX + i, img.height() / 2)),
+                     qPrintable(QStringLiteral("border stroke thinner than %1px (x=%2)")
+                                    .arg(bw).arg(borderX + i)));
+        QVERIFY2(isGray(img.pixelColor(borderX + bw + 1, img.height() / 2)),
                  "expected padding between the border and the item text");
     }
 };

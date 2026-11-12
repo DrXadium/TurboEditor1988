@@ -19,8 +19,8 @@ BorlandMenu::BorlandMenu(QWidget* parent) : QMenu(parent)
     // include them and every actionGeometry is already inside the border.
     const QFontMetrics fm = fontMetrics();
     const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
-    const int inset = borderInset();
-    setContentsMargins(inset + 2, inset + 2, inset + 2, inset + 2);
+    const int m = borderInset() + borderWidth() + 2;   // gray margin + stroke + padding
+    setContentsMargins(m, m, m, m);
 }
 
 void BorlandMenu::paintEvent(QPaintEvent*)
@@ -28,19 +28,24 @@ void BorlandMenu::paintEvent(QPaintEvent*)
     QPainter p(this);
     // Solid gray panel, flat fills only.
     p.fillRect(rect(), kMenuGray);
-    // Single black ASCII border INSET inside the panel (reference screenshot:
-    // gray runs outside the border on every side).
+    // Black ASCII border INSET inside the panel (gray runs outside it on every
+    // side). Drawn as four filled strips rather than a stroked rect: a 2px pen
+    // straddles the path and lands on half pixels, which shows up as a ragged
+    // 1/2px line at this size.
     const int inset = borderInset();
-    const QRect borderRect = rect().adjusted(inset, inset, -inset - 1, -inset - 1);
-    p.setPen(QPen(kBlack, 1));
-    p.setBrush(Qt::NoBrush);
-    p.drawRect(borderRect);
+    const int bw = borderWidth();
+    const int right = width() - inset - bw;
+    const int bottom = height() - inset - bw;
+    p.fillRect(QRect(inset, inset, width() - 2 * inset, bw), kBlack);          // top
+    p.fillRect(QRect(inset, bottom, width() - 2 * inset, bw), kBlack);         // bottom
+    p.fillRect(QRect(inset, inset, bw, height() - 2 * inset), kBlack);         // left
+    p.fillRect(QRect(right, inset, bw, height() - 2 * inset), kBlack);         // right
 
     const QFontMetrics fm = fontMetrics();
     const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
-    // Item band spans the area just inside the border, edge to edge.
-    const int contentLeft = borderRect.left() + 1;
-    const int contentRight = borderRect.right();
+    // Item band spans the area just inside the stroke, edge to edge.
+    const int contentLeft = inset + bw;
+    const int contentRight = right - 1;
 
     for (QAction* a : actions()) {
         if (!a->isVisible())
@@ -50,7 +55,7 @@ void BorlandMenu::paintEvent(QPaintEvent*)
         // Separator: one full-width single black line across the content area.
         if (a->isSeparator()) {
             p.fillRect(QRect(contentLeft, r.center().y(),
-                             contentRight - contentLeft, 1), kBlack);
+                             contentRight - contentLeft + 1, 1), kBlack);
             continue;
         }
 

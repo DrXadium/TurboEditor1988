@@ -18,9 +18,11 @@ class BorlandMenu : public QMenu
 public:
     explicit BorlandMenu(QWidget* parent = nullptr);
 
-    // How far the single black border sits inside the panel edge (the gray
-    // panel shows outside it on all four sides, per the reference screenshot).
-    static int borderInset() { return 5; }
+    // How far the black border sits inside the panel edge (the gray panel shows
+    // outside it on all four sides, per the reference screenshot), and how thick
+    // the stroke is. Content geometry is derived from both.
+    static int borderInset() { return 12; }
+    static int borderWidth() { return 2; }
 
 protected:
     void paintEvent(QPaintEvent* ev) override;
