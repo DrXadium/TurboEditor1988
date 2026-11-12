@@ -27,6 +27,8 @@ public:
 
     // Fixed band height: one text row (spec: each element one cell high).
     int heightForWidth(int w) const override;   // unused; sizeHint carries it
+    // One text row: the band IS the window's bottom border row.
+    int bandHeight() const;
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 

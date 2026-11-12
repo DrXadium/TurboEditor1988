@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "TabStrip.h"
+#include "TvFrame.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
@@ -70,33 +71,25 @@ void TabStrip::paintEvent(QPaintEvent*)
     // Desktop blue background (the title line sits on the window blue).
     p.fillRect(rect(), kBgBlue);
 
-    // Top + bottom frame edges (horizontal double-line), broken by the title
-    // content: draw full-width, then the tabs/boxes/labels paint over it.
-    p.setPen(kFrameWhite);
-    p.drawLine(0, 1, width() - 1, 1);
-    p.drawLine(0, 2, width() - 1, 2);
-    p.drawLine(0, height() - 3, width() - 1, height() - 3);
-    p.drawLine(0, height() - 2, width() - 1, height() - 2);
-
-    // Left/right vertical frame stubs (corners connect to the edges above).
-    p.drawLine(1, 0, 1, height() - 1);
-    p.drawLine(2, 0, 2, height() - 1);
-    p.drawLine(width() - 2, 0, width() - 2, height() - 1);
-    p.drawLine(width() - 3, 0, width() - 3, height() - 1);
+    // The window's TOP border row. In Turbo Vision the tab titles sit IN the
+    // border row and interrupt it, so there is ONE double rule running through
+    // the row's centre — not a rule at the top plus another at the bottom
+    // (that drew a separate title bar and left the frame looking broken).
+    TvFrame::doubleH(p, rect(), kFrameWhite);
+    // The left ║ column is painted by EditorHost beneath this strip; the right
+    // border column belongs to RightScrollBar. No verticals here.
 
     // Close box [■] — top-left: white brackets around a bright green cell
     // (TV-revision2 spec 1: white brackets + green ■; no black ink).
     const QRect cb = closeBoxRect();
     p.fillRect(cb, kGreen);
-    p.setPen(kWhite);
-    p.drawRect(cb);
+    TvFrame::box(p, cb, kWhite);
 
     // Zoom box [↕] — top-right: white brackets, window-blue face, GREEN ↕
     // glyphs (spec: white brackets, green arrow).
     const QRect zb = zoomBoxRect();
     p.fillRect(zb, kBgBlue);
-    p.setPen(kWhite);
-    p.drawRect(zb);
+    TvFrame::box(p, zb, kWhite);
     p.setPen(kGreen);
     {
         const int cx = zb.center().x();

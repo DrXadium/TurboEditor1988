@@ -22,14 +22,14 @@ constexpr double kJitter = 0.2;
 constexpr double kHorizontalSync = 0.08;
 constexpr double kFlickering = 0.1;
 constexpr double kRgbShift = 0.0;
-constexpr double kRasterIntensity = 0.5;
+constexpr double kRasterIntensity = 0.22;
 const auto kFontColor = QColor(QStringLiteral("#ff8100"));
 // TV default editor font (spec: 16px DOS-cell proportions).
 const int kFontSize = 16;
 const auto kBackgroundColor = QColor(QStringLiteral("#000000"));
 
 // Non-zero values used when re-enabling an effect toggle.
-constexpr double kScanlineIntensityOn = 0.5;
+constexpr double kScanlineIntensityOn = 0.22;
 constexpr auto kScanlineRasterOn = CrtSettings::ScanlineRasterization;
 } // namespace
 

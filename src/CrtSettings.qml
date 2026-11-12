@@ -38,7 +38,9 @@ QtObject {
 
     // Rasterization intensity: 0 disables scanlines.
     property int rasterization: 1          // default scanline_rasterization
-    property real rasterizationIntensity: 0.5
+    // Scanline strength. Was 0.5, which on a 1-px period swung luminance by
+    // ~75% and read as thick heavy banding rather than a CRT raster.
+    property real rasterizationIntensity: 0.22
 
     // Colors (defaults match cool-retro-term amber-on-black)
     property color fontColor: "#ff8100"

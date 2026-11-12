@@ -79,7 +79,10 @@ void main() {
     // --- Scanlines (rasterization) ---
     if (rasterizationIntensity != 0.0) {
         float line = sin(uv.y * resolution.y * scanlineDensity * 3.14159);
-        float scan = 1.0 - rasterizationIntensity * 0.5 * (1.0 - line);
+        // 0.28 (was 0.5): at full intensity the old factor swung luminance by
+        // ~75% on a 1-px period, which reads as heavy thick banding instead of
+        // a fine CRT raster.
+        float scan = 1.0 - rasterizationIntensity * 0.28 * (1.0 - line);
         col *= scan;
     }
 

@@ -8,6 +8,7 @@
 #include "RightScrollBar.h"
 #include "FKeyStatusBar.h"
 #include "BottomBand.h"
+#include "TvFrame.h"
 #include <QApplication>
 #include <QFile>
 #include <QVBoxLayout>
@@ -36,6 +37,10 @@ public:
         setObjectName("editorHost");
         setAutoFillBackground(false);   // we paint the blue bg ourselves
     }
+
+    // One character cell: the frame edge is a whole cell thick (TV look).
+    int cellW() const { return qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M'))); }
+    int cellH() const { return qMax(8, fontMetrics().height()); }
 protected:
     void paintEvent(QPaintEvent*) override
     {
@@ -43,25 +48,13 @@ protected:
         p.setRenderHint(QPainter::Antialiasing, false);
         const QRect r = rect();
         p.fillRect(r, kBgBlue);
-        p.setPen(kFrameWhite);
-        // Double-line frame flush to the widget edges (r.bottom()/r.right() are
-        // the LAST valid rows/cols). Verticals run the full height; the bottom
-        // pair sits on the last two rows so no blue gap shows at the edge and
-        // all four corners join solidly.
-        const int bot = r.bottom();     // last row
-        const int right = r.right();    // last col
-        // Left vertical double-line.
-        p.drawLine(1, 0, 1, bot);
-        p.drawLine(2, 0, 2, bot);
+        // Left border column: a CELL-WIDE band carrying the ║ double rule.
         // No right verticals: TV-revision2 spec 1 hands the right border
         // column to the 1-cell RightScrollBar (teal ▲/▒/■/▼).
-        // Bottom horizontal double-line (last two rows).
-        p.drawLine(0, bot - 1, right, bot - 1);
-        p.drawLine(0, bot, right, bot);
-        // Corner connectors (join to the TabStrip title-line top edge).
-        p.drawLine(1, 0, 2, 0);
-        // Solid bottom corner joint (left vertical meets the bottom pair).
-        p.drawLine(1, bot - 1, 2, bot);
+        TvFrame::doubleV(p, QRect(0, 0, cellW(), r.height()), kFrameWhite);
+        // NOTE: the bottom border row is owned by BottomBand (it also carries
+        // the cursor position and the horizontal scrollbar). Drawing it here
+        // too produced two rules with a blue gap between them.
     }
 };
 } // namespace
@@ -100,7 +93,10 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     auto* lay = new QVBoxLayout(central);
     // Right margin 0: the 1-cell RightScrollBar IS the right border column;
     // bottom 0: the BottomBand owns the bottom border (content reaches it).
-    lay->setContentsMargins(3, 0, 0, 0);
+    // Reserve the frame: EditorHost paints the left double line at x=1..2 and
+    // the bottom pair on the last two rows. The margins must clear it, or the
+    // editor/tab children paint over the border and the frame disappears.
+    lay->setContentsMargins(central->cellW(), 0, 0, 0);
     lay->setSpacing(0);
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);
@@ -176,6 +172,10 @@ void ShellWindow::setEditorWidget(QWidget* w)
     auto* mini = new Minimap(row);
     mini->setObjectName(QStringLiteral("minimap"));
     h->addWidget(mini, 0);
+    // TV-revision2 has no minimap panel: it is a VS-Code leftover that painted
+    // a near-black strip inside the TV window. Hidden by default (the View >
+    // Show Minimap action is unchecked); the action toggles it back on.
+    mini->setVisible(false);
     m_minimap = mini;
     m_editorLayout->addWidget(row);
 

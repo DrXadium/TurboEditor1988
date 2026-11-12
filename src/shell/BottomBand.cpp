@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "BottomBand.h"
+#include "TvFrame.h"
 #include "TextScrollBar.h"
 #include <QPainter>
 #include <QFontMetrics>
 #include <QResizeEvent>
+#include <QtGlobal>
 
 namespace {
 const QColor kBgBlue(0x00, 0x00, 0xAA);      // band sits on the window blue
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // cursor-position text (spec 6) + frame
-const int kBandHeight = 26;                  // one text row @16px + padding
 const int kCursorColX = 75;                  // spec: white text at cols 8-12 (x in [75,125])
-}
+} // namespace
+
+// The band IS the window bottom border row: exactly one text row tall, so the
+// ═ rule sits directly above the status line with no blue gap.
+int BottomBand::bandHeight() const { return qMax(10, fontMetrics().height()); }
 
 BottomBand::BottomBand(QWidget* parent) : QWidget(parent)
 {
@@ -18,6 +23,10 @@ BottomBand::BottomBand(QWidget* parent) : QWidget(parent)
     setAutoFillBackground(false);   // paintEvent fills the blue ourselves
     m_hbar = new TextScrollBar(Qt::Horizontal, this);
     m_hbar->setObjectName(QStringLiteral("bottomBandHScroll"));
+    // Explicit show(): the shell window is never shown (it is rendered
+    // offscreen through QWidget::render), so a child that was never shown is
+    // skipped by render() and the scrollbar silently did not paint.
+    m_hbar->show();
 }
 
 void BottomBand::setCursorPos(int line, int col)
@@ -52,17 +61,17 @@ TextScrollBar* BottomBand::horizontalBar() const
 
 QSize BottomBand::sizeHint() const
 {
-    return QSize(400, kBandHeight);
+    return QSize(400, bandHeight());
 }
 
 QSize BottomBand::minimumSizeHint() const
 {
-    return QSize(120, kBandHeight);
+    return QSize(120, bandHeight());
 }
 
 int BottomBand::heightForWidth(int) const
 {
-    return kBandHeight;
+    return bandHeight();
 }
 
 // Position the horizontal scrollbar: from ~col 18 (x=180) to the right edge,
@@ -95,20 +104,10 @@ void BottomBand::paintEvent(QPaintEvent*)
     // The band owns the window's BOTTOM frame edge (spec 9): white double line
     // + left/right vertical stubs joining the EditorHost's verticals above, so
     // all four frame corners stay solid. Drawn first; cursor + hbar on top.
-    p.setPen(kWhite);
-    const int bot = height() - 1;
-    const int right = width() - 1;
-    // Bottom horizontal double-line (last two rows).
-    p.drawLine(0, bot - 1, right, bot - 1);
-    p.drawLine(0, bot, right, bot);
-    // Left/right vertical stubs (top of band, joining EditorHost verticals).
-    p.drawLine(1, 0, 1, bot);
-    p.drawLine(2, 0, 2, bot);
-    p.drawLine(right - 3, 0, right - 3, bot);
-    p.drawLine(right - 4, 0, right - 4, bot);
-    // Solid bottom corner joints.
-    p.drawLine(1, bot - 1, 2, bot);
-    p.drawLine(right - 4, bot - 1, right - 3, bot);
+    // The band owns the window's BOTTOM border row: one cell tall, carrying the
+    // ═ double rule through its centre (the cursor position text interrupts it,
+    // exactly like Turbo Vision's "26:24").
+    TvFrame::doubleH(p, rect(), kWhite);
 
     // Cursor position "L:C" white, left-anchored around column 8 (x≈75).
     p.setPen(kWhite);
