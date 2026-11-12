@@ -22,6 +22,8 @@ public:
     // Replaces the placeholder area BELOW the TabStrip with the real editor
     // widget (EditorTabManager's container). TabStrip stays intact above it.
     void setEditorWidget(QWidget* w);
+    // Focus target for forwarded keys: the editor if one is set, else the shell.
+    QWidget* keyFocusWidget() const;
     TabStrip* tabStrip() const;
     FKeyStatusBar* fkeyStatusBar() const;
     // Bottom border band (cursor position + horizontal scrollbar), spec 5h/6.
@@ -37,6 +39,7 @@ protected:
 private:
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
+    QWidget* m_editor = nullptr;             // current editor widget (focus default)
     Minimap* m_minimap = nullptr;
     class BottomBand* m_bottomBand = nullptr;
     // TV-revision2 spec 1: 1-cell right-border scrollbar + the (hidden) Kate

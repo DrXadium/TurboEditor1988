@@ -183,6 +183,31 @@ private slots:
         delete edit;
     }
 
+    // Typing with NO widget focused must still reach the editor. The app never
+    // called setFocus(), so focusWidget() was null and forwardKeyEvent posted to
+    // the shell, which ignores keys: typing did nothing. QWidget key events do
+    // NOT propagate down to a child, so a null focus target = dead keys.
+    void keys_reach_editor_when_nothing_holds_focus() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        auto* edit = new QLineEdit(&w);
+        edit->resize(200, 24);
+        edit->move(10, 60);
+        w.setEditorWidget(edit);
+        edit->show();
+        QCoreApplication::processEvents();
+
+        // Deliberately do NOT call setFocus(): this is the production state.
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
+                          QStringLiteral("a"));
+        QCoreApplication::processEvents();
+
+        QCOMPARE(edit->text(), QStringLiteral("a"));
+    }
+
     // Regression: clicking a menu on the LIVE app crashed with SIGSEGV.
     // QMenuBarPrivate::popupAction (qmenubar.cpp) derefs
     // window()->windowHandle()->screen(). The shell is never mapped, so

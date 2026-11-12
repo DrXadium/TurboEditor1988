@@ -194,6 +194,10 @@ void EditorTabManager::newDocument()
     m_docs.append(doc);
     m_views.append(view);
     m_container->addWidget(view);       // host in the stacked container
+    // The stacked container is what the shell is given as "the editor", so it
+    // must forward focus to the live view: without a proxy a click inside the
+    // view walks up to a container that cannot take focus, and keys die.
+    m_container->setFocusProxy(view);
     m_active = m_docs.size() - 1;
     m_container->setCurrentIndex(m_active);
     syncTabs();
@@ -210,6 +214,7 @@ void EditorTabManager::openFile(const QUrl& url)
     m_docs.append(doc);
     m_views.append(view);
     m_container->addWidget(view);
+    m_container->setFocusProxy(view);   // see newDocument(): focus path for keys
     m_active = m_docs.size() - 1;
     m_container->setCurrentIndex(m_active);
     syncTabs();

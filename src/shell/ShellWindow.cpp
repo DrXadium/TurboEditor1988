@@ -147,6 +147,15 @@ void ShellWindow::setEditorWidget(QWidget* w)
 {
     if (!m_editorLayout || !w)
         return;
+    // The editor is the shell's default focus target. Nothing in the app ever
+    // called setFocus(), so focusWidget() stayed null and forwarded keys fell
+    // through to the shell, which ignores them: typing did nothing.
+    m_editor = w;
+    // Targeting is not enough - an editor widget only consumes keys while it
+    // HOLDS focus (QLineEdit in particular drops a press it was merely posted).
+    // setFocus() follows the focus proxy, so the real view gets it, not the
+    // stacked container that wraps it.
+    w->setFocus(Qt::OtherFocusReason);
     // Remove the current placeholder/editor row (everything below the TabStrip)
     // and replace it with an editor+minimap row. Index 0 is always the TabStrip.
     while (m_editorLayout->count() > 0) {   // drain placeholder + stale rows alike
@@ -235,4 +244,16 @@ BottomBand* ShellWindow::bottomBand() const
 void ShellWindow::paintEvent(QPaintEvent* ev)
 {
     QMainWindow::paintEvent(ev);
+}
+
+QWidget* ShellWindow::keyFocusWidget() const
+{
+    // focusWidget() is authoritative when it resolves; otherwise fall back to
+    // the editor rather than the shell, because key events do NOT propagate
+    // down to a child and the shell would silently swallow them.
+    if (auto* f = focusWidget())
+        return f;
+    if (m_editor)
+        return m_editor;
+    return const_cast<ShellWindow*>(this);
 }

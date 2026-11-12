@@ -212,6 +212,18 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
                                static_cast<Qt::KeyboardModifiers>(modifiers));
     QApplication::sendEvent(target, ev);
     delete ev;
+    // A press also moves keyboard focus to the widget under the cursor - the
+    // synthesized click does not run Qt's automatic focus-on-click, so without
+    // this, clicking from the menu into the editor left keys going to whatever
+    // held focus before.
+    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress) {
+        for (QWidget* w2 = target; w2; w2 = w2->parentWidget()) {
+            if (w2->focusPolicy() & Qt::ClickFocus) {
+                w2->setFocus(Qt::MouseFocusReason);
+                break;
+            }
+        }
+    }
     update();   // re-render now so the click shows without waiting the 33ms tick
 }
 
@@ -220,12 +232,13 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
 {
     if (!m_shell)
         return;
-    // Keys go to the focused child (editor/line-edit), or the shell if nothing
-    // holds focus offscreen. (QWidget::keyPressEvent routes from the focused
-    // widget; posting at the shell would be swallowed by QMainWindow::event.)
-    QWidget* target = m_shell->focusWidget();
+    // Keys go to the focused child (editor/line-edit). QWidget::keyPressEvent
+    // routes from the focused widget, and posting at the shell would be
+    // swallowed by QMainWindow::event() - so an unfocused shell means dead keys.
+    // keyFocusWidget() falls back to the editor, which is the default target.
+    QWidget* target = m_shell->keyFocusWidget();
     if (!target)
-        target = m_shell;
+        return;
     auto* ev = new QKeyEvent(static_cast<QEvent::Type>(type),
                              static_cast<Qt::Key>(key),
                              static_cast<Qt::KeyboardModifiers>(modifiers),
