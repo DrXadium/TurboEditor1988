@@ -10,6 +10,7 @@
 #include <QMenuBar>
 #include <QLineEdit>
 #include "src/shell/ShellWindow.h"
+#include "src/shell/MenuBar.h"
 #include "src/shell/TabStrip.h"
 #include "src/bridge/ContentBridge.h"
 
@@ -206,6 +207,40 @@ private slots:
         QCoreApplication::processEvents();
 
         QCOMPARE(edit->text(), QStringLiteral("a"));
+    }
+
+    // Ctrl+V must trigger the Edit>Paste ACTION, not just reach the editor.
+    // The QML layer forwards synthesized key events straight to the focused
+    // widget, which bypasses QApplication's shortcut machinery: QWidget::event
+    // only ACCEPTS the key when a ShortcutOverride was delivered first. Without
+    // it the press is ignored and the shortcut never fires - paste from the menu
+    // worked while Ctrl+V did nothing.
+    // The shell is never mapped, so QApplication::activeWindow() is null and
+    // Qt's shortcut map never matches. The bridge therefore dispatches the
+    // matching QAction itself - without it Ctrl+V reaches the editor but never
+    // fires Edit>Paste (the menu item worked all along).
+    void ctrl_v_dispatches_the_paste_action() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        MenuBar* mb = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(mb, "menu bar missing");
+        QAction* paste = mb->findChild<QAction*>(QStringLiteral("actionEditPaste"));
+        QVERIFY2(paste, "Edit>Paste action missing");
+        // main.cpp sets the shortcut in the real app; set it here the same way
+        // so the test exercises the production key sequence.
+        paste->setShortcut(QKeySequence::Paste);
+        paste->setShortcutContext(Qt::ApplicationShortcut);
+
+        int fired = 0;
+        QObject::connect(paste, &QAction::triggered, &w,
+                         [&fired](bool) { ++fired; });
+
+        b.dispatchShortcut(Qt::Key_V, Qt::ControlModifier);
+
+        QCOMPARE(fired, 1);
     }
 
     // Regression: clicking a menu on the LIVE app crashed with SIGSEGV.

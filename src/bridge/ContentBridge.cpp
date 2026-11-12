@@ -8,6 +8,7 @@
 #include <QFontMetrics>
 #include <QMouseEvent>
 #include <QMenuBar>
+#include "../shell/MenuBar.h"
 #include <QKeyEvent>
 #include <QApplication>
 
@@ -239,13 +240,47 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
     QWidget* target = m_shell->keyFocusWidget();
     if (!target)
         return;
-    auto* ev = new QKeyEvent(static_cast<QEvent::Type>(type),
-                             static_cast<Qt::Key>(key),
-                             static_cast<Qt::KeyboardModifiers>(modifiers),
-                             text);
+    const auto evType = static_cast<QEvent::Type>(type);
+    auto* ev = new QKeyEvent(evType, static_cast<Qt::Key>(key),
+                             static_cast<Qt::KeyboardModifiers>(modifiers), text);
+
     QApplication::sendEvent(target, ev);
     delete ev;
+
+    // With no active window Qt's shortcut map never runs, so dispatch the
+    // matching menu action directly (Ctrl+X/C/V, F5...). The editor still gets
+    // the key for ordinary typing.
+    // With no active window Qt's shortcut map never runs, so dispatch the
+    // matching menu action directly (Ctrl+X/C/V, F5...). The editor still gets
+    // the key for ordinary typing; modifier chords carry an empty `text`, so
+    // this must not be gated on non-empty text.
+    if (evType == QEvent::KeyPress)
+        dispatchShortcut(key, modifiers);
     update();
+}
+
+// QShortcutMap only fires when the key's owning window is ACTIVE and a widget
+// holds focus. Neither is true here: the shell is never mapped, so during a
+// real keypress QApplication::activeWindow() is null and no QAction shortcut
+// ever matches. Fall back to finding the action ourselves.
+void ContentBridge::dispatchShortcut(int key, int modifiers)
+{
+    if (!m_shell)
+        return;
+    MenuBar* mb = qobject_cast<MenuBar*>(m_shell->menuBar());
+    if (!mb)
+        return;
+    const QKeySequence seq(static_cast<Qt::Key>(key)
+                           | static_cast<Qt::KeyboardModifiers>(modifiers));
+    for (QAction* a : mb->findChildren<QAction*>()) {
+        if (!a || a->shortcut().isEmpty() || !a->isEnabled())
+            continue;
+        if (a->shortcut() == seq) {
+            a->trigger();
+            update();
+            return;
+        }
+    }
 }
 
 void ContentBridge::setSourceItem(QQuickItem* item)

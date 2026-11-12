@@ -45,6 +45,10 @@ public:
                                        int modifiers, double x, double y);
     Q_INVOKABLE void forwardKeyEvent(int type, int key, int modifiers,
                                      const QString& text);
+    // Trigger the QAction whose shortcut matches this key combo. Needed because
+    // the unmapped shell has no active window, so Qt's own shortcut map is
+    // bypassed entirely.
+    void dispatchShortcut(int key, int modifiers);
 
     // Popup bridging (Task 9): an open QMenu/QWidget popup is captured into the
     // same composited frame so CRT effects cover it (instead of leaving it a

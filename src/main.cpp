@@ -211,6 +211,13 @@ int main(int argc, char** argv)
             a->setShortcut(QKeySequence::Copy);
         if (QAction* a = act("actionEditPaste"))
             a->setShortcut(QKeySequence::Paste);
+        if (qEnvironmentVariableIsSet("CRT_KATE_DIAG")) {
+            for (const char* n : { "actionEditCut", "actionEditCopy", "actionEditPaste" }) {
+                if (QAction* a = act(n))
+                    qWarning("DIAG shortcut %s=%s", n,
+                             qPrintable(a->shortcut().toString(QKeySequence::NativeText)));
+            }
+        }
 
         // Edit: case/sort tools + on-the-fly spellcheck config toggle
         on(act("actionEditUpper"),
@@ -486,6 +493,33 @@ int main(int argc, char** argv)
             const QImage img = shell.grab().toImage();
             img.save(QString::fromUtf8(raw));
             QCoreApplication::exit(0);
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_KEY=Ctrl+V types that shortcut
+    // into the real app through the QML input path and prints whether the
+    // associated QAction fired - the only way to verify QML key forwarding
+    // without a pointer tool on the host.
+    if (const QByteArray keyArg = qgetenv("CRT_KATE_KEY"); !keyArg.isEmpty()) {
+        QTimer::singleShot(1200, &app, [&app, keyArg, &shell, &bridge]() {
+            const QKeySequence seq = QKeySequence::fromString(QString::fromUtf8(keyArg));
+            const int key = seq[0].key();
+            const auto mods = static_cast<Qt::KeyboardModifiers>(
+                static_cast<int>(seq[0].keyboardModifiers()));
+            auto* mb = shell.findChild<MenuBar*>();
+            QAction* a = mb ? mb->findChild<QAction*>(QStringLiteral("actionEditPaste"))
+                            : nullptr;
+            auto* fired = new bool(false);
+            if (a)
+                QObject::connect(a, &QAction::triggered, &app,
+                                 [fired](bool) { *fired = true; });
+            if (key != Qt::Key_unknown)
+                bridge.forwardKeyEvent(QEvent::KeyPress, key, mods, QString());
+            QTimer::singleShot(300, &app, [&app, keyArg, fired]() {
+                qWarning("DIAG key=%s pasteFired=%d",
+                         qPrintable(QString::fromUtf8(keyArg)), int(*fired));
+                QCoreApplication::exit(0);
+            });
         });
     }
 
