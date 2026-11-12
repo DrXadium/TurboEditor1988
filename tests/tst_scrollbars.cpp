@@ -456,32 +456,48 @@ private slots:
                  qPrintable(QStringLiteral("track is not teal-on-blue dither: teal=%1 blue=%2")
                                 .arg(midTeal).arg(midBlue)));
 
-        // Thumb: contiguous run of FULLY teal rows (single ■ cell) near the top.
-        int runStart = -1, runLen = 0, bestStart = -1, bestLen = 0;
+        // Thumb: a BLOCK (U+2588) carrying a dark square (U+25A0) inside it.
+        // It can no longer be located by "fully teal rows" - the inner square
+        // breaks that run - so find the thumb by its ink square instead.
+        int inkBest = 0, inkBestY = -1, runStart = -1, runLen = 0;
         for (int y = cellH; y < h - cellH; ++y) {
-            bool full = true;
-            for (int x = 0; x < w && full; ++x)
-                if (!isTeal(img.pixelColor(x, y)))
-                    full = false;
-            if (full) {
-                if (runStart < 0)
-                    runStart = y;
+            const bool rowInk = count(y, y + 1, isBlue) >= 2;
+            if (rowInk) {
+                if (runStart < 0) runStart = y;
                 ++runLen;
-                if (runLen > bestLen) {
-                    bestLen = runLen;
-                    bestStart = runStart;
-                }
+                if (runLen > inkBest) { inkBest = runLen; inkBestY = runStart; }
             } else {
-                runStart = -1;
-                runLen = 0;
+                runStart = -1; runLen = 0;
             }
         }
-        QVERIFY2(bestStart >= 0, "no solid teal thumb row in the track");
-        QVERIFY2(bestStart < h / 4,
-                 qPrintable(QStringLiteral("thumb not near the top (y=%1)").arg(bestStart)));
-        QVERIFY2(bestLen >= 8 && bestLen <= 30,
-                 qPrintable(QStringLiteral("thumb is %1 px tall — expected a single ~1-cell block")
-                                .arg(bestLen)));
+        QVERIFY2(inkBest >= 4 && inkBestY >= cellH,
+                 qPrintable(QStringLiteral("thumb inner square not found (run=%1 at y=%2)")
+                                .arg(inkBest).arg(inkBestY)));
+        QVERIFY2(inkBestY < h / 4,
+                 qPrintable(QStringLiteral("thumb not near the top (y=%1)").arg(inkBestY)));
+
+        // The block around the square must still read teal, and the square
+        // itself must be dark blue ink (never black - spec 1 forbids black
+        // inside the window).
+        const int sqTop = inkBestY, sqBot = inkBestY + inkBest - 1;
+        int tealAround = 0, darkIn = 0, totalIn = 0;
+        for (int y = sqTop - 3; y <= sqBot + 3; ++y) {
+            if (y < 0 || y >= h) continue;
+            for (int x = 0; x < w; ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (isTeal(c)) { ++tealAround; continue; }
+                if (y >= sqTop && y <= sqBot) {
+                    ++totalIn;
+                    if (isBlue(c)) ++darkIn;
+                }
+            }
+        }
+        QVERIFY2(tealAround > 0, "thumb block body is not teal");
+        QVERIFY2(totalIn > 0 && darkIn * 2 >= totalIn,
+                 qPrintable(QStringLiteral("thumb square not dark ink: %1/%2")
+                                .arg(darkIn).arg(totalIn)));
+        QVERIFY2(!isOffPaletteTeal(img.pixelColor(w / 2, (sqTop + sqBot) / 2)),
+                 "thumb uses banned off-palette teal");
     }
 };
 

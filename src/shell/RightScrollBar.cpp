@@ -73,11 +73,21 @@ void RightScrollBar::paintEvent(QPaintEvent*)
     drawArrowBlue(p, topCell, Qt::UpArrow);
     drawArrowBlue(p, botCell, Qt::DownArrow);
 
-    // Thumb: ONE character cell of solid teal, value-proportional in the
-    // track, resting near the top at value 0.
+    // Thumb: ONE character cell of teal (the U+2588 BLOCK body), with the
+    // U+25A0 SQUARE drawn INSIDE it - the real IDE's "grabby" handle is a
+    // character with an inner square, not a plain solid slab.
     const int thumbLen = cellH;
     const int span = track.height() - thumbLen;
     const int range = maximum() - minimum();
     const int pos = range > 0 ? (value() - minimum()) * span / range : 0;
-    p.fillRect(QRect(track.left(), track.top() + pos, w, thumbLen), kTeal);
+    const QRect thumb(track.left(), track.top() + pos, w, thumbLen);
+    p.fillRect(thumb, kTeal);
+
+    // Inner square: centred, inset by a quarter of the cell on every side, in
+    // the same blue ink as the arrow glyphs.
+    const int inW = qMax(2, w / 2);
+    const int inH = qMax(2, thumbLen / 2);
+    const int inX = thumb.center().x() - inW / 2;
+    const int inY = thumb.center().y() - inH / 2;
+    p.fillRect(QRect(inX, inY, inW, inH), kBlue);
 }
