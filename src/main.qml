@@ -28,33 +28,38 @@ Window {
         onHeightChanged: bridge.resizeShell(width, height)
     }
 
-    // CRT effect chain over the whole window (edge-to-edge, no bezel).
-    // `settings` binds to the C++ CrtSettings (context property) so the
-    // settings dialog drives the shader live; falls back to the QML default.
-    // Shader: the qsb compiled into this binary (works from any install
-    // location - AppImage or dev tree). QML tests load EffectChain.qml
-    // directly and keep its source-tree default.
-    // TV-revision2: the chain covers the window directly. The sweep band
-    // travels top→bottom inside the SHADER (uv.y), so no rotation is applied
-    // to the composed image — rotating the pass (the previous SweepPatch
-    // design) rotated the whole UI 90° on screen.
-    EffectChain {
-        id: sweep
-        objectName: "crtEffectChain"
+    // CRT effect chain. OFF by default while the Turbo Vision chrome is being
+    // nailed down (scanlines + chroma shift make border/colour defects hard to
+    // read); set CRT_KATE_FX=1 to bring the full effect stack back. A Loader
+    // keeps the chain out of the scene entirely when disabled - the chain's
+    // ShaderEffectSource uses hideSource, so merely hiding the chain would
+    // still suppress the plain frame underneath.
+    Loader {
+        id: crtLoader
+        objectName: "crtEffectChainLoader"
         anchors.fill: parent
-        sourceItem: bridge.sourceItem
-        settings: crtSettings
-        fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
-        sweepTime: clockTime
-        // Phase clock (fixed 16 ms per tick), exposed for the sweepTime
-        // binding — the internal EffectChain `time` is scope-hidden here.
-        property real clockTime: 0
-        Timer {
-            interval: 16; repeat: true; running: true
-            // CRT_KATE_NOSWEEP=1 freezes the phase so verification captures are
-            // not caught mid-band (a vertical band lingers far longer per row
-            // than a horizontal one lingers per column).
-            onTriggered: if (!bridge.noSweep) parent.clockTime += 0.016
+        active: bridge.effectsEnabled
+        sourceComponent: crtChainComponent
+    }
+
+    Component {
+        id: crtChainComponent
+        EffectChain {
+            objectName: "crtEffectChain"
+            anchors.fill: parent
+            sourceItem: bridge.sourceItem
+            settings: crtSettings
+            fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
+            sweepTime: clockTime
+            // Phase clock (fixed 16 ms per tick), exposed for the sweepTime
+            // binding - the internal EffectChain `time` is scope-hidden here.
+            property real clockTime: 0
+            Timer {
+                interval: 16; repeat: true; running: true
+                // CRT_KATE_NOSWEEP=1 freezes the phase so verification captures
+                // are not caught mid-band.
+                onTriggered: if (!bridge.noSweep) parent.clockTime += 0.016
+            }
         }
     }
 

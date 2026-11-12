@@ -82,8 +82,10 @@ void BottomBand::layoutHBar()
     if (!m_hbar)
         return;
     const int left = 180;                          // ~col 18 @10px cell
-    const int right = width() - 4;                 // stop just short of the right
-                                                   // frame edge (cols right-4..right-1)
+    // Stop before the right corner CELL: the hbar used to run to width()-4 and
+    // painted over the ╝ corner, hiding the frame join.
+    const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
+    const int right = width() - cellW - 1;
     // ONE CELL tall (spec 3), bottom-aligned onto the double-line border rows.
     const int cellH = fontMetrics().height();
     m_hbar->setGeometry(QRect(QPoint(left, height() - cellH), QPoint(right, height() - 1)));
@@ -108,6 +110,14 @@ void BottomBand::paintEvent(QPaintEvent*)
     // ═ double rule through its centre (the cursor position text interrupts it,
     // exactly like Turbo Vision's "26:24").
     TvFrame::doubleH(p, rect(), kWhite);
+    // Left frame corner: continue EditorHost's ║ column down to the bottom rule
+    // so the ╚ corner actually joins (the band spans the full window width and
+    // is painted below the editor host, so nothing else closes that corner).
+    const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
+    TvFrame::doubleV(p, QRect(0, 0, cellW, height() - 1), kWhite);
+    // Right frame corner (╝): same join on the far right, where the vertical
+    // scrollbar column ends.
+    TvFrame::doubleV(p, QRect(width() - cellW, 0, cellW, height() - 1), kWhite);
 
     // Cursor position "L:C" white, left-anchored around column 8 (x≈75).
     p.setPen(kWhite);

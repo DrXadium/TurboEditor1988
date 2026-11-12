@@ -15,6 +15,7 @@
 #include "src/shell/ShellWindow.h"
 #include "src/shell/BorlandStyle.h"
 #include "src/shell/MenuBar.h"
+#include "src/shell/BorlandMenu.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
 
@@ -390,9 +391,10 @@ private slots:
         return menu->pos() - w->pos() + menu->actionGeometry(a).center();
     }
 
-    // Spec 5: the OPEN menu's title is drawn with a BLACK background and
-    // WHITE text; the hotkey letter stays red.
-    void selected_menu_title_is_black_plate_white_text_red_hotkey() {
+    // Reference screenshot: the OPEN menu's title is a GREEN plate with BLACK
+    // text; the hotkey letter stays red. (This supersedes rev2 spec 5's
+    // black-plate/white-text rule - see HANDOFF P11.)
+    void selected_menu_title_is_green_plate_black_text_red_hotkey() {
         ShellWindow w;
         BorlandStyle* st = w.borlandStyle();
         QVERIFY(st);
@@ -408,20 +410,20 @@ private slots:
         st->drawControl(QStyle::CE_MenuBarItem, &opt, &p, &w);
         p.end();
 
-        int black = 0, white = 0, red = 0, total = 0;
+        int green = 0, black = 0, red = 0, total = 0;
         for (int y = 0; y < img.height(); ++y)
             for (int x = 0; x < img.width(); ++x) {
                 const QColor c = img.pixelColor(x, y);
                 ++total;
+                if (c.green() > 0x88 && c.red() < 0x50 && c.blue() < 0x50) ++green;
                 if (c.red() < 40 && c.green() < 40 && c.blue() < 40) ++black;
-                if (c.red() > 235 && c.green() > 235 && c.blue() > 235) ++white;
                 if (c.red() > 120 && c.red() < 200 && c.green() < 40 && c.blue() < 40) ++red;
             }
-        QVERIFY2(black * 2 > total,
-                 qPrintable(QStringLiteral("selected title plate not black: %1/%2")
-                                .arg(black).arg(total)));
-        QVERIFY2(white >= 5,
-                 qPrintable(QStringLiteral("selected title text not white: %1 px").arg(white)));
+        QVERIFY2(green * 2 > total,
+                 qPrintable(QStringLiteral("selected title plate not green: %1/%2")
+                                .arg(green).arg(total)));
+        QVERIFY2(black >= 5,
+                 qPrintable(QStringLiteral("selected title text not black: %1 px").arg(black)));
         QVERIFY2(red >= 2,
                  qPrintable(QStringLiteral("selected title hotkey not red: %1 px").arg(red)));
 
@@ -432,7 +434,7 @@ private slots:
             int run = 0, best = 0;
             for (int x = 0; x < img.width(); ++x) {
                 const QColor c = img.pixelColor(x, y);
-                if (c.red() > 235 && c.green() > 235 && c.blue() > 235)
+                if (c.red() < 40 && c.green() < 40 && c.blue() < 40)
                     best = qMax(best, ++run);
                 else
                     run = 0;
@@ -445,8 +447,10 @@ private slots:
                                 .arg(underline)));
     }
 
-    // Spec 6: dropdown is a solid light-gray box with NO line-drawing border.
-    void dropdown_is_flat_gray_no_border() {
+    // Reference screenshot: dropdown is a solid light-gray panel whose single
+    // border is BLACK and inset (never a white line-drawing border). The gray
+    // fill must still dominate the panel.
+    void dropdown_is_flat_gray_with_black_border() {
         ShellWindow w;
         w.resize(900, 600);
         ContentBridge b;
@@ -513,10 +517,20 @@ private slots:
         const auto isGreen = [&](const QColor& c) {
             return c.green() > 140 && c.red() < 60 && c.blue() < 60;
         };
-        QVERIFY2(isGreen(img.pixelColor(0, y)) && isGreen(img.pixelColor(img.width() - 1, y)),
-                 qPrintable(QStringLiteral("selected row not edge-to-edge green (edges: %1/%2)")
-                                .arg(img.pixelColor(0, y).name(), img.pixelColor(img.width() - 1, y).name())));
-        QVERIFY2(green * 10 >= img.width() * 7,
+        // p13: the green bar spans the full width of the area INSIDE the inset
+        // black border (the gray margin outside the border is not highlighted).
+        const int inset = BorlandMenu::borderInset();
+        const int innerLeft = inset + 1, innerRight = img.width() - inset - 2;
+        QVERIFY2(isGreen(img.pixelColor(innerLeft, y)) && isGreen(img.pixelColor(innerRight, y)),
+                 qPrintable(QStringLiteral("selected row not edge-to-edge green inside the border "
+                                           "(edges: %1/%2)")
+                                .arg(img.pixelColor(innerLeft, y).name(),
+                                     img.pixelColor(innerRight, y).name())));
+        // And the margin OUTSIDE the border stays panel gray.
+        QVERIFY2(!isGreen(img.pixelColor(0, y)),
+                 "highlight must not run outside the inset border");
+        const int innerW = innerRight - innerLeft + 1;
+        QVERIFY2(green * 10 >= innerW * 7,
                  qPrintable(QStringLiteral("selected row mostly not green: %1/%2")
                                 .arg(green).arg(img.width())));
         QVERIFY2(black >= 2, "selected row text not black");
@@ -525,7 +539,8 @@ private slots:
         view->hide();
     }
 
-    // Spec 6: the separator is one full-width row of a single black line.
+    // The separator is one row of a single black rule spanning the panel
+    // inside the inset border (reference screenshot).
     void dropdown_separator_is_full_width_single_line() {
         ShellWindow w;
         w.resize(900, 600);
@@ -551,9 +566,12 @@ private slots:
             }
             bestBlack = qMax(bestBlack, black);
         }
-        QVERIFY2(bestBlack >= img.width() - 2,
-                 qPrintable(QStringLiteral("separator not full width: %1/%2 px black")
-                                .arg(bestBlack).arg(img.width())));
+        // p13: the rule runs edge to edge across the area INSIDE the inset
+        // border (the border's own vertical strokes are separate ink).
+        const int sepInner = img.width() - 2 * (BorlandMenu::borderInset() + 1) - 2;
+        QVERIFY2(bestBlack >= sepInner - 2,
+                 qPrintable(QStringLiteral("separator not full width inside the border: %1/%2 px black")
+                                .arg(bestBlack).arg(sepInner)));
         b.unregisterPopup(view);
         view->hide();
     }
@@ -655,6 +673,44 @@ private slots:
                  "drop shadow must start one row below the popup top");
         b.unregisterPopup(view);
         view->hide();
+    }
+    // Reference screenshot: the dropdown's single black border sits INSIDE the
+    // panel - gray shows outside it on every side - with a little padding
+    // between the border and the item text.
+    void dropdown_border_is_inset_inside_the_panel()
+    {
+        BorlandMenu m;
+        m.addAction(QStringLiteral("Zoom &In"));
+        m.addAction(QStringLiteral("Zoom &Out"));
+        m.resize(240, 90);
+        const QImage img = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+
+        auto isBlack = [](const QColor& c) {
+            return c.red() < 0x30 && c.green() < 0x30 && c.blue() < 0x30;
+        };
+        auto isGray = [](const QColor& c) {
+            return qAbs(c.red() - 0xAA) < 14 && qAbs(c.green() - 0xAA) < 14
+                && qAbs(c.blue() - 0xAA) < 14;
+        };
+
+        // Panel edge must be gray (the border is not flush with it).
+        QVERIFY2(isGray(img.pixelColor(0, img.height() / 2)),
+                 "panel edge must be gray, not the black border");
+
+        // Walk in from the left edge: the first black pixel is the border and
+        // it must be a few px in.
+        int borderX = -1;
+        for (int x = 0; x < img.width() / 3; ++x)
+            if (isBlack(img.pixelColor(x, img.height() / 2))) {
+                borderX = x;
+                break;
+            }
+        QVERIFY2(borderX >= 3,
+                 qPrintable(QStringLiteral("black border must be inset inside the panel "
+                                           "(found at x=%1)").arg(borderX)));
+        // And there must still be gray between the border and the text.
+        QVERIFY2(isGray(img.pixelColor(borderX + 1, img.height() / 2)),
+                 "expected padding between the border and the item text");
     }
 };
 

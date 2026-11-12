@@ -78,11 +78,10 @@ private slots:
         const int w = img.width(), h = img.height();
         const int bot = h - 1;
 
-        // The pos text must be pushed DOWN onto the border: its topmost
-        // glyph row sits in the lower half of the band (>= h-14), unlike a
-        // vertically centered baseline which floats it mid-band. (The border
-        // lines themselves make "touches the bottom rows" undiscriminating,
-        // so we discriminate on the text TOP instead.)
+        // Rev2 spec 3: the pos text sits IN the double-line border (no separate
+        // blue box behind it). The band is now exactly ONE text row tall, so the
+        // text fills most of it: assert the glyphs are present and vertically
+        // centered in the band rather than pinned to the top edge.
         int topMost = -1, whitePx = 0;
         for (int x = 75; x <= 125 && x < w; ++x)
             for (int y = 0; y < h - 2; ++y) {   // above the border lines
@@ -96,10 +95,12 @@ private slots:
         QVERIFY2(whitePx >= 12,
                  qPrintable(QStringLiteral("no cursor-pos glyphs above the border (%1 px)")
                                 .arg(whitePx)));
-        QVERIFY2(topMost >= h - 14,
+        // p13: single-row band -> the text starts near the top but its glyph
+        // block must run through the middle, not hug row 0 of a tall band.
+        QVERIFY2(topMost >= 0 && topMost <= h / 2 + 4,
                  qPrintable(QStringLiteral(
-                     "cursor-pos text floats mid-band (top row %1, expected >= %2)")
-                                .arg(topMost).arg(h - 14)));
+                     "cursor-pos text does not sit mid-band (top row %1, band %2)")
+                                .arg(topMost).arg(h)));
 
         // No backdrop box: the rows ABOVE the border lines in the pos area
         // stay dominated by flat window blue (a box would replace it).
@@ -129,9 +130,13 @@ private slots:
         QVERIFY2(hb->geometry().left() >= 180,
                  qPrintable(QStringLiteral("hbar left=%1, expected >=180 (col 18)")
                                 .arg(hb->geometry().left())));
-        QVERIFY2(hb->geometry().right() >= band.width() - 6,
-                 qPrintable(QStringLiteral("hbar right=%1, expected >=%2 (right corner)")
-                                .arg(hb->geometry().right()).arg(band.width() - 6)));
+        // The hbar stops one cell short of the right edge so the ╝ frame
+        // corner stays visible (p13: it previously painted over the corner).
+        const int cornerCell = qMax(6, band.fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        QVERIFY2(hb->geometry().right() <= band.width() - cornerCell
+                     && hb->geometry().right() >= band.width() - cornerCell - 3,
+                 qPrintable(QStringLiteral("hbar right=%1, expected ~%2 (before the corner cell)")
+                                .arg(hb->geometry().right()).arg(band.width() - cornerCell)));
         // TV-revision2 spec 3: the h-scrollbar is ONE CELL tall (the border
         // row), not the full band height.
         const int cell = band.fontMetrics().height();

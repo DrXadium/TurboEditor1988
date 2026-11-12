@@ -61,13 +61,14 @@ void BorlandStyle::drawControl(ControlElement ce, const QStyleOption* opt,
         const auto* o = qstyleoption_cast<const QStyleOptionMenuItem*>(opt);
         if (!o)
             return QProxyStyle::drawControl(ce, opt, p, w);
-        // Turbo Vision menu bar: FIRST visible letter hotkey red, rest black;
-        // the OPEN menu's title is a BLACK plate with WHITE text (rev2 spec 5),
-        // its hotkey letter staying red.
+        // Turbo Vision menu bar: FIRST visible letter hotkey red, rest black.
+        // The OPEN menu's title is a GREEN plate with BLACK text (reference
+        // screenshot: "Window" is green while its dropdown is open) - this
+        // supersedes rev2 spec 5's black-plate/white-text rule.
         const bool selected = o->state & State_Selected;
         if (selected)
-            p->fillRect(o->rect, kBlackPlate);   // spec 5: black plate
-        const QColor base = selected ? kWhite : kBlack;
+            p->fillRect(o->rect, kSelectGreen);
+        const QColor base = kBlack;
         const QColor hot = kHotRed;
         const QFontMetrics fm(p->font());
         // Vertical centering: baseline = top + (h - (ascent+descent))/2 + ascent.

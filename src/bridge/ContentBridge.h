@@ -21,11 +21,16 @@ class ContentBridge : public QObject
     // capture is not caught mid-band (a vertical band lingers ~0.6s per row on
     // a 800px-tall window vs ~0.06s per column horizontally).
     Q_PROPERTY(bool noSweep READ noSweep CONSTANT)
+    // CRT effects master switch. OFF by default while the UI is being nailed
+    // down (the shader's chroma shift/scanlines make chrome defects hard to
+    // read). CRT_KATE_FX=1 turns the effect chain back on.
+    Q_PROPERTY(bool effectsEnabled READ effectsEnabled CONSTANT)
 public:
     explicit ContentBridge(QObject* parent = nullptr);
     void setShellWindow(ShellWindow* shell);
 
     bool noSweep() const { return qEnvironmentVariableIsSet("CRT_KATE_NOSWEEP"); }
+    bool effectsEnabled() const { return qEnvironmentVariableIsSet("CRT_KATE_FX"); }
 
     // Renders the shell into frame(); bumps frameSerial; emits frameChanged.
     Q_INVOKABLE void update();

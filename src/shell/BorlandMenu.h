@@ -18,6 +18,10 @@ class BorlandMenu : public QMenu
 public:
     explicit BorlandMenu(QWidget* parent = nullptr);
 
+    // How far the single black border sits inside the panel edge (the gray
+    // panel shows outside it on all four sides, per the reference screenshot).
+    static int borderInset() { return 5; }
+
 protected:
     void paintEvent(QPaintEvent* ev) override;
 };

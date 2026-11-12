@@ -12,13 +12,15 @@ const QColor kHotRed(0xAA, 0x00, 0x00);
 BorlandMenu::BorlandMenu(QWidget* parent) : QMenu(parent)
 {
     setWindowFlags(windowFlags() | Qt::NoDropShadowWindowHint);
-    // Reference screenshot: the gray panel carries a SINGLE black border with
-    // one cell of padding between that border and the item text. The padding
-    // is the menu's content margin, so Qt sizes the popup to include it and
-    // every action geometry is already inset.
+    // Reference screenshot: the gray panel carries a SINGLE black border set
+    // WELL INSIDE the panel edge (the gray runs outside it on all four sides),
+    // with a little padding between that border and the item text. Both the
+    // inset and the padding are content margins, so Qt sizes the popup to
+    // include them and every actionGeometry is already inside the border.
     const QFontMetrics fm = fontMetrics();
     const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
-    setContentsMargins(cell, cell, cell, cell);
+    const int inset = borderInset();
+    setContentsMargins(inset + 2, inset + 2, inset + 2, inset + 2);
 }
 
 void BorlandMenu::paintEvent(QPaintEvent*)
@@ -26,17 +28,19 @@ void BorlandMenu::paintEvent(QPaintEvent*)
     QPainter p(this);
     // Solid gray panel, flat fills only.
     p.fillRect(rect(), kMenuGray);
-    // Single black ASCII border around the panel (reference screenshot). The
-    // item text sits one cell inside it (see the content margins in the ctor).
+    // Single black ASCII border INSET inside the panel (reference screenshot:
+    // gray runs outside the border on every side).
+    const int inset = borderInset();
+    const QRect borderRect = rect().adjusted(inset, inset, -inset - 1, -inset - 1);
     p.setPen(QPen(kBlack, 1));
     p.setBrush(Qt::NoBrush);
-    p.drawRect(rect().adjusted(0, 0, -1, -1));
+    p.drawRect(borderRect);
 
     const QFontMetrics fm = fontMetrics();
     const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
-    // Item band spans the padded content area, i.e. just inside the border.
-    const int contentLeft = cell;
-    const int contentRight = width() - cell;
+    // Item band spans the area just inside the border, edge to edge.
+    const int contentLeft = borderRect.left() + 1;
+    const int contentRight = borderRect.right();
 
     for (QAction* a : actions()) {
         if (!a->isVisible())
@@ -53,8 +57,11 @@ void BorlandMenu::paintEvent(QPaintEvent*)
         const bool selected = (a == activeAction()) && a->isEnabled();
         // Spec 6: the highlighted row is a solid green bar spanning the FULL
         // width of the dropdown, exactly one cell tall.
+        // +1 on the width so the bar reaches the last pixel inside the border
+        // (fillRect's width is exclusive; the old exclusive end left a 1 px gray
+        // sliver against the border's right stroke).
         p.fillRect(QRect(contentLeft, r.top(),
-                         contentRight - contentLeft, r.height()),
+                         contentRight - contentLeft + 1, r.height()),
                    selected ? kSelectGreen : kMenuGray);
 
         const int baseline = r.y() + (r.height() - fm.height()) / 2 + fm.ascent();
@@ -78,7 +85,7 @@ void BorlandMenu::paintEvent(QPaintEvent*)
             shortcut = a->shortcut().toString(QKeySequence::NativeText);
         }
 
-        int x = 2 * cell;
+        int x = contentLeft + cell;
         bool firstVisible = true;
         const QColor textColor = selected || a->isEnabled() ? kBlack : kBlack;
         for (int i = 0; i < label.size(); ++i) {
@@ -108,7 +115,7 @@ void BorlandMenu::paintEvent(QPaintEvent*)
         if (!shortcut.isEmpty()) {
             p.setPen(kBlack);
             const int sw = fm.horizontalAdvance(shortcut);
-            p.drawText(QPoint(width() - cell - sw, baseline), shortcut);
+            p.drawText(QPoint(contentRight - cell - sw, baseline), shortcut);
         }
     }
 }

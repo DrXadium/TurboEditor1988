@@ -434,8 +434,18 @@ int main(int argc, char** argv)
         QTimer::singleShot(700, &app, [&shell]() {
             if (auto* mb = qobject_cast<MenuBar*>(shell.menuBar())) {
                 if (QMenu* view = mb->menu(QStringLiteral("View"))) {
+                    // Behave like a real click: mark the bar title selected (so
+                    // it paints its green plate) and highlight the first item
+                    // (so the dropdown paints its green selection bar).
+                    for (QAction* a : mb->actions())
+                        if (a->menu() == view) {
+                            mb->setActiveAction(a);
+                            break;
+                        }
                     view->move(shell.pos() + QPoint(320, 60));
                     view->show();
+                    if (!view->actions().isEmpty())
+                        view->setActiveAction(view->actions().first());
                 }
             }
         });
