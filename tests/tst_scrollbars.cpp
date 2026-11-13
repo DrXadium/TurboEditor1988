@@ -307,15 +307,26 @@ private slots:
                  qPrintable(QStringLiteral("green pixels in h-scrollbar: %1 (spec bans it)")
                                 .arg(green)));
 
-        // Thumb: contiguous run of FULLY teal columns inside the track,
-        // single-cell long, anchored at the left of the track.
+        // Thumb: the DOS block-and-square handle. A track column alternates
+        // teal/blue many times (the ▒ dither); a thumb column is uniformly one
+        // ink with at most two crossings where it passes through the inner
+        // square. So locate the thumb as the longest run of LOW-VARIATION
+        // columns - not "fully teal", which only sees the strip around the
+        // square and shrinks the measured length to a few px.
+        auto colTransitions = [&](int x) {
+            int t = 0;
+            for (int y = 1; y < h; ++y) {
+                const QColor a = img.pixelColor(x, y - 1);
+                const QColor b = img.pixelColor(x, y);
+                if ((isTeal(a) && isBlue(b)) || (isBlue(a) && isTeal(b)))
+                    ++t;
+            }
+            return t;
+        };
         int runStart = -1, runLen = 0, bestStart = -1, bestLen = 0;
         for (int x = thick; x < w - thick; ++x) {
-            bool full = true;
-            for (int y = 0; y < h && full; ++y)
-                if (!isTeal(img.pixelColor(x, y)))
-                    full = false;
-            if (full) {
+            const bool solid = colTransitions(x) <= 2;
+            if (solid) {
                 if (runStart < 0)
                     runStart = x;
                 ++runLen;
@@ -328,12 +339,29 @@ private slots:
                 runLen = 0;
             }
         }
-        QVERIFY2(bestStart >= 0, "no solid teal thumb column in the track");
+        QVERIFY2(bestStart >= 0, "no solid thumb column block in the track");
         QVERIFY2(bestStart < w / 4,
                  qPrintable(QStringLiteral("thumb not near the left (x=%1)").arg(bestStart)));
         QVERIFY2(bestLen >= 6 && bestLen <= 24,
                  qPrintable(QStringLiteral("thumb is %1 px long - expected a single cell")
                                 .arg(bestLen)));
+
+        // Body stays teal; the square sits inside it in blue ink (never black).
+        int sqDark = 0, sqTotal = 0, bodyTeal = 0;
+        for (int x = bestStart; x < bestStart + bestLen; ++x)
+            for (int y = 0; y < h; ++y) {
+                const QColor c = img.pixelColor(x, y);
+                if (isTeal(c)) { ++bodyTeal; continue; }
+                ++sqTotal;
+                if (isBlue(c)) ++sqDark;
+            }
+        QVERIFY2(bodyTeal > bestLen,
+                 qPrintable(QStringLiteral("thumb body is not teal (%1 px)").arg(bodyTeal)));
+        QVERIFY2(sqTotal > 0,
+                 "horizontal thumb is a flat solid block - no inner square");
+        QVERIFY2(sqDark * 2 >= sqTotal,
+                 qPrintable(QStringLiteral("horizontal thumb square not ink: %1/%2")
+                                .arg(sqDark).arg(sqTotal)));
 
         // Track texture: ▒ = 1-px teal/blue stipple (transitions present in
         // every 5 consecutive px), NOT the coarse 4-px checker.

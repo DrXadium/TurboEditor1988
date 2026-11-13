@@ -123,4 +123,13 @@ void TextScrollBar::paintEvent(QPaintEvent*)
         ? QRect(track.left() + pos, track.top(), thumbLen, track.height())
         : QRect(track.left(), track.top() + pos, track.width(), thumbLen);
     p.fillRect(thumb, horiz ? kTeal : kGreen);
+
+    // Inner square: the DOS block-and-square handle, matching the vertical
+    // bar. Centred, inset by half the cell on each axis, in blue ink (pure
+    // black is banned inside the window except the drop shadow).
+    const int inW = qMax(2, thumb.width() / 2);
+    const int inH = qMax(2, thumb.height() / 2);
+    const int inX = thumb.center().x() - inW / 2;
+    const int inY = thumb.center().y() - inH / 2;
+    p.fillRect(QRect(inX, inY, inW, inH), kBlue);
 }
