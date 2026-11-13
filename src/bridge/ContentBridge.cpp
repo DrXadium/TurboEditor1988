@@ -202,6 +202,19 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     }
     if (!target)
         target = m_shell->childAt(shellLocal);
+    // Editor right-click opens the shell's BorlandMenu context menu. Qt's
+    // native context-menu path never runs here: the shell is never mapped and
+    // these events are synthesized, so no QContextMenuEvent is ever produced.
+    // Raised directly, the same way the menu bar is driven. Skipped when the
+    // press landed in an open popup (target is set then).
+    if (!target
+        && static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
+        && static_cast<Qt::MouseButton>(button) == Qt::RightButton
+        && m_shell->isEditorArea(m_shell->childAt(shellLocal))) {
+        m_shell->showEditorContextMenu(shellLocal);
+        update();
+        return;
+    }
     if (!target)
         target = m_shell;
     const QPoint local = target->mapFrom(m_shell, shellLocal);

@@ -824,6 +824,71 @@ private slots:
         QVERIFY2(isGray(img.pixelColor(borderX + bw + 1, img.height() / 2)),
                  "expected padding between the border and the item text");
     }
+
+    // Right-clicking in the editor must open a context menu carrying the edit
+    // commands and the spellcheck commands, styled like the dropdowns. Styled
+    // like the dropdowns means it must be a BorlandMenu (borland.qss carries no
+    // QMenu rules on purpose, and QStyleSheetStyle hijacks CE_MenuItem as soon
+    // as any rule matches), and it must be registered with ContentBridge so it
+    // gets the drop shadow and synthesized mouse events.
+    void editor_context_menu_offers_edit_and_spellcheck_commands()
+    {
+        ShellWindow shell;
+        ContentBridge b;
+        b.setShellWindow(&shell);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        shell.showEditorContextMenu(QPoint(60, 60));
+        QCoreApplication::processEvents();
+
+        auto* menu = shell.findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
+        QVERIFY2(menu, "editor context menu missing or not a BorlandMenu");
+
+        // The app registers popups on Show (PopupRegistrar in main.cpp), which
+        // also hardens them for compositing; emulate that here, because an
+        // unhardened popup does not stay visible without a native parent.
+        b.registerPopup(menu);
+        QVERIFY2(b.registeredPopups().contains(menu),
+                 "context menu was not registered with the bridge");
+        QVERIFY2(menu->isVisible(), "editor context menu did not open");
+
+        QStringList have;
+        for (QAction* a : menu->actions()) {
+            if (a->isSeparator())
+                continue;
+            have << a->objectName();
+        }
+        const QStringList wanted{
+            QStringLiteral("actionEditUndo"), QStringLiteral("actionEditRedo"),
+            QStringLiteral("actionEditCut"), QStringLiteral("actionEditCopy"),
+            QStringLiteral("actionEditPaste"), QStringLiteral("actionEditSpellcheck")};
+        for (const QString& name : wanted)
+            QVERIFY2(have.contains(name),
+                     qPrintable(QStringLiteral("context menu missing %1 (has: %2)")
+                                    .arg(name, have.join(QStringLiteral(", ")))));
+
+        // It must be registered, or it gets neither the drop shadow nor the
+        // synthesized mouse events that drive hover/dismissal.
+        b.unregisterPopup(menu);
+    }
+
+    // The bridge raises the context menu only for right-clicks inside the
+    // editor area; that decision lives in ShellWindow::isEditorArea.
+    void right_click_is_routed_only_from_the_editor_area()
+    {
+        ShellWindow shell;
+        auto* editor = new QWidget;
+        auto* child = new QWidget(editor);
+        shell.setEditorWidget(editor);
+        QVERIFY2(shell.isEditorArea(editor),
+                 "the editor widget itself must count as the editor area");
+        QVERIFY2(shell.isEditorArea(child),
+                 "children of the editor must count as the editor area");
+        QVERIFY2(!shell.isEditorArea(shell.menuBar()),
+                 "the menu bar is not the editor area");
+        QVERIFY2(!shell.isEditorArea(nullptr), "null is not the editor area");
+    }
 };
 
 int main(int argc, char** argv)

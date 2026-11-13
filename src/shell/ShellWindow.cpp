@@ -7,6 +7,7 @@
 #include "Minimap.h"
 #include "RightScrollBar.h"
 #include "TextScrollBar.h"
+#include "BorlandMenu.h"
 #include "FKeyStatusBar.h"
 #include "BottomBand.h"
 #include "TvFrame.h"
@@ -287,6 +288,44 @@ void ShellWindow::wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* vi
             hb->setValue(docH->value());
         }
     }
+}
+
+// Editor right-click menu: the edit commands (Undo/Redo/Cut/Copy/Paste) plus
+// the spellcheck toggle, drawn as a BorlandMenu so it matches the dropdowns.
+//
+// It REUSES the Edit menu's own QActions rather than duplicating them: one
+// implementation per command, and Undo/Redo keep the enable state that
+// EditorTabManager::historyChanged drives.
+void ShellWindow::showEditorContextMenu(const QPoint& shellLocal)
+{
+    BorlandMenu* menu = findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
+    if (!menu) {
+        menu = new BorlandMenu(this);
+        menu->setObjectName(QStringLiteral("editorContextMenu"));
+        auto* bar = findChild<MenuBar*>();
+        auto add = [menu, bar](const char* name) {
+            QAction* a = bar ? bar->findChild<QAction*>(QLatin1String(name)) : nullptr;
+            if (a)
+                menu->addAction(a);
+        };
+        add("actionEditUndo");
+        add("actionEditRedo");
+        menu->addSeparator();
+        add("actionEditCut");
+        add("actionEditCopy");
+        add("actionEditPaste");
+        menu->addSeparator();
+        add("actionEditSpellcheck");
+    }
+    // popup(), never exec(): the shell is never mapped, so exec()'s nested
+    // event loop and the native context-menu path do not behave here. The
+    // bridge drives the open menu with synthesized events, like the menu bar.
+    menu->popup(mapToGlobal(shellLocal));
+}
+
+bool ShellWindow::isEditorArea(QWidget* w) const
+{
+    return w && m_editor && (w == m_editor || m_editor->isAncestorOf(w));
 }
 
 TabStrip* ShellWindow::tabStrip() const

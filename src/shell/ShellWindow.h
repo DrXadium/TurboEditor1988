@@ -29,6 +29,15 @@ public:
     // previous pair first, so it reconnects cleanly when the active tab
     // (and therefore the view) changes.
     void wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* view = nullptr);
+    // Editor right-click menu (edit + spellcheck commands). Built as a
+    // BorlandMenu so it paints like the dropdowns, and shown at a
+    // shell-local point. The shell is never mapped, so this must NOT go
+    // through QMenu::exec(): the menu is popup()'d and driven by synthesized
+    // events from ContentBridge, like the menu bar.
+    void showEditorContextMenu(const QPoint& shellLocal);
+    // True when \p w is the editor widget or inside it (used by the bridge to
+    // decide that a right-click belongs to the editor's context menu).
+    bool isEditorArea(QWidget* w) const;
     // Focus target for forwarded keys: the editor if one is set, else the shell.
     QWidget* keyFocusWidget() const;
     TabStrip* tabStrip() const;
