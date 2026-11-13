@@ -56,7 +56,19 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(file, QStringLiteral("Save &As..."), QStringLiteral("actionFileSaveAs"));
 
     QMenu* edit = addMenu(QStringLiteral("Edit"));
-    // Standard clipboard block first, as in Kate (and Turbo Vision).
+    // Undo / redo head the menu, as in Kate and Turbo Vision. Both start
+    // DISABLED: a fresh buffer has no history. The composition root enables
+    // them from EditorTabManager::historyChanged.
+    QAction* undoAct = added(edit, QStringLiteral("&Undo\tCtrl+Z"),
+                             QStringLiteral("actionEditUndo"));
+    QAction* redoAct = added(edit, QStringLiteral("&Redo\tCtrl+Y"),
+                             QStringLiteral("actionEditRedo"));
+    undoAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+Z")));
+    redoAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+Y")));
+    undoAct->setEnabled(false);
+    redoAct->setEnabled(false);
+    edit->addSeparator();
+    // Standard clipboard block, as in Kate (and Turbo Vision).
     added(edit, QStringLiteral("&Cut\tCtrl+X"), QStringLiteral("actionEditCut"));
     added(edit, QStringLiteral("C&opy\tCtrl+C"), QStringLiteral("actionEditCopy"));
     added(edit, QStringLiteral("&Paste\tCtrl+V"), QStringLiteral("actionEditPaste"));

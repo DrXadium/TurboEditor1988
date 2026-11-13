@@ -4,7 +4,10 @@
 #include <QUrl>
 #include <QList>
 #include <QPoint>
+#include <QHash>
 #include <QStackedWidget>
+// HistoryEntry holds a Cursor by value, so the definition is needed here.
+#include <ktexteditor/cursor.h>
 
 namespace KTextEditor { class Document; class View; }
 
@@ -65,6 +68,15 @@ public:
     void copy();
     void paste();
 
+    // Undo / redo. This KTextEditor build ships no undo API (no UndoInterface,
+    // no action hooks - verified against the installed headers), so the history
+    // is kept here: one text+cursor snapshot per document, pushed on every
+    // Document::textChanged.
+    void undo();
+    void redo();
+    bool canUndo() const;
+    bool canRedo() const;
+
     // File ops for the File menu (Task 10): documentSave/documentSaveAs on the
     // active document. NOTE: both can open a native file dialog (save-as, or
     // save of an untitled buffer) - never call them from automated tests.
@@ -83,10 +95,25 @@ public:
 
 signals:
     void tabsChanged(const QStringList& titles, int active);
+    // Emitted whenever the active document's history changes, so the Edit menu
+    // can enable/disable Undo and Redo.
+    void historyChanged(bool canUndo, bool canRedo);
 
 private:
     KTextEditor::Document* createDoc();
     void syncTabs();
+
+    // One undo step: the whole document text plus where the caret sat.
+    struct HistoryEntry {
+        QString text;
+        KTextEditor::Cursor cursor;
+    };
+    void watchHistory(KTextEditor::Document* doc);
+    void pushHistory(KTextEditor::Document* doc);
+    QList<HistoryEntry>& historyFor(KTextEditor::Document* doc);
+    int& historyIndexFor(KTextEditor::Document* doc);
+    void applyHistoryStep(KTextEditor::Document* doc, int index);
+    void notifyHistory();
     void applyZoom(int delta);
     bool jumpToNextMatch(const QString& pattern);
 
@@ -97,4 +124,11 @@ private:
     int m_basePixelSize = -1;   // font pixel size at first zoom (pixel-based font)
     QStackedWidget* m_container = nullptr;
     QString m_lastFind;   // last Search-menu pattern (for Find Next)
+
+    QHash<KTextEditor::Document*, QList<HistoryEntry>> m_history;
+    QHash<KTextEditor::Document*, int> m_historyIndex;
+    // Guards against the history handler re-entering while undo/redo is
+    // restoring text (Document::setText emits textChanged).
+    bool m_applyingHistory = false;
+    static constexpr int kMaxHistory = 200;
 };

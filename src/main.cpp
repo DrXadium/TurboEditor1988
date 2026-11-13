@@ -195,6 +195,32 @@ int main(int argc, char** argv)
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
         on(act("actionFileSaveAs"), [&tabs] { tabs.saveActiveAs(); });
 
+        // Edit: undo / redo. They are enabled from the manager's history signal
+        // so a fresh buffer offers them greyed out.
+        // MenuBar owns the shortcut text; the root only needs the context, so
+        // the combos fire from the unmapped QML window too.
+        if (QAction* a = act("actionEditUndo")) {
+            on(a, [&tabs] { tabs.undo(); });
+            a->setShortcutContext(Qt::ApplicationShortcut);
+        }
+        if (QAction* a = act("actionEditRedo")) {
+            on(a, [&tabs] { tabs.redo(); });
+            a->setShortcutContext(Qt::ApplicationShortcut);
+        }
+        // Captures menuBar by value: the local `act` lambda would dangle once
+        // this scope ends, while these connections outlive it.
+        const auto syncHistory = [menuBar, &tabs]() {
+            if (QAction* u = menuBar->findChild<QAction*>(QStringLiteral("actionEditUndo")))
+                u->setEnabled(tabs.canUndo());
+            if (QAction* r = menuBar->findChild<QAction*>(QStringLiteral("actionEditRedo")))
+                r->setEnabled(tabs.canRedo());
+        };
+        QObject::connect(&tabs, &EditorTabManager::historyChanged, &shell,
+                         [syncHistory](bool, bool) { syncHistory(); });
+        QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
+                         [syncHistory](const QStringList&, int) { syncHistory(); });
+        syncHistory();
+
         // Edit: standard clipboard block. Shortcuts are bound on the QAction
         // (ApplicationShortcut) so Ctrl+X/C/V work from the QML window too.
         for (auto [name, fn] : { std::pair{ "actionEditCut", &EditorTabManager::cut },
@@ -499,25 +525,41 @@ int main(int argc, char** argv)
     // Dev aid (unset in normal runs): CRT_KATE_KEY=Ctrl+V types that shortcut
     // into the real app through the QML input path and prints whether the
     // associated QAction fired - the only way to verify QML key forwarding
-    // without a pointer tool on the host.
+    // without a pointer tool on the host. CRT_KATE_KEY_ACTION names the action
+    // to watch (default actionEditPaste), so any binding can be exercised.
     if (const QByteArray keyArg = qgetenv("CRT_KATE_KEY"); !keyArg.isEmpty()) {
-        QTimer::singleShot(1200, &app, [&app, keyArg, &shell, &bridge]() {
+        QTimer::singleShot(1200, &app, [&app, keyArg, &shell, &bridge, &tabs]() {
             const QKeySequence seq = QKeySequence::fromString(QString::fromUtf8(keyArg));
             const int key = seq[0].key();
             const auto mods = static_cast<Qt::KeyboardModifiers>(
                 static_cast<int>(seq[0].keyboardModifiers()));
             auto* mb = shell.findChild<MenuBar*>();
-            QAction* a = mb ? mb->findChild<QAction*>(QStringLiteral("actionEditPaste"))
-                            : nullptr;
+            const QByteArray watchArg = qgetenv("CRT_KATE_KEY_ACTION");
+            const QString watch = watchArg.isEmpty()
+                ? QStringLiteral("actionEditPaste")
+                : QString::fromUtf8(watchArg);
+            QAction* a = mb ? mb->findChild<QAction*>(watch) : nullptr;
             auto* fired = new bool(false);
             if (a)
                 QObject::connect(a, &QAction::triggered, &app,
                                  [fired](bool) { *fired = true; });
+            // Snapshot the buffer so the log shows what the key actually did -
+            // this is what distinguishes "the action fired" from "the document
+            // changed the way the user expects".
+            auto docText = [&tabs]() -> QString {
+                if (auto* d = tabs.activeDocument())
+                    return d->text();
+                return QString();
+            };
+            const QString before = docText();
             if (key != Qt::Key_unknown)
                 bridge.forwardKeyEvent(QEvent::KeyPress, key, mods, QString());
-            QTimer::singleShot(300, &app, [&app, keyArg, fired]() {
-                qWarning("DIAG key=%s pasteFired=%d",
-                         qPrintable(QString::fromUtf8(keyArg)), int(*fired));
+            QTimer::singleShot(300, &app, [&app, keyArg, watch, fired, a, before, docText]() {
+                const QString after = docText();
+                qWarning("DIAG key=%s action=%s fired=%d enabled=%d changed=%d lenBefore=%d lenAfter=%d",
+                         qPrintable(QString::fromUtf8(keyArg)), qPrintable(watch),
+                         int(*fired), a ? int(a->isEnabled()) : -1,
+                         int(before != after), int(before.size()), int(after.size()));
                 QCoreApplication::exit(0);
             });
         });

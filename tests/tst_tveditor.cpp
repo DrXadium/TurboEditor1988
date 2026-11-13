@@ -134,6 +134,56 @@ private slots:
                  qPrintable(v->document()->text()));
     }
 
+    // Undo / redo. This KTextEditor build exposes NO undo API at all - no
+    // UndoInterface, no action hooks (checked against the installed headers) -
+    // so the history is maintained here over Document::setText.
+    void undo_redo_round_trip()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        KTextEditor::Document* doc = v->document();
+
+        // A fresh document has no history: the buttons start inert.
+        QCOMPARE(m.canUndo(), false);
+        QCOMPARE(m.canRedo(), false);
+        m.undo();                        // safe no-op, must not lose text
+        QCOMPARE(doc->text(), QString());
+
+        doc->setText(QStringLiteral("alpha\n"));
+        doc->setText(QStringLiteral("alpha beta\n"));
+        QCOMPARE(m.canUndo(), true);
+        QCOMPARE(m.canRedo(), false);
+
+        m.undo();
+        QCOMPARE(doc->text(), QStringLiteral("alpha\n"));
+        QCOMPARE(m.canRedo(), true);
+
+        m.redo();
+        QCOMPARE(doc->text(), QStringLiteral("alpha beta\n"));
+        QCOMPARE(m.canRedo(), false);
+    }
+
+    // A new edit after an undo must discard the redo branch, as every editor
+    // does - otherwise Redo would replay a line the user already replaced.
+    void new_edit_after_undo_clears_redo()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::Document* doc = m.activeView()->document();
+
+        doc->setText(QStringLiteral("one\n"));
+        doc->setText(QStringLiteral("two\n"));
+        m.undo();
+        QCOMPARE(doc->text(), QStringLiteral("one\n"));
+        QCOMPARE(m.canRedo(), true);
+
+        doc->setText(QStringLiteral("three\n"));
+        QCOMPARE(m.canRedo(), false);
+        m.redo();                        // must do nothing
+        QCOMPARE(doc->text(), QStringLiteral("three\n"));
+    }
+
     // Spec 1: editor area is ONE flat #0000AA — zero black anywhere (catches a
     // black gutter or black current-line band).
     void editor_field_is_flat_tv_blue()

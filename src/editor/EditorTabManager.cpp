@@ -170,7 +170,9 @@ KTextEditor::Document* EditorTabManager::createDoc()
     auto* editor = KTextEditor::Editor::instance();
     if (!editor)
         return nullptr;
-    return editor->createDocument(this);
+    KTextEditor::Document* doc = editor->createDocument(this);
+    watchHistory(doc);
+    return doc;
 }
 
 KTextEditor::Document* EditorTabManager::activeDocument() const
@@ -401,6 +403,145 @@ void EditorTabManager::paste()
     } else {
         v->insertText(text);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Undo / redo
+//
+// This KTextEditor build exposes no undo API (no UndoInterface, no action
+// hooks), so each document keeps its own snapshot stack here: the whole text
+// plus the caret, pushed on every textChanged. Undo walks back one entry and
+// re-applies it; redo walks forward. A new edit truncates the forward branch,
+// which is what every editor does.
+// ---------------------------------------------------------------------------
+
+QList<EditorTabManager::HistoryEntry>&
+EditorTabManager::historyFor(KTextEditor::Document* doc)
+{
+    return m_history[doc];
+}
+
+int& EditorTabManager::historyIndexFor(KTextEditor::Document* doc)
+{
+    return m_historyIndex[doc];
+}
+
+void EditorTabManager::watchHistory(KTextEditor::Document* doc)
+{
+    if (!doc)
+        return;
+    // Seed the baseline so the first edit has something to undo back to.
+    QList<HistoryEntry>& hist = historyFor(doc);
+    if (hist.isEmpty()) {
+        hist.append({ doc->text(), KTextEditor::Cursor(0, 0) });
+        historyIndexFor(doc) = 0;
+    }
+    connect(doc, &KTextEditor::Document::textChanged, this,
+            [this, doc](KTextEditor::Document*) { pushHistory(doc); });
+}
+
+void EditorTabManager::pushHistory(KTextEditor::Document* doc)
+{
+    if (!doc || m_applyingHistory)
+        return;
+
+    QList<HistoryEntry>& hist = historyFor(doc);
+    int& index = historyIndexFor(doc);
+    if (hist.isEmpty()) {
+        hist.append({ QString(), KTextEditor::Cursor(0, 0) });
+        index = 0;
+    }
+
+    const QString text = doc->text();
+    if (hist.at(index).text == text)
+        return;                     // textChanged without a real change
+
+    KTextEditor::Cursor caret(0, 0);
+    if (KTextEditor::View* v = activeView()) {
+        if (v->document() == doc)
+            caret = v->cursorPosition();
+    }
+
+    // Drop the redo branch: the user edited after undoing.
+    while (hist.size() > index + 1)
+        hist.removeLast();
+    hist.append({ text, caret });
+
+    // Cap the depth so a long session cannot grow without bound.
+    while (hist.size() > kMaxHistory)
+        hist.removeFirst();
+    index = hist.size() - 1;
+
+    notifyHistory();
+}
+
+void EditorTabManager::applyHistoryStep(KTextEditor::Document* doc, int index)
+{
+    QList<HistoryEntry>& hist = historyFor(doc);
+    if (index < 0 || index >= hist.size())
+        return;
+
+    const HistoryEntry entry = hist.at(index);
+    m_applyingHistory = true;
+    doc->setText(entry.text);
+    if (KTextEditor::View* v = activeView()) {
+        if (v->document() == doc) {
+            // Clamp: the restored text may be shorter than the old caret.
+            KTextEditor::Cursor c = entry.cursor;
+            const KTextEditor::Range full = doc->documentRange();
+            if (c.line() > full.end().line())
+                c = full.end();
+            else if (c.line() == full.end().line() && c.column() > full.end().column())
+                c = full.end();
+            v->setCursorPosition(c);
+        }
+    }
+    m_applyingHistory = false;
+    historyIndexFor(doc) = index;
+    notifyHistory();
+}
+
+void EditorTabManager::undo()
+{
+    KTextEditor::Document* doc = activeDocument();
+    if (!doc)
+        return;
+    const int index = historyIndexFor(doc);
+    if (index <= 0)
+        return;
+    applyHistoryStep(doc, index - 1);
+}
+
+void EditorTabManager::redo()
+{
+    KTextEditor::Document* doc = activeDocument();
+    if (!doc)
+        return;
+    const int index = historyIndexFor(doc);
+    if (index + 1 >= historyFor(doc).size())
+        return;
+    applyHistoryStep(doc, index + 1);
+}
+
+bool EditorTabManager::canUndo() const
+{
+    KTextEditor::Document* doc = activeDocument();
+    if (!doc)
+        return false;
+    return m_historyIndex.value(doc, 0) > 0;
+}
+
+bool EditorTabManager::canRedo() const
+{
+    KTextEditor::Document* doc = activeDocument();
+    if (!doc)
+        return false;
+    return m_historyIndex.value(doc, 0) + 1 < m_history.value(doc).size();
+}
+
+void EditorTabManager::notifyHistory()
+{
+    emit historyChanged(canUndo(), canRedo());
 }
 
 void EditorTabManager::sortLines()

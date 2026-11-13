@@ -243,6 +243,54 @@ private slots:
         QCOMPARE(fired, 1);
     }
 
+    // Ctrl+Z / Ctrl+Y must reach Undo / Redo. Both actions start DISABLED (a
+    // fresh buffer has no history) and dispatchShortcut deliberately ignores
+    // disabled actions, so enable them here the way a real document would.
+    void ctrl_z_and_ctrl_y_dispatch_undo_and_redo() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        MenuBar* mb = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(mb, "menu bar missing");
+        QAction* undo = mb->findChild<QAction*>(QStringLiteral("actionEditUndo"));
+        QAction* redo = mb->findChild<QAction*>(QStringLiteral("actionEditRedo"));
+        QVERIFY2(undo && redo, "Undo / Redo actions missing");
+        undo->setEnabled(true);
+        redo->setEnabled(true);
+
+        int undoFired = 0, redoFired = 0;
+        QObject::connect(undo, &QAction::triggered, &w, [&undoFired](bool) { ++undoFired; });
+        QObject::connect(redo, &QAction::triggered, &w, [&redoFired](bool) { ++redoFired; });
+
+        b.dispatchShortcut(Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(undoFired, 1);
+        b.dispatchShortcut(Qt::Key_Y, Qt::ControlModifier);
+        QCOMPARE(redoFired, 1);
+    }
+
+    // A disabled action must NOT be dispatched: with no history, Ctrl+Z has
+    // nothing to undo and firing it would be a lie. This is also why a live
+    // probe of Ctrl+Y on a fresh buffer reports fired=0.
+    void dispatch_skips_disabled_actions() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        MenuBar* mb = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(mb, "menu bar missing");
+        QAction* undo = mb->findChild<QAction*>(QStringLiteral("actionEditUndo"));
+        QVERIFY2(undo, "Undo action missing");
+        QVERIFY2(!undo->isEnabled(), "Undo should start disabled on a fresh buffer");
+
+        int fired = 0;
+        QObject::connect(undo, &QAction::triggered, &w, [&fired](bool) { ++fired; });
+        b.dispatchShortcut(Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(fired, 0);
+    }
+
     // Regression: clicking a menu on the LIVE app crashed with SIGSEGV.
     // QMenuBarPrivate::popupAction (qmenubar.cpp) derefs
     // window()->windowHandle()->screen(). The shell is never mapped, so

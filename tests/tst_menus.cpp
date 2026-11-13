@@ -116,6 +116,46 @@ private slots:
         }
     }
 
+    // Undo / Redo belong in the Edit menu above the clipboard block, with the
+    // conventional shortcuts, and start DISABLED - a fresh buffer has no
+    // history, so offering an enabled Undo would be a lie.
+    void edit_menu_offers_disabled_undo_and_redo() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QAction* undo = mb->findChild<QAction*>(QStringLiteral("actionEditUndo"));
+        QAction* redo = mb->findChild<QAction*>(QStringLiteral("actionEditRedo"));
+        QVERIFY2(undo, "Edit menu has no Undo entry");
+        QVERIFY2(redo, "Edit menu has no Redo entry");
+
+        // Ctrl+Z / Ctrl+Y as the user specified. (Qt's QKeySequence::Redo is
+        // Ctrl+Shift+Z on Linux, so that enum is deliberately not asserted.)
+        QCOMPARE(undo->shortcut(), QKeySequence(QKeySequence::Undo));
+        QCOMPARE(undo->shortcut(), QKeySequence(QStringLiteral("Ctrl+Z")));
+        QCOMPARE(redo->shortcut(), QKeySequence(QStringLiteral("Ctrl+Y")));
+
+        QVERIFY2(!undo->isEnabled(), "Undo is enabled on a fresh buffer");
+        QVERIFY2(!redo->isEnabled(), "Redo is enabled on a fresh buffer");
+
+        // Undo sits above Cut, as in Kate and Turbo Vision. QAction::menu()
+        // returns an action's SUBMENU, not its container, so reach the Edit
+        // menu through the menu bar's own actions.
+        QMenu* editMenu = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("Edit")))
+                editMenu = top->menu();
+        QVERIFY2(editMenu, "Edit menu not found in the menu bar");
+        const QList<QAction*> items = editMenu->actions();
+        const int undoAt = items.indexOf(undo);
+        const int cutAt = items.indexOf(mb->findChild<QAction*>(QStringLiteral("actionEditCut")));
+        QVERIFY2(undoAt >= 0 && cutAt >= 0,
+                 qPrintable(QStringLiteral("undoAt=%1 cutAt=%2").arg(undoAt).arg(cutAt)));
+        QVERIFY2(undoAt < cutAt,
+                 qPrintable(QStringLiteral("Undo (index %1) does not precede Cut (index %2)")
+                                .arg(undoAt).arg(cutAt)));
+    }
+
     // Task 10: menu entries the composition root wires to real features exist
     // under stable objectNames, and toggles are checkable.
     void menu_entries_expose_wiring_targets() {
@@ -126,6 +166,7 @@ private slots:
         const QStringList required = {
             QStringLiteral("actionFileNew"),   QStringLiteral("actionFileOpen"),
             QStringLiteral("actionFileSave"),  QStringLiteral("actionFileSaveAs"),
+            QStringLiteral("actionEditUndo"),  QStringLiteral("actionEditRedo"),
             QStringLiteral("actionEditCut"),   QStringLiteral("actionEditCopy"),
             QStringLiteral("actionEditPaste"),
             QStringLiteral("actionEditUpper"), QStringLiteral("actionEditLower"),
