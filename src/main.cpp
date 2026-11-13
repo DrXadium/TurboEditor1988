@@ -609,6 +609,22 @@ int main(int argc, char** argv)
         });
     }
 
+    // Dev aid (unset in normal runs): CRT_KATE_RCLICK=1 synthesizes a
+    // right-button press at the centre of the editor through the bridge - the
+    // SAME call QML makes from onPressed - so the editor context menu can be
+    // verified on this host, which has no pointer tool. Combine with
+    // CRT_KATE_SHOT to capture the composited window with the menu open.
+    if (qEnvironmentVariableIsSet("CRT_KATE_RCLICK")) {
+        QTimer::singleShot(1200, &app, [&shell, &bridge]() {
+            QWidget* ed = shell.keyFocusWidget();
+            if (!ed || ed->width() <= 0 || ed->height() <= 0)
+                return;
+            const QPoint p = ed->mapTo(&shell, ed->rect().center());
+            bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
+                                     Qt::RightButton, Qt::NoModifier, p.x(), p.y());
+        });
+    }
+
     // Dev aid (unset in normal runs): CRT_KATE_SCROLL_PROBE=1 loads a long
     // document, drives the painted right-border bar and reports whether the
     // real KTextEditor view actually scrolled (firstDisplayedLine). This is the

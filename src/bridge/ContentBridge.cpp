@@ -200,23 +200,25 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
             break;
         }
     }
-    if (!target)
-        target = m_shell->childAt(shellLocal);
+    // Resolve the widget under the point ONCE. (An earlier version assigned
+    // `target` here and then tested `!target` for the right-click branch, so
+    // inside the editor - where childAt is never null - the branch could not
+    // run and right-click did nothing.)
+    QWidget* hit = target ? target : m_shell->childAt(shellLocal);
     // Editor right-click opens the shell's BorlandMenu context menu. Qt's
     // native context-menu path never runs here: the shell is never mapped and
     // these events are synthesized, so no QContextMenuEvent is ever produced.
-    // Raised directly, the same way the menu bar is driven. Skipped when the
-    // press landed in an open popup (target is set then).
-    if (!target
-        && static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
+    // Raised directly, the same way the menu bar is driven. A press that landed
+    // in an open popup is left alone so dropdown dismissal still works.
+    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
         && static_cast<Qt::MouseButton>(button) == Qt::RightButton
-        && m_shell->isEditorArea(m_shell->childAt(shellLocal))) {
+        && !target
+        && m_shell->isEditorArea(hit)) {
         m_shell->showEditorContextMenu(shellLocal);
         update();
         return;
     }
-    if (!target)
-        target = m_shell;
+    target = hit ? hit : m_shell;
     const QPoint local = target->mapFrom(m_shell, shellLocal);
     const QPoint global = target->mapToGlobal(local);
     auto* ev = new QMouseEvent(static_cast<QEvent::Type>(type),

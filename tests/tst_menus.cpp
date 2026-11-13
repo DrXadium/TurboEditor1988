@@ -873,6 +873,35 @@ private slots:
         b.unregisterPopup(menu);
     }
 
+    // The REAL input path: a right-button press forwarded by the bridge over
+    // the editor must open the context menu. The direct
+    // showEditorContextMenu() test above cannot catch a dispatch bug - it
+    // calls the menu builder directly and never exercises the routing.
+    void right_button_press_through_the_bridge_opens_the_context_menu()
+    {
+        ShellWindow shell;
+        ContentBridge b;
+        b.setShellWindow(&shell);
+        auto* editor = new QWidget;
+        editor->setMinimumSize(200, 200);
+        shell.setEditorWidget(editor);
+        shell.resize(800, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        QVERIFY2(editor->width() > 0 && editor->height() > 0,
+                 "editor widget has no size, cannot aim a click at it");
+        const QPoint centre = editor->mapTo(&shell, editor->rect().center());
+
+        b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
+                            Qt::RightButton, Qt::NoModifier, centre.x(), centre.y());
+        QCoreApplication::processEvents();
+
+        auto* menu = shell.findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
+        QVERIFY2(menu, "right-click through the bridge did not create the context menu");
+        QVERIFY2(menu->isVisible(), "right-click through the bridge did not open the menu");
+    }
+
     // The bridge raises the context menu only for right-clicks inside the
     // editor area; that decision lives in ShellWindow::isEditorArea.
     void right_click_is_routed_only_from_the_editor_area()
