@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="fonts/PxPlus_IBM_VGA8.ttf">PxPlus_IBM_VGA8.ttf</file>
+  </qresource>
+</RCC>

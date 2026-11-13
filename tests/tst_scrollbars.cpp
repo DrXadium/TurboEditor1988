@@ -263,14 +263,17 @@ private slots:
         QScrollBar* hb = band.horizontalBar();
         QVERIFY2(hb, "bottom band horizontal bar missing");
 
-        // One cell tall, bottom-aligned onto the border rows.
+        // One cell tall, occupying the band's TOP row. The band has two rows:
+        // the scrollbar sits on the upper one so the ═ border row underneath it
+        // stays visible (a bottom-aligned bar painted the rule out from x=180
+        // rightwards).
         const int cell = band.fontMetrics().height();
         QVERIFY2(qAbs(hb->height() - cell) <= 2,
                  qPrintable(QStringLiteral("hbar height=%1, one cell=%2")
                                 .arg(hb->height()).arg(cell)));
-        QVERIFY2(hb->mapTo(&band, QPoint(0, hb->height() - 1)).y() == band.height() - 1,
-                 qPrintable(QStringLiteral("hbar bottom=%1, band bottom rows expected")
-                                .arg(hb->mapTo(&band, QPoint(0, hb->height() - 1)).y())));
+        QVERIFY2(hb->mapTo(&band, QPoint(0, 0)).y() == 0,
+                 qPrintable(QStringLiteral("hbar top=%1, band top row expected")
+                                .arg(hb->mapTo(&band, QPoint(0, 0)).y())));
 
         const QImage img = hb->grab().toImage();
         QVERIFY(!img.isNull());

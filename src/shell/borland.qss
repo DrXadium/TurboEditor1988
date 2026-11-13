@@ -7,7 +7,7 @@
 QWidget {
     background-color: #0000AA;          /* TV window blue desktop */
     color: #FFFF55;
-    font-family: "IBM Plex Mono", "DejaVu Sans Mono", monospace;
+    font-family: "PxPlus IBM VGA8", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
     font-size: 16px;
 }
 /* Menu bar: light-gray strip, black labels (hotkey drawn red by MenuBar). */

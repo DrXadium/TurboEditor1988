@@ -6,6 +6,8 @@
 #include <QApplication>
 #include <QMenuBar>
 #include <QStatusBar>
+#include <QFile>
+#include <QFontDatabase>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/BorlandStyle.h"
 #include "src/shell/TabStrip.h"
@@ -20,6 +22,20 @@ private slots:
     void initTestCase() {
         if (!QApplication::instance())
             qWarning("expected QApplication (main provides it)");
+    }
+
+    // TV spec: the DEFAULT face is the bundled VGA typeface (PxPlus IBM VGA8),
+    // not a substituted system mono. ShellWindow registers it from the embedded
+    // resource and sets it as the QApplication default - that is what the QSS
+    // font-family fallback and every widget resolve against.
+    void default_font_is_the_bundled_vga_typeface() {
+        QVERIFY2(QFile::exists(QStringLiteral(":/fonts/PxPlus_IBM_VGA8.ttf")),
+                 "TTF not embedded as a Qt resource (check CMake fonts.qrc)");
+        ShellWindow w;   // ctor registers the font + sets the app default
+        Q_UNUSED(w);
+        QVERIFY2(QFontDatabase::families().contains(QStringLiteral("PxPlus IBM VGA8")),
+                 qPrintable(QStringLiteral("PxPlus IBM VGA8 not in QFontDatabase")));
+        QCOMPARE(QApplication::font().family(), QStringLiteral("PxPlus IBM VGA8"));
     }
 
     void windowTitle_is_crt_kate() {
@@ -76,15 +92,15 @@ private slots:
         const QImage img = band.grab().toImage();
         QVERIFY(!img.isNull());
         const int w = img.width(), h = img.height();
-        const int bot = h - 1;
-
-        // Rev2 spec 3: the pos text sits IN the double-line border (no separate
-        // blue box behind it). The band is now exactly ONE text row tall, so the
-        // text fills most of it: assert the glyphs are present and vertically
-        // centered in the band rather than pinned to the top edge.
+        // The band has TWO rows: the horizontal scrollbar on top, and the
+        // window's bottom border row underneath. The position text belongs on
+        // the BORDER row, interrupting the ═ rule - it must not drift up into
+        // the scrollbar row.
+        const int rowH = qMax(10, band.fontMetrics().height());
+        const int borderTop = h - rowH;
         int topMost = -1, whitePx = 0;
         for (int x = 75; x <= 125 && x < w; ++x)
-            for (int y = 0; y < h - 2; ++y) {   // above the border lines
+            for (int y = borderTop; y < h; ++y) {
                 const QColor c = img.pixelColor(x, y);
                 if (c.red() > 200 && c.green() > 200 && c.blue() > 200) {
                     ++whitePx;
@@ -92,15 +108,15 @@ private slots:
                         topMost = y;
                 }
             }
-        QVERIFY2(whitePx >= 12,
-                 qPrintable(QStringLiteral("no cursor-pos glyphs above the border (%1 px)")
+        // "2:1" is three thin glyphs in the rule's gap, so the pixel count is
+        // small; 6 is comfortably above the zero a missing text would give.
+        QVERIFY2(whitePx >= 6,
+                 qPrintable(QStringLiteral("no cursor-pos glyphs on the border row (%1 px)")
                                 .arg(whitePx)));
-        // p13: single-row band -> the text starts near the top but its glyph
-        // block must run through the middle, not hug row 0 of a tall band.
-        QVERIFY2(topMost >= 0 && topMost <= h / 2 + 4,
+        QVERIFY2(topMost >= borderTop,
                  qPrintable(QStringLiteral(
-                     "cursor-pos text does not sit mid-band (top row %1, band %2)")
-                                .arg(topMost).arg(h)));
+                     "cursor-pos text is above the border row (top row %1, border starts %2)")
+                                .arg(topMost).arg(borderTop)));
 
         // No backdrop box: the rows ABOVE the border lines in the pos area
         // stay dominated by flat window blue (a box would replace it).
@@ -118,17 +134,20 @@ private slots:
                                 .arg(blue).arg(total)));
     }
 
-    // TV-revision spec 5h: the horizontal scrollbar spans from ~col 18 (x≥180)
-    // to the right edge, full band height.
-    void horizontal_scrollbar_spans_from_col_18_to_right() {
+    // The h-scrollbar sits on the band's OWN row (the upper one) and spans the
+    // full width up to the corner cell; the ═ border row runs underneath it.
+    void horizontal_scrollbar_spans_its_own_row_up_to_the_corner() {
         BottomBand band;
         band.resize(640, 26);
         band.show();
         QCoreApplication::processEvents();
         TextScrollBar* hb = band.horizontalBar();
         QVERIFY(hb);
-        QVERIFY2(hb->geometry().left() >= 180,
-                 qPrintable(QStringLiteral("hbar left=%1, expected >=180 (col 18)")
+        // The scrollbar now owns its own band row, so it starts at the left
+        // edge; the position text that used to need the first 180 px moved
+        // down onto the border row below.
+        QVERIFY2(hb->geometry().left() == 0,
+                 qPrintable(QStringLiteral("hbar left=%1, expected 0 (full row)")
                                 .arg(hb->geometry().left())));
         // The hbar stops one cell short of the right edge so the ╝ frame
         // corner stays visible (p13: it previously painted over the corner).

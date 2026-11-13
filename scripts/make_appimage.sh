@@ -118,6 +118,9 @@ export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QML2_IMPORT_PATH="$HERE/usr/qml${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
 export QML_IMPORT_PATH="$QML2_IMPORT_PATH"
 export XDG_DATA_DIRS="$HERE/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+# Bundled TV face lives in $HERE/usr/share/fonts/TTF (see CMake install rule);
+# XDG_DATA_DIRS above already exposes it to fontconfig, so the family resolves
+# without a custom FONTCONFIG_* override.
 exec "$HERE/usr/bin/crt-kate" "$@"
 APPRUN
 chmod +x AppDir/AppRun

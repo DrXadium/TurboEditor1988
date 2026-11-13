@@ -271,34 +271,50 @@ private slots:
 
     // TV-revision spec 2: FIRST letter of every title (F, E, S, V, S, S, H)
     // is hotkey red #AA0000; the rest of the label stays black.
+    // TV: the FIRST visible letter of each menu-bar title is hotkey-red.
+    // BorlandStyle CENTERS the title in its action rect (so the selected green
+    // plate is balanced), so the first glyph is NOT at rect.x() - locate the
+    // leftmost actual glyph inside the item and check its colour. Sampling a
+    // fixed box at rect.x() reads background whenever centering shifts the text.
     void menu_first_letter_of_each_item_is_red() {
         ShellWindow w;
         w.resize(900, 600);
         w.show();
         QMenuBar* mb = w.menuBar();
         QVERIFY(mb);
-        const QFontMetrics fm(mb->font());
-        const int cellW = fm.horizontalAdvance(QLatin1Char('M'));
         QImage img = mb->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const auto isBg = [](const QColor& c) {
+            return qAbs(c.red() - 0xAA) <= 45 && qAbs(c.green() - 0xAA) <= 45
+                && qAbs(c.blue() - 0xAA) <= 45;   // menu-bar gray
+        };
 
         for (QAction* a : mb->actions()) {
             const QRect g = mb->actionGeometry(a);
-            const QRect firstCharBox(g.x(), g.y(), cellW, g.height());
-            int red = 0, black = 0;
-            for (int y = firstCharBox.top(); y <= firstCharBox.bottom(); ++y)
-                for (int x = firstCharBox.left(); x <= firstCharBox.right(); ++x) {
+            // Leftmost non-background (glyph) pixel column in the item.
+            int glyphX = -1;
+            for (int x = g.left(); x <= g.right() && glyphX < 0; ++x)
+                for (int y = g.top(); y <= g.bottom(); ++y) {
+                    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+                        continue;
+                    if (!isBg(img.pixelColor(x, y))) { glyphX = x; break; }
+                }
+            QVERIFY2(glyphX >= 0,
+                     qPrintable(QStringLiteral("menu item '%1': no glyph painted in its rect")
+                                    .arg(a->text().remove(QLatin1Char('&')))));
+            // Sample that first glyph's cell for hotkey-red.
+            int red = 0;
+            for (int x = glyphX; x < glyphX + 8 && x <= g.right(); ++x)
+                for (int y = g.top(); y <= g.bottom(); ++y) {
                     if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
                         continue;
                     const QColor c = img.pixelColor(x, y);
                     if (c.red() > 150 && c.green() < 90 && c.blue() < 90)
                         ++red;
-                    if (c.red() < 60 && c.green() < 60 && c.blue() < 60)
-                        ++black;
                 }
             QVERIFY2(red >= 1,
                      qPrintable(QStringLiteral(
-                         "menu item '%1': first-letter box has no hotkey-red px (red=%2 black=%3)")
-                                    .arg(a->text().remove(QLatin1Char('&'))).arg(red).arg(black)));
+                         "menu item '%1': first glyph is not hotkey-red (red=%2)")
+                                    .arg(a->text().remove(QLatin1Char('&'))).arg(red)));
         }
     }
 

@@ -53,6 +53,7 @@ add_library(crt-shell STATIC
   src/shell/BottomBand.h
   src/shell/ScrollBarInstaller.cpp
   src/shell/ScrollBarInstaller.h
+  fonts/fonts.qrc
 )
 target_include_directories(crt-shell PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(crt-shell PUBLIC Qt6::Gui Qt6::Widgets)
@@ -61,6 +62,14 @@ qt_add_resources(crt-shell "shell_qss"
     BASE src/shell
     FILES src/shell/borland.qss
 )
+
+# Turbo Vision default typeface (PxPlus IBM VGA8 - a VGA 8x16 CP437 bitmap
+# font). Compiled from fonts/fonts.qrc via CMAKE_AUTORCC (a hand-written .qrc
+# keeps the alias under our control): prefix "/" + alias "fonts/..." ->
+# :/fonts/PxPlus_IBM_VGA8.ttf, loaded in ShellWindow. Also installed to
+# share/fonts below so fontconfig resolves the family in the AppImage
+# (AppRun points XDG_DATA_DIRS at $APPDIR/usr/share).
+set(CRT_FONT_TTF ${CMAKE_CURRENT_SOURCE_DIR}/fonts/PxPlus_IBM_VGA8.ttf)
 
 # Task 3 test: ctest -R tst_chrome
 add_executable(tst_chrome tests/tst_chrome.cpp)
@@ -222,6 +231,12 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.desktop
         DESTINATION share/applications)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.png
         DESTINATION share/icons/hicolor/256x256/apps)
+# AppImage: bundle the TV typeface where fontconfig scans (AppRun points
+# XDG_DATA_DIRS at $APPDIR/usr/share), so "PxPlus IBM VGA8" resolves as a
+# real family, not just via the embedded :/ copy.
+install(FILES ${CRT_FONT_TTF}
+        DESTINATION share/fonts/TTF
+        OPTIONAL)
 
 # Task 12 scratch probe (not a ctest test): renders the real ShellWindow plus
 # editor via ContentBridge and prints region colors. Build on demand with:

@@ -10,12 +10,15 @@
 namespace {
 const QColor kBgBlue(0x00, 0x00, 0xAA);      // band sits on the window blue
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // cursor-position text (spec 6) + frame
+const QColor kGreen(0x00, 0xAA, 0x00);       // bottom-right corner join (spec: green)
 const int kCursorColX = 75;                  // spec: white text at cols 8-12 (x in [75,125])
 } // namespace
 
-// The band IS the window bottom border row: exactly one text row tall, so the
-// ═ rule sits directly above the status line with no blue gap.
-int BottomBand::bandHeight() const { return qMax(10, fontMetrics().height()); }
+// TWO text rows: the horizontal scrollbar sits on its own row, and the window's
+// bottom border row (═ with the position text) runs underneath it. With a
+// single row the scrollbar painted over the rule and the border disappeared
+// from x≈180 rightwards.
+int BottomBand::bandHeight() const { return qMax(10, fontMetrics().height()) * 2; }
 
 BottomBand::BottomBand(QWidget* parent) : QWidget(parent)
 {
@@ -81,14 +84,13 @@ void BottomBand::layoutHBar()
 {
     if (!m_hbar)
         return;
-    const int left = 180;                          // ~col 18 @10px cell
-    // Stop before the right corner CELL: the hbar used to run to width()-4 and
-    // painted over the ╝ corner, hiding the frame join.
+    // The scrollbar owns the band's TOP row; the border row below it is left
+    // for the ═ rule, so the rule is never painted over.
+    const int left = 0;
     const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
     const int right = width() - cellW - 1;
-    // ONE CELL tall (spec 3), bottom-aligned onto the double-line border rows.
-    const int cellH = fontMetrics().height();
-    m_hbar->setGeometry(QRect(QPoint(left, height() - cellH), QPoint(right, height() - 1)));
+    const int rowH = qMax(10, fontMetrics().height());
+    m_hbar->setGeometry(QRect(QPoint(left, 0), QPoint(right, rowH - 1)));
 }
 
 void BottomBand::resizeEvent(QResizeEvent* ev)
@@ -103,30 +105,43 @@ void BottomBand::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing, false);
     p.fillRect(rect(), kBgBlue);
 
-    // The band owns the window's BOTTOM frame edge (spec 9): white double line
-    // + left/right vertical stubs joining the EditorHost's verticals above, so
-    // all four frame corners stay solid. Drawn first; cursor + hbar on top.
-    // The band owns the window's BOTTOM border row: one cell tall, carrying the
-    // ═ double rule through its centre (the cursor position text interrupts it,
-    // exactly like Turbo Vision's "26:24").
-    TvFrame::doubleH(p, rect(), kWhite);
-    // Left frame corner: continue EditorHost's ║ column down to the bottom rule
-    // so the ╚ corner actually joins (the band spans the full window width and
-    // is painted below the editor host, so nothing else closes that corner).
+    // The band owns the window's BOTTOM BORDER ROW (the lower of its two rows).
+    // TV's bottom edge reads: ╚ at the left, ═ across, the "L:C" position
+    // interrupting it with a SPACE on each side, ═ again, and a GREEN corner
+    // where it meets the vertical scrollbar column at the right.
+    const int rowH = qMax(10, fontMetrics().height());
+    const int borderTop = height() - rowH;
+    const QRect border(0, borderTop, width(), rowH);
     const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
-    TvFrame::doubleV(p, QRect(0, 0, cellW, height() - 1), kWhite);
-    // Right frame corner (╝): same join on the far right, where the vertical
-    // scrollbar column ends.
-    TvFrame::doubleV(p, QRect(width() - cellW, 0, cellW, height() - 1), kWhite);
 
-    // Cursor position "L:C" white, left-anchored around column 8 (x≈75).
+    // Rule rows inside the border row, matching TvFrame::doubleH's geometry.
+    const int gap = qMax(2, rowH / 3);
+    const int cy = borderTop + rowH / 2;
+    const int upperRule = cy - gap / 2 - 1;
+
+    // The rule BREAKS around the position text: space, "L:C", space.
+    const QString pos = cursorPosText();
+    const int space = qMax(4, fontMetrics().horizontalAdvance(QLatin1Char(' ')));
+    const int textW = fontMetrics().horizontalAdvance(pos);
+    const int textLeft = kCursorColX;
+    const int gapStart = qMax(cellW, textLeft - space);
+    const int gapEnd = qMin(width() - cellW, textLeft + textW + space);
+
+    TvFrame::doubleH(p, QRect(0, borderTop, gapStart, rowH), kWhite);
+    if (gapEnd < width())
+        TvFrame::doubleH(p, QRect(gapEnd, borderTop, width() - gapEnd, rowH), kWhite);
+
+    // ╚ bottom-left: the ║ column from above stops AT the upper rule. Drawing
+    // it the full height made a cross instead of a corner.
+    TvFrame::doubleV(p, QRect(0, borderTop, cellW, qMax(1, upperRule - borderTop + 1)), kWhite);
+
+    // Green corner where the bottom rule meets the scrollbar column.
+    TvFrame::doubleV(p, QRect(width() - cellW, borderTop, cellW,
+                              qMax(1, upperRule - borderTop + 1)), kGreen);
+
+    // Cursor position, white, on the border row.
     p.setPen(kWhite);
-    // Plain white text SITTING ON the double-line border rows: the baseline
-    // is the band bottom, so the digits interrupt the border like TV's 26:24
-    // (and the glyph top drops into the lower half of the band).
-    const int baseline = height() - 1;
-    p.drawText(QPoint(kCursorColX, baseline), cursorPosText());
+    p.drawText(QPoint(textLeft, height() - 1), pos);
 
-    // Horizontal scrollbar spans from ~col 18 to the right edge, full band height.
     layoutHBar();
 }

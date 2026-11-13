@@ -46,11 +46,22 @@ QSize BorlandStyle::sizeFromContents(ContentsType type, const QStyleOption* opt,
 int BorlandStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
                               const QWidget* widget) const
 {
-    // Turbo Vision menu bar: ~4 spaces of visible gap between titles
-    // (the default packs them to ~6px). Tests: menu_titles_separated_by_four_spaces
-    // and menu_items_use_tv_column_placement bound this window.
-    if (metric == PM_MenuBarItemSpacing)
-        return 30;
+    // Turbo Vision menu bar: titles separated by ~4 spaces. Spaces are CELLS,
+    // so derive from the widget's actual font rather than a pixel constant - a
+    // fixed 30px only matched the old, wider face and pushed the gap past the
+    // spec once the default became the 8px-cell VGA font. The action rect adds
+    // its own ~2-cell padding on each side, so 2 cells of spacing lands the
+    // visible gap at ~4 cells total.
+    if (metric == PM_MenuBarItemSpacing) {
+        int cell = 8;
+        if (widget) {
+            const QFontMetrics fm(widget->font());
+            const int adv = fm.horizontalAdvance(QLatin1Char('M'));
+            if (adv > 0)
+                cell = adv;
+        }
+        return 2 * cell;
+    }
     return QProxyStyle::pixelMetric(metric, option, widget);
 }
 

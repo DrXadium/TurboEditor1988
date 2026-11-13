@@ -12,7 +12,10 @@
 #include "BottomBand.h"
 #include "TvFrame.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QFile>
+#include <QFontDatabase>
+#include <QFont>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -73,9 +76,34 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     auto* sbInstall = new ScrollBarInstaller(qApp);
     qApp->installEventFilter(sbInstall);
 
-    // Force the QSS resource into the link (static lib resources are dropped
-    // by the linker unless referenced).
+    // Force the QSS + font resources into the link (static lib resources are
+    // dropped by the linker unless referenced). The font .qrc is AUTORCC-
+    // compiled as "fonts" -> qInitResources_fonts.
     Q_INIT_RESOURCE(shell_qss);
+    Q_INIT_RESOURCE(fonts);
+
+    // Load the bundled TV typeface FIRST so the QSS font-family below resolves.
+    // addApplicationFontFromData registers the family in-process (tests and the
+    // binary both hit this path - no fontconfig needed).
+    QStringList tvFamilies;
+    {
+        QFile ttf(QStringLiteral(":/fonts/PxPlus_IBM_VGA8.ttf"));
+        if (ttf.open(QIODevice::ReadOnly)) {
+            const QByteArray fontData = ttf.readAll();
+            const int id = QFontDatabase::addApplicationFontFromData(fontData);
+            if (id >= 0)
+                tvFamilies = QFontDatabase::applicationFontFamilies(id);
+        }
+    }
+    // Set the app-wide default so every widget (and the QSS fallback) picks the
+    // VGA face. Sizing still comes from the QSS (16px) and tabs.setFontSize.
+    if (!tvFamilies.isEmpty()) {
+        if (auto* qapp = qobject_cast<QApplication*>(QCoreApplication::instance())) {
+            QFont def = qapp->font();
+            def.setFamily(tvFamilies.first());
+            qapp->setFont(def);
+        }
+    }
 
     // Load the navy QSS (qt_add_resources BASE=src/shell => :/borland.qss).
     QFile qss(QStringLiteral(":/borland.qss"));

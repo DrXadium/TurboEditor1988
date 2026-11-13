@@ -28,6 +28,38 @@ bool isFrameWhite(const QColor& c)
     return qAbs(c.red() - 0xFF) <= 24 && qAbs(c.green() - 0xFF) <= 24 &&
            qAbs(c.blue() - 0xFF) <= 24;
 }
+
+bool isBgBlue(const QColor& c)
+{
+    return qAbs(c.red() - 0x00) <= 40 && qAbs(c.green() - 0x00) <= 40 &&
+           qAbs(c.blue() - 0xAA) <= 40;
+}
+
+bool isGreen(const QColor& c)
+{
+    return c.green() > 120 && c.red() < 100 && c.blue() < 100;
+}
+
+// The bottom border row's two rule rows: the band rows with the most white
+// pixels. Returns false when no rule row is found at all.
+bool ruleRows(const QImage& img, const QPoint& origin, int bandW, int bandH,
+              int* upper, int* lower)
+{
+    QList<int> rows;
+    for (int y = 0; y < bandH; ++y) {
+        int n = 0;
+        for (int x = 0; x < bandW; ++x)
+            if (isFrameWhite(img.pixelColor(origin.x() + x, origin.y() + y)))
+                ++n;
+        if (n > bandW / 2)
+            rows << y;
+    }
+    if (rows.size() < 2)
+        return false;
+    *upper = rows.first();
+    *lower = rows.last();
+    return true;
+}
 } // namespace
 
 class TstFrame : public QObject
@@ -97,13 +129,15 @@ private slots:
 
         // Frame-box corners in shell coordinates:
         //   top-left/top-right: the title line's left/right ends.
-        //   bottom-left/bottom-right: the BOTTOM BAND's bottom corners
-        //   (spec 9 — the band now owns the window's bottom border row).
+        //   bottom-left/bottom-right: the BOTTOM BAND's BORDER ROW — the lower
+        //   of the band's two rows (the scrollbar owns the upper one). The
+        //   bottom-right corner is GREEN by spec, so it is matched separately.
+        const int borderY = band->height() - band->fontMetrics().height() / 2;
         const QPoint corners[4] = {
             tsOrigin + QPoint(3, ts->height() - 4),                 // top-left
             tsOrigin + QPoint(ts->width() - 4, ts->height() - 4),   // top-right
-            bOrigin + QPoint(3, band->height() - 4),                // bottom-left
-            bOrigin + QPoint(band->width() - 4, band->height() - 4) // bottom-right
+            bOrigin + QPoint(3, borderY),                           // bottom-left
+            bOrigin + QPoint(band->width() - 4, borderY)            // bottom-right
         };
         const char* names[4] = { "top-left", "top-right", "bottom-left", "bottom-right" };
 
@@ -115,7 +149,8 @@ private slots:
                     const int x = c.x() + dx, y = c.y() + dy;
                     if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
                         continue;
-                    if (isFrameWhite(img.pixelColor(x, y)))
+                    const QColor c2 = img.pixelColor(x, y);
+                    if (isFrameWhite(c2) || (i == 3 && isGreen(c2)))
                         found = true;
                 }
             QVERIFY2(found, qPrintable(QStringLiteral("frame %1 corner missing WHITE box at (%2,%3)")
@@ -174,6 +209,95 @@ private slots:
         QVERIFY2(black == 0,
                  qPrintable(QStringLiteral("pure black inside window: %1 px (rows %2..%3), first:%4")
                                 .arg(black).arg(y0).arg(y1).arg(samples)));
+    }
+    // TV spec: the bottom border row is a ═ rule that BREAKS for the cursor
+    // position, rather than the text sitting on top of a solid rule.
+    void bottom_border_breaks_around_the_cursor_position()
+    {
+        ShellWindow w;
+        w.resize(600, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band);
+        // Grab the band itself: the shell is never mapped, so a shell grab plus
+        // mapTo() is not a reliable way to address the band's own rows.
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
+        const QPoint o(0, 0);
+        const int bw = img.width(), bh = img.height();
+
+        int upper = -1, lower = -1;
+        QVERIFY2(ruleRows(img, o, bw, bh, &upper, &lower),
+                 "no bottom rule row found in the band");
+
+        // Between the left corner and the middle of the band the rule must be
+        // INTERRUPTED: a space, "L:C", a space. A solid rule has no blue pixel
+        // on that row.
+        bool gap = false;
+        for (int x = 40; x < bw / 2 && !gap; ++x)
+            if (isBgBlue(img.pixelColor(o.x() + x, o.y() + upper)))
+                gap = true;
+        QVERIFY2(gap, "bottom rule is unbroken - the cursor position must interrupt it");
+    }
+
+    // The bottom-left corner is ╚: the ║ column from above stops AT the rule.
+    // A full-height vertical draws a cross instead.
+    void bottom_left_corner_is_a_corner_not_a_cross()
+    {
+        ShellWindow w;
+        w.resize(600, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band);
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
+        const QPoint o(0, 0);
+        const int bw = img.width(), bh = img.height();
+
+        int upper = -1, lower = -1;
+        QVERIFY2(ruleRows(img, o, bw, bh, &upper, &lower), "no bottom rule row found");
+
+        const int cellW = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        int below = 0;
+        for (int y = lower + 1; y < bh; ++y)
+            for (int x = 0; x < cellW; ++x)
+                if (isFrameWhite(img.pixelColor(o.x() + x, o.y() + y)))
+                    ++below;
+        QVERIFY2(below == 0,
+                 qPrintable(QStringLiteral("left corner has %1 white px below the rule - "
+                                           "a full-height bar is a cross, not a corner")
+                                .arg(below)));
+    }
+
+    // The bottom-right corner is green (the join where the hbar column meets
+    // the bottom rule), not white like the rest of the frame.
+    void bottom_right_corner_is_green()
+    {
+        ShellWindow w;
+        w.resize(600, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band);
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
+        const QPoint o(0, 0);
+        const int bw = img.width(), bh = img.height();
+
+        int upper = -1, lower = -1;
+        QVERIFY2(ruleRows(img, o, bw, bh, &upper, &lower), "no bottom rule row found");
+
+        const int cellW = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        int green = 0;
+        for (int y = 0; y <= upper; ++y)
+            for (int x = bw - cellW; x < bw; ++x) {
+                const QColor c = img.pixelColor(o.x() + x, o.y() + y);
+                if (c.green() > 120 && c.red() < 100 && c.blue() < 100)
+                    ++green;
+            }
+        QVERIFY2(green > 0, "bottom-right corner is not green");
     }
 };
 
