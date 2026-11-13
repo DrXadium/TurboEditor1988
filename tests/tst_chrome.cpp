@@ -143,12 +143,13 @@ private slots:
         QCoreApplication::processEvents();
         TextScrollBar* hb = band.horizontalBar();
         QVERIFY(hb);
-        // The scrollbar now owns its own band row, so it starts at the left
-        // edge; the position text that used to need the first 180 px moved
-        // down onto the border row below.
-        QVERIFY2(hb->geometry().left() == 0,
-                 qPrintable(QStringLiteral("hbar left=%1, expected 0 (full row)")
-                                .arg(hb->geometry().left())));
+        // The scrollbar shares the border row but starts a little after the
+        // position text - it does not span from the left edge.
+        const int textEnd = 75 + band.fontMetrics().horizontalAdvance(band.cursorPosText());
+        QVERIFY2(hb->geometry().left() > textEnd,
+                 qPrintable(QStringLiteral("hbar left=%1, must start after the position "
+                                           "text (ends at %2)")
+                                .arg(hb->geometry().left()).arg(textEnd)));
         // The hbar stops one cell short of the right edge so the ╝ frame
         // corner stays visible (p13: it previously painted over the corner).
         const int cornerCell = qMax(6, band.fontMetrics().horizontalAdvance(QLatin1Char('M')));
@@ -156,12 +157,13 @@ private slots:
                      && hb->geometry().right() >= band.width() - cornerCell - 3,
                  qPrintable(QStringLiteral("hbar right=%1, expected ~%2 (before the corner cell)")
                                 .arg(hb->geometry().right()).arg(band.width() - cornerCell)));
-        // TV-revision2 spec 3: the h-scrollbar is ONE CELL tall (the border
-        // row), not the full band height.
+        // The h-scrollbar fills the border row it shares with the position
+        // text. Compare against the row: a standalone widget's resize() is
+        // clamped by the platform, so the font cell is not a reliable yardstick.
         const int cell = band.fontMetrics().height();
-        QVERIFY2(qAbs(hb->geometry().height() - cell) <= 2,
-                 qPrintable(QStringLiteral("hbar height=%1, one cell=%2")
-                                .arg(hb->geometry().height()).arg(cell)));
+        QVERIFY2(qAbs(hb->geometry().height() - band.height()) <= 2,
+                 qPrintable(QStringLiteral("hbar height=%1, band row=%2 (one cell=%3)")
+                                .arg(hb->geometry().height()).arg(band.height()).arg(cell)));
     }
 
     // TV-revision spec 9: row order — menu bar, window top border (tabs),

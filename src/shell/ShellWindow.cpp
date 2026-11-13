@@ -52,10 +52,13 @@ protected:
         p.setRenderHint(QPainter::Antialiasing, false);
         const QRect r = rect();
         p.fillRect(r, kBgBlue);
-        // Left border column: a CELL-WIDE band carrying the ║ double rule.
+        // Left border column: the ║ GLYPH tiled down a cell-wide band. Drawing
+        // it as two hairlines gave exactly 2 px per row and read as thin; the
+        // glyph uses the font's own full-weight strokes.
         // No right verticals: TV-revision2 spec 1 hands the right border
         // column to the 1-cell RightScrollBar (teal ▲/▒/■/▼).
-        TvFrame::doubleV(p, QRect(0, 0, cellW(), r.height()), kFrameWhite);
+        TvFrame::tileV(p, QRect(0, 0, cellW(), r.height()), cellH(),
+                       QChar(0x2551), kFrameWhite);
         // NOTE: the bottom border row is owned by BottomBand (it also carries
         // the cursor position and the horizontal scrollbar). Drawing it here
         // too produced two rules with a blue gap between them.

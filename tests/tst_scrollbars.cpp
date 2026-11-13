@@ -255,22 +255,52 @@ private slots:
     // CELL tall, teal ◄ / ► end cells, a single-cell teal ■ thumb near the
     // left, a fine teal-on-blue ▒ texture (NOT the coarse 4-px checker), and
     // contains ZERO green pixels.
-    void horizontal_scrollbar_is_one_cell_tall() {
+    // Spec: the position text and the horizontal scrollbar share ONE border
+    // row, and the scrollbar starts a little after the numbers - it does not
+    // span from the left edge.
+    void horizontal_bar_shares_the_border_row_after_the_position()
+    {
         BottomBand band;
-        band.resize(640, 26);
+        band.resize(640, band.bandHeight());
         band.show();
         QCoreApplication::processEvents();
         QScrollBar* hb = band.horizontalBar();
         QVERIFY2(hb, "bottom band horizontal bar missing");
 
-        // One cell tall, occupying the band's TOP row. The band has two rows:
-        // the scrollbar sits on the upper one so the ═ border row underneath it
-        // stays visible (a bottom-aligned bar painted the rule out from x=180
-        // rightwards).
         const int cell = band.fontMetrics().height();
-        QVERIFY2(qAbs(hb->height() - cell) <= 2,
-                 qPrintable(QStringLiteral("hbar height=%1, one cell=%2")
-                                .arg(hb->height()).arg(cell)));
+        QVERIFY2(band.bandHeight() <= cell + 3,
+                 qPrintable(QStringLiteral("band is %1 px tall, expected ONE row (%2)")
+                                .arg(band.bandHeight()).arg(cell)));
+        QVERIFY2(qAbs(hb->mapTo(&band, QPoint(0, 0)).y()) <= 2,
+                 qPrintable(QStringLiteral("hbar top=%1 - it is not on the border row")
+                                .arg(hb->mapTo(&band, QPoint(0, 0)).y())));
+
+        const int textEnd = 75 + band.fontMetrics().horizontalAdvance(band.cursorPosText());
+        QVERIFY2(hb->geometry().left() > textEnd,
+                 qPrintable(QStringLiteral("hbar left=%1 must start after the position "
+                                           "text (which ends at %2)")
+                                .arg(hb->geometry().left()).arg(textEnd)));
+    }
+
+    void horizontal_scrollbar_is_one_cell_tall() {
+        BottomBand band;
+        // The band is ONE row tall now: the scrollbar shares the border row
+        // with the position text, so size it to the band's own height.
+        band.resize(640, band.bandHeight());
+        band.show();
+        QCoreApplication::processEvents();
+        QScrollBar* hb = band.horizontalBar();
+        QVERIFY2(hb, "bottom band horizontal bar missing");
+
+        // One cell tall, filling the single border row.
+        const int cell = band.fontMetrics().height();
+        // "One cell tall" = it fills the border row it lives in. Compare against
+        // the row itself: a standalone top-level widget's resize() is clamped
+        // by the platform, so the font cell is not a reliable yardstick here.
+        QVERIFY2(qAbs(hb->height() - band.height()) <= 2,
+                 qPrintable(QStringLiteral("hbar height=%1, band row=%2 "
+                                           "(one cell=%3)")
+                                .arg(hb->height()).arg(band.height()).arg(cell)));
         QVERIFY2(hb->mapTo(&band, QPoint(0, 0)).y() == 0,
                  qPrintable(QStringLiteral("hbar top=%1, band top row expected")
                                 .arg(hb->mapTo(&band, QPoint(0, 0)).y())));

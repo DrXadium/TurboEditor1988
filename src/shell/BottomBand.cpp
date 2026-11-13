@@ -14,11 +14,11 @@ const QColor kGreen(0x00, 0xAA, 0x00);       // bottom-right corner join (spec: 
 const int kCursorColX = 75;                  // spec: white text at cols 8-12 (x in [75,125])
 } // namespace
 
-// TWO text rows: the horizontal scrollbar sits on its own row, and the window's
-// bottom border row (═ with the position text) runs underneath it. With a
-// single row the scrollbar painted over the rule and the border disappeared
-// from x≈180 rightwards.
-int BottomBand::bandHeight() const { return qMax(10, fontMetrics().height()) * 2; }
+// ONE text row: the position text, the ═ rule and the horizontal scrollbar all
+// share the window's bottom border row, exactly as the reference IDE does. The
+// scrollbar starts a cell after the numbers, so the rule is visible between the
+// ╚ corner and the scrollbar and the two never overlap.
+int BottomBand::bandHeight() const { return qMax(10, fontMetrics().height()); }
 
 BottomBand::BottomBand(QWidget* parent) : QWidget(parent)
 {
@@ -84,13 +84,19 @@ void BottomBand::layoutHBar()
 {
     if (!m_hbar)
         return;
-    // The scrollbar owns the band's TOP row; the border row below it is left
-    // for the ═ rule, so the rule is never painted over.
-    const int left = 0;
+    // The scrollbar shares the border row but starts a cell AFTER the position
+    // text ("41:1"), and stops one cell short of the right edge so the green ┘
+    // corner cell stays visible.
     const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
+    const int space = qMax(4, fontMetrics().horizontalAdvance(QLatin1Char(' ')));
+    const int textEnd = kCursorColX + fontMetrics().horizontalAdvance(cursorPosText());
+    const int left = qMin(width() - cellW, textEnd + space + cellW);
     const int right = width() - cellW - 1;
-    const int rowH = qMax(10, fontMetrics().height());
-    m_hbar->setGeometry(QRect(QPoint(left, 0), QPoint(right, rowH - 1)));
+    if (right <= left) {
+        m_hbar->setGeometry(QRect());
+        return;
+    }
+    m_hbar->setGeometry(QRect(QPoint(left, 0), QPoint(right, height() - 1)));
 }
 
 void BottomBand::resizeEvent(QResizeEvent* ev)
@@ -105,21 +111,14 @@ void BottomBand::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing, false);
     p.fillRect(rect(), kBgBlue);
 
-    // The band owns the window's BOTTOM BORDER ROW (the lower of its two rows).
-    // TV's bottom edge reads: ╚ at the left, ═ across, the "L:C" position
-    // interrupting it with a SPACE on each side, ═ again, and a GREEN corner
-    // where it meets the vertical scrollbar column at the right.
-    const int rowH = qMax(10, fontMetrics().height());
-    const int borderTop = height() - rowH;
-    const QRect border(0, borderTop, width(), rowH);
+    // The band owns the window's BOTTOM BORDER ROW, drawn with the box-drawing
+    // GLYPHS so it matches the reference exactly:
+    //   ╚ at the left (joins EditorHost's ║ column to the ═ rule),
+    //   ═ across, breaking for the "L:C" position with a space either side,
+    //   ═ again up to the scrollbar, and a GREEN ┘ at the right (joins the
+    //   scrollbar row to the vertical scrollbar column).
     const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
-
-    // Rule rows inside the border row, matching TvFrame::doubleH's geometry.
-    const int gap = qMax(2, rowH / 3);
-    const int cy = borderTop + rowH / 2;
-    const int upperRule = cy - gap / 2 - 1;
-
-    // The rule BREAKS around the position text: space, "L:C", space.
+    const int rowH = height();
     const QString pos = cursorPosText();
     const int space = qMax(4, fontMetrics().horizontalAdvance(QLatin1Char(' ')));
     const int textW = fontMetrics().horizontalAdvance(pos);
@@ -127,21 +126,22 @@ void BottomBand::paintEvent(QPaintEvent*)
     const int gapStart = qMax(cellW, textLeft - space);
     const int gapEnd = qMin(width() - cellW, textLeft + textW + space);
 
-    TvFrame::doubleH(p, QRect(0, borderTop, gapStart, rowH), kWhite);
-    if (gapEnd < width())
-        TvFrame::doubleH(p, QRect(gapEnd, borderTop, width() - gapEnd, rowH), kWhite);
+    // ╚ bottom-left corner.
+    TvFrame::glyph(p, QRect(0, 0, cellW, rowH), QChar(0x255A), kWhite);
+    // ═ from the corner to the position text.
+    TvFrame::tileH(p, QRect(cellW, 0, gapStart - cellW, rowH), cellW, QChar(0x2550), kWhite);
+    // ═ from the text to the scrollbar (the rule "continues until it reaches
+    // the scrollbar").
+    const int hbarLeft = qMin(width() - cellW, gapEnd + cellW);
+    if (hbarLeft > gapEnd)
+        TvFrame::tileH(p, QRect(gapEnd, 0, hbarLeft - gapEnd, rowH), cellW, QChar(0x2550), kWhite);
+    // Green ┘ bottom-right corner.
+    TvFrame::glyph(p, QRect(width() - cellW, 0, cellW, rowH), QChar(0x2518), kGreen);
 
-    // ╚ bottom-left: the ║ column from above stops AT the upper rule. Drawing
-    // it the full height made a cross instead of a corner.
-    TvFrame::doubleV(p, QRect(0, borderTop, cellW, qMax(1, upperRule - borderTop + 1)), kWhite);
-
-    // Green corner where the bottom rule meets the scrollbar column.
-    TvFrame::doubleV(p, QRect(width() - cellW, borderTop, cellW,
-                              qMax(1, upperRule - borderTop + 1)), kGreen);
-
-    // Cursor position, white, on the border row.
+    // Cursor position, white, on the same row as the scrollbar.
     p.setPen(kWhite);
-    p.drawText(QPoint(textLeft, height() - 1), pos);
+    p.drawText(QRect(textLeft, 0, textW + 2, rowH),
+               Qt::AlignLeft | Qt::AlignVCenter, pos);
 
     layoutHBar();
 }

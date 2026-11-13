@@ -212,7 +212,38 @@ private slots:
     }
     // TV spec: the bottom border row is a ═ rule that BREAKS for the cursor
     // position, rather than the text sitting on top of a solid rule.
-    void bottom_border_breaks_around_the_cursor_position()
+    // The left border is drawn with the ║ GLYPH, so each stroke is a full
+    // character stroke. Two 1-px hairlines (the old TvFrame::doubleV) measured
+    // exactly 2 px per row and read as thin next to the real IDE.
+    void left_border_is_a_thick_double_rule()
+    {
+        ShellWindow w;
+        w.resize(600, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+        QVERIFY2(host, "editorHost widget not found");
+        const QImage img = host->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 100, "editorHost did not render");
+
+        int widest = 0;
+        for (int y = img.height() / 4; y < img.height() / 2; ++y) {
+            int n = 0;
+            for (int x = 0; x < 16 && x < img.width(); ++x)
+                if (isFrameWhite(img.pixelColor(x, y)))
+                    ++n;
+            widest = qMax(widest, n);
+        }
+        QVERIFY2(widest >= 3,
+                 qPrintable(QStringLiteral(
+                     "left border is only %1 px wide - two hairlines, not a ║ glyph")
+                                .arg(widest)));
+    }
+
+    // The bottom-left corner is the ╚ glyph: the vertical stroke comes down the
+    // left of the cell and the horizontal stroke runs out to its right, so the
+    // two borders actually join instead of meeting at a seam.
+    void bottom_left_corner_joins_vertical_and_horizontal()
     {
         ShellWindow w;
         w.resize(600, 400);
@@ -220,59 +251,66 @@ private slots:
         QCoreApplication::processEvents();
         BottomBand* band = w.bottomBand();
         QVERIFY(band);
-        // Grab the band itself: the shell is never mapped, so a shell grab plus
-        // mapTo() is not a reliable way to address the band's own rows.
         const QImage img = band->grab().toImage();
         QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
-        const QPoint o(0, 0);
+        const int cw = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const int h = img.height();
+
+        // The cell holds BOTH strokes: the vertical stem on its left half and
+        // the horizontal rule running out across its right half. (The rule sits
+        // in the middle of the cell, not at the bottom - scan the whole cell.)
+        bool stem = false, rule = false;
+        for (int x = 0; x < cw / 2 && x < img.width(); ++x)
+            for (int y = 0; y < h; ++y)
+                if (isFrameWhite(img.pixelColor(x, y)))
+                    stem = true;
+        for (int x = cw / 2; x < cw && x < img.width(); ++x)
+            for (int y = 0; y < h; ++y)
+                if (isFrameWhite(img.pixelColor(x, y)))
+                    rule = true;
+        QVERIFY2(stem, "corner cell has no vertical stroke - ╚ is missing its stem");
+        QVERIFY2(rule, "corner cell has no horizontal stroke - ╚ is not joining ═");
+    }
+
+    // The bottom rule BREAKS for the position text (space, "L:C", space) and
+    // then continues until it reaches the horizontal scrollbar.
+    void bottom_rule_breaks_around_the_cursor_position()
+    {
+        ShellWindow w;
+        w.resize(600, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band);
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
         const int bw = img.width(), bh = img.height();
 
-        int upper = -1, lower = -1;
-        QVERIFY2(ruleRows(img, o, bw, bh, &upper, &lower),
-                 "no bottom rule row found in the band");
+        // The rule now only spans the left part of the row (the scrollbar owns
+        // the rest), so scan for the rule inside that span rather than the
+        // whole band.
+        const int scanTo = qMin(bw, 260);
+        int ruleY = -1, best = 0;
+        for (int y = 0; y < bh; ++y) {
+            int n = 0;
+            for (int x = 0; x < scanTo; ++x)
+                if (isFrameWhite(img.pixelColor(x, y)))
+                    ++n;
+            if (n > best) { best = n; ruleY = y; }
+        }
+        // The rule only spans the left stretch (the scrollbar owns the rest of
+        // the row), so a few cells of white is the expected magnitude.
+        QVERIFY2(ruleY >= 0 && best >= 16, "no bottom rule found left of the scrollbar");
 
-        // Between the left corner and the middle of the band the rule must be
-        // INTERRUPTED: a space, "L:C", a space. A solid rule has no blue pixel
-        // on that row.
         bool gap = false;
-        for (int x = 40; x < bw / 2 && !gap; ++x)
-            if (isBgBlue(img.pixelColor(o.x() + x, o.y() + upper)))
+        for (int x = 40; x < scanTo && !gap; ++x)
+            if (isBgBlue(img.pixelColor(x, ruleY)))
                 gap = true;
         QVERIFY2(gap, "bottom rule is unbroken - the cursor position must interrupt it");
     }
 
-    // The bottom-left corner is ╚: the ║ column from above stops AT the rule.
-    // A full-height vertical draws a cross instead.
-    void bottom_left_corner_is_a_corner_not_a_cross()
-    {
-        ShellWindow w;
-        w.resize(600, 400);
-        w.show();
-        QCoreApplication::processEvents();
-        BottomBand* band = w.bottomBand();
-        QVERIFY(band);
-        const QImage img = band->grab().toImage();
-        QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
-        const QPoint o(0, 0);
-        const int bw = img.width(), bh = img.height();
-
-        int upper = -1, lower = -1;
-        QVERIFY2(ruleRows(img, o, bw, bh, &upper, &lower), "no bottom rule row found");
-
-        const int cellW = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
-        int below = 0;
-        for (int y = lower + 1; y < bh; ++y)
-            for (int x = 0; x < cellW; ++x)
-                if (isFrameWhite(img.pixelColor(o.x() + x, o.y() + y)))
-                    ++below;
-        QVERIFY2(below == 0,
-                 qPrintable(QStringLiteral("left corner has %1 white px below the rule - "
-                                           "a full-height bar is a cross, not a corner")
-                                .arg(below)));
-    }
-
-    // The bottom-right corner is green (the join where the hbar column meets
-    // the bottom rule), not white like the rest of the frame.
+    // The bottom-right corner is the GREEN ┘ that joins the horizontal
+    // scrollbar row to the vertical scrollbar column.
     void bottom_right_corner_is_green()
     {
         ShellWindow w;
@@ -283,20 +321,14 @@ private slots:
         QVERIFY(band);
         const QImage img = band->grab().toImage();
         QVERIFY2(!img.isNull() && img.width() > 100, "bottom band did not render");
-        const QPoint o(0, 0);
-        const int bw = img.width(), bh = img.height();
+        const int bw = img.width();
 
-        int upper = -1, lower = -1;
-        QVERIFY2(ruleRows(img, o, bw, bh, &upper, &lower), "no bottom rule row found");
-
-        const int cellW = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const int cw = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
         int green = 0;
-        for (int y = 0; y <= upper; ++y)
-            for (int x = bw - cellW; x < bw; ++x) {
-                const QColor c = img.pixelColor(o.x() + x, o.y() + y);
-                if (c.green() > 120 && c.red() < 100 && c.blue() < 100)
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = qMax(0, bw - cw - 1); x < bw; ++x)
+                if (isGreen(img.pixelColor(x, y)))
                     ++green;
-            }
         QVERIFY2(green > 0, "bottom-right corner is not green");
     }
 };
