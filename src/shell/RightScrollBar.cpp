@@ -60,10 +60,11 @@ void RightScrollBar::paintEvent(QPaintEvent*)
     p.save();
     p.setPen(Qt::NoPen);
     // ▒ = an EVEN 1-px teal-on-blue stipple (classic medium-shade glyph
-    // texture: fine dots). NOT a coarse 4-px checker, which spec 3 bans.
+    // texture: fine dots), dithered in BOTH axes. Alternating on x alone left
+    // continuous teal bands on a narrow vertical bar - it read as stripes.
     for (int y = track.top(); y <= track.bottom(); ++y)
         for (int x = track.left(); x <= track.right(); ++x)
-            if (x & 1)
+            if ((x + y) & 1)
                 p.fillRect(QRect(x, y, 1, 1), kTeal);
     p.restore();
 

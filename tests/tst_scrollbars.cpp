@@ -365,6 +365,56 @@ private slots:
                  "track is a coarse checker - spec 3 wants an even 1-px ▒ stipple");
     }
 
+    // The RIGHT-BORDER bar's track must be the same fine ▒ stipple the
+    // horizontal bar uses. Its old test only asserted "teal and blue are both
+    // present", which a 4-px stripe passes - the track read as vertical lines.
+    void vertical_scrollbar_track_is_fine_stipple() {
+        ShellWindow shell;
+        shell.resize(900, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+        auto* bar = shell.findChild<QScrollBar*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(bar, "right-border scrollbar not found");
+        const QImage img = bar->grab().toImage();
+        QVERIFY(!img.isNull());
+        const int w = img.width(), h = img.height();
+        const auto isBlue = [](const QColor& c) {
+            return c.blue() > 150 && c.red() < 90 && c.green() < 90;
+        };
+
+        // Sample a mid-track column block, below the top arrow cell.
+        const int y0 = h / 3;
+        int teal = 0, blue = 0;
+        for (int y = y0; y < y0 + 8; ++y)
+            for (int x = 0; x < w; ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (isTeal(c)) ++teal;
+                if (isBlue(c)) ++blue;
+            }
+        QVERIFY2(teal > 0 && blue > 0,
+                 qPrintable(QStringLiteral("track not teal-on-blue: teal=%1 blue=%2")
+                                .arg(teal).arg(blue)));
+
+        // ▒ = a transition from teal to blue (or back) at least every 2 px.
+        // A stripe holds the same colour for many consecutive px, so it fails.
+        auto texAt = [&](int y0r) {
+            int trans = 0;
+            for (int i = 1; i < 5; ++i) {
+                const QColor a = img.pixelColor(w / 2, y0r + i - 1);
+                const QColor b = img.pixelColor(w / 2, y0r + i);
+                if ((isTeal(a) && isBlue(b)) || (isBlue(a) && isTeal(b)))
+                    ++trans;
+            }
+            return trans;
+        };
+        bool fineStipple = false;
+        for (int y = y0; y < y0 + 8 && !fineStipple; ++y)
+            if (texAt(y) >= 2)
+                fineStipple = true;
+        QVERIFY2(fineStipple,
+                 "vertical track is a solid stripe, not a ▒ stipple");
+    }
+
     // TV-revision2 spec 1: the window's RIGHT BORDER COLUMN is a 1-cell
     // vertical scrollbar flush to the right edge, spanning the frame
     // interior (row under the top-right corner .. row above the bottom band).

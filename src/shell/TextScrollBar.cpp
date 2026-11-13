@@ -55,8 +55,8 @@ static void drawArrow(QPainter& p, const QRect& r, Qt::ArrowType dir)
 }
 
 // Emulate the DOS ▒ track: a fine 1-px teal-on-blue stipple (even texture).
-// On a horizontal bar the sampling axis is x, so alternate columns; the test
-// pins "not a coarse checker" by looking for transitions in every 5 px.
+// Dithered in BOTH axes so it reads as a checkerboard at cell size rather than
+// as continuous bars - matching the vertical bar's track exactly.
 static void drawTrack(QPainter& p, const QRect& r)
 {
     p.save();
@@ -64,7 +64,7 @@ static void drawTrack(QPainter& p, const QRect& r)
     p.fillRect(r, kBlue);   // window-blue base under the stipple
     for (int y = r.top(); y <= r.bottom(); ++y)
         for (int x = r.left(); x <= r.right(); ++x)
-            if (x & 1)
+            if ((x + y) & 1)
                 p.fillRect(QRect(x, y, 1, 1), kTeal);
     p.restore();
 }
