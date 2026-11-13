@@ -20,8 +20,15 @@ public:
     // Central editor host (replaced by KTextEditor in Task 5).
     void setCentralWidget(QWidget* w);
     // Replaces the placeholder area BELOW the TabStrip with the real editor
-    // widget (EditorTabManager's container). TabStrip stays intact above it.
+    // widget (EditorTabManager::container). TabStrip stays intact above it.
     void setEditorWidget(QWidget* w);
+    // Re-binds the painted right/bottom scrollbars to the document scrollbars
+    // of the current view (pass KTextEditor::View::verticalScrollBar() and
+    // horizontalScrollBar(); crt-shell does not link KTextEditor, so the
+    // caller does that lookup). Safe to call again: it disconnects the
+    // previous pair first, so it reconnects cleanly when the active tab
+    // (and therefore the view) changes.
+    void wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* view = nullptr);
     // Focus target for forwarded keys: the editor if one is set, else the shell.
     QWidget* keyFocusWidget() const;
     TabStrip* tabStrip() const;
@@ -46,4 +53,8 @@ private:
     // document vertical it mirrors. QPointer: the view can die on tab close.
     class RightScrollBar* m_rightBar = nullptr;
     QPointer<QScrollBar> m_docV;
+    // The view's own horizontal scrollbar, mirrored into the bottom band. The
+    // old code only ever bound the VERTICAL one (and bound it to the wrong
+    // child). QPointer: a tab close destroys the view and its scrollbars.
+    QPointer<QScrollBar> m_docH;
 };

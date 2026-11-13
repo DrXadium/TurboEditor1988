@@ -23,6 +23,7 @@
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
 #include "src/shell/MenuBar.h"
+#include "src/shell/RightScrollBar.h"
 #include "src/shell/Minimap.h"
 #include "src/shell/BottomBand.h"
 #include "src/bridge/ContentBridge.h"
@@ -66,6 +67,43 @@ int main(int argc, char** argv)
     EditorTabManager tabs;
     shell.setEditorWidget(tabs.containerWidget());
     tabs.installActions(&shell);
+    // Bind the painted right/bottom scrollbars to the CURRENT view's real
+    // scrollbars. The original bug: the document scrollbar was identified by
+    // scanning children for the first vertical one, which latched an empty
+    // placeholder (painted bar 0..0 while the view was 0..366). crt-shell does
+    // not link KTextEditor, so the view lookup lives here.
+    //
+    // TWO triggers are needed, not one:
+    //  - at construction an empty document has no scroll range and the view
+    //    has no real KateScrollBar child yet, so the bind must re-run when the
+    //    document's text arrives;
+    //  - a tab change swaps which view is current.
+    QMetaObject::Connection docTextConn;
+    auto wireScrollbars = [&shell, &tabs, &docTextConn]() {
+        KTextEditor::View* v = tabs.activeView();
+        if (!v) {
+            shell.wireScrollbars(nullptr, nullptr);
+            return;
+        }
+        shell.wireScrollbars(v->verticalScrollBar(), v->horizontalScrollBar(),
+                             static_cast<QWidget*>(v));
+        // Re-bind once the active document grows: that is when the view's real
+        // scroll range appears. Reconnecting is idempotent, and wireScrollbars
+        // is a no-op when the same scrollbar is already bound.
+        if (KTextEditor::Document* d = v->document()) {
+            QObject::disconnect(docTextConn);
+            docTextConn = QObject::connect(
+                d, &KTextEditor::Document::textChanged, &shell,
+                [&shell, &tabs]() {
+                    if (KTextEditor::View* vv = tabs.activeView())
+                        shell.wireScrollbars(vv->verticalScrollBar(),
+                                             vv->horizontalScrollBar(),
+                                             static_cast<QWidget*>(vv));
+                });
+        }
+    };
+    wireScrollbars();
+    QTimer::singleShot(0, &shell, wireScrollbars);
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [&shell](const QStringList& titles, int active) {
                          if (TabStrip* strip = shell.tabStrip())
@@ -73,6 +111,12 @@ int main(int argc, char** argv)
                      });
     QObject::connect(shell.tabStrip(), &TabStrip::tabActivated, &tabs,
                      &EditorTabManager::setActiveIndex);
+    // The active tab change swaps which KTextEditor::View is current, so the
+    // painted scrollbars must re-bind to that view's scrollbars. Without this
+    // the right/bottom bars kept pointing at the first tab's scrollbars after
+    // a tab switch.
+    QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
+                     [wireScrollbars](const QStringList&, int) { wireScrollbars(); });
     // Bottom band cursor position "L:C" (spec 6): mirror the active view's
     // cursor, 1-based. Seed from the initial view, then track changes.
     if (KTextEditor::View* v0 = tabs.activeView()) {
@@ -561,6 +605,48 @@ int main(int argc, char** argv)
                          int(*fired), a ? int(a->isEnabled()) : -1,
                          int(before != after), int(before.size()), int(after.size()));
                 QCoreApplication::exit(0);
+            });
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_SCROLL_PROBE=1 loads a long
+    // document, drives the painted right-border bar and reports whether the
+    // real KTextEditor view actually scrolled (firstDisplayedLine). This is the
+    // only way to tell "signals are connected" apart from "the view scrolls".
+    if (qEnvironmentVariableIsSet("CRT_KATE_SCROLL_PROBE")) {
+        QTimer::singleShot(1200, &app, [&app, &shell, &tabs]() {
+            if (auto* d = tabs.activeDocument()) {
+                QStringList lines;
+                for (int i = 0; i < 400; ++i)
+                    lines << QStringLiteral("line %1").arg(i);
+                d->setText(lines.join(QLatin1Char('\n')));
+            }
+            // No re-wire here on purpose: the probe must measure the SAME
+            // wiring path the app uses (wireScrollbars at construction plus
+            // on tab change). Re-wiring at probe time would hide a real
+            // startup binding bug behind the dev aid.
+            QTimer::singleShot(700, &app, [&app, &shell, &tabs]() {
+                auto* v = tabs.activeView();
+                auto* bar = shell.findChild<RightScrollBar*>(QStringLiteral("rightScrollBar"));
+                QStringList bars;
+                if (v) {
+                    for (QScrollBar* b : v->findChildren<QScrollBar*>())
+                        bars << QStringLiteral("%1/%2/%3..%4")
+                                    .arg(QString::fromLatin1(b->metaObject()->className()))
+                                    .arg(b->orientation() == Qt::Vertical ? "V" : "H")
+                                    .arg(b->minimum()).arg(b->maximum());
+                }
+                const int before = v ? v->firstDisplayedLine() : -1;
+                const int barMax = bar ? bar->maximum() : -1;
+                if (bar)
+                    bar->setValue(barMax / 2);
+                QTimer::singleShot(500, &app, [&app, v, bar, before, barMax, bars]() {
+                    qWarning("DIAG scroll before=%d after=%d barMax=%d barVal=%d bars=[%s]",
+                             before, v ? v->firstDisplayedLine() : -1, barMax,
+                             bar ? bar->value() : -1,
+                             qPrintable(bars.join(QStringLiteral(", "))));
+                    QCoreApplication::exit(0);
+                });
             });
         });
     }

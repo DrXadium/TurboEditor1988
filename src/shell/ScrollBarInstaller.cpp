@@ -11,6 +11,42 @@ ScrollBarInstaller::ScrollBarInstaller(QObject* parent) : QObject(parent)
 {
 }
 
+void ScrollBarInstaller::link(QScrollBar* source, TextScrollBar* proxy)
+{
+    if (!source || !proxy)
+        return;
+
+    // Value, both ways. setValue() with an unchanged value emits nothing, so
+    // the two connections converge instead of ping-ponging.
+    QObject::connect(proxy, &QScrollBar::valueChanged, source,
+                     [source](int v) {
+                         if (source->value() != v)
+                             source->setValue(v);
+                     });
+    QObject::connect(source, &QScrollBar::valueChanged, proxy,
+                     [proxy](int v) {
+                         if (proxy->value() != v)
+                             proxy->setValue(v);
+                     });
+
+    // Range / page step, both ways: these set the thumb length and where the
+    // arrows can reach, so a growing document must propagate.
+    QObject::connect(proxy, &QScrollBar::rangeChanged, source,
+                     [source](int mn, int mx) {
+                         if (source->minimum() != mn || source->maximum() != mx)
+                             source->setRange(mn, mx);
+                     });
+    QObject::connect(source, &QScrollBar::rangeChanged, proxy,
+                     [proxy](int mn, int mx) {
+                         if (proxy->minimum() != mn || proxy->maximum() != mx)
+                             proxy->setRange(mn, mx);
+                     });
+
+    QObject::connect(proxy, &QScrollBar::actionTriggered, source,
+                     [source](int action) { source->triggerAction(
+                         static_cast<QAbstractSlider::SliderAction>(action)); });
+}
+
 bool ScrollBarInstaller::eventFilter(QObject* watched, QEvent* ev)
 {
     // Swap only on Show, and DEFER the actual widget swap to the next
@@ -65,8 +101,14 @@ bool ScrollBarInstaller::eventFilter(QObject* watched, QEvent* ev)
             text->setGeometry(geom);
         }
         text->show();
+
+        // Keep the real scrollbar ALIVE as the state owner: KTextEditor holds
+        // connections to it that drive the actual view scrolling. Deleting it
+        // (as this used to) left the painted bar inert - dragging it scrolled
+        // nothing, and scrolling the view never moved it.
         oldSb->hide();
-        oldSb->deleteLater();
+        oldSb->setParent(parent ? static_cast<QWidget*>(parent) : nullptr);
+        ScrollBarInstaller::link(oldSb, text);
     });
     return QObject::eventFilter(watched, ev);
 }

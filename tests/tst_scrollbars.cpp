@@ -13,6 +13,8 @@
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
 #include "src/shell/BottomBand.h"
+#include "src/shell/ScrollBarInstaller.h"
+#include "src/shell/RightScrollBar.h"
 #include "src/editor/EditorTabManager.h"
 #include <ktexteditor/view.h>
 #include <ktexteditor/document.h>
@@ -391,6 +393,128 @@ private slots:
                 fineStipple = true;
         QVERIFY2(fineStipple,
                  "track is a coarse checker - spec 3 wants an even 1-px ▒ stipple");
+    }
+
+    // The painted right-border bar must follow the VIEW's own vertical
+    // scrollbar. It used to be bound by scanning the view's children for the
+    // first vertical QScrollBar, which latched onto an empty placeholder: a
+    // live probe showed the view at 0..366 while the painted bar sat at 0..0.
+    // KTextEditor::View::verticalScrollBar() is the reliable identification.
+    void right_bar_follows_the_view_vertical_scrollbar()
+    {
+        ShellWindow shell;
+        shell.resize(900, 600);
+        EditorTabManager tabs;   // ctor creates the first document + view
+        shell.setEditorWidget(tabs.containerWidget());
+        shell.show();
+        QCoreApplication::processEvents();
+
+        KTextEditor::View* v = tabs.activeView();
+        QVERIFY(v);
+        QStringList lines;
+        for (int i = 0; i < 400; ++i)
+            lines << QStringLiteral("line %1").arg(i);
+        v->document()->setText(lines.join(QLatin1Char('\n')));
+        QCoreApplication::processEvents();
+
+        // Bind the painted bars to this view's scrollbars (main.cpp does
+        // this; crt-shell cannot, so the composition root wires it).
+        shell.wireScrollbars(v->verticalScrollBar(), v->horizontalScrollBar(),
+                             static_cast<QWidget*>(v));
+        QCoreApplication::processEvents();
+
+        auto* bar = shell.findChild<RightScrollBar*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(bar, "right-border scrollbar not found");
+        QScrollBar* real = v->verticalScrollBar();
+        QVERIFY2(real, "view has no vertical scrollbar");
+
+        QVERIFY2(real->maximum() > 0,
+                 qPrintable(QStringLiteral("document did not produce a scroll range: %1")
+                                .arg(real->maximum())));
+        QCOMPARE(bar->maximum(), real->maximum());
+
+        // Driving the painted bar scrolls the view.
+        bar->setValue(real->maximum() / 2);
+        QCOMPARE(real->value(), bar->value());
+
+        // And scrolling the view moves the painted bar.
+        real->setValue(real->maximum());
+        QCOMPARE(bar->value(), real->maximum());
+    }
+
+    // Same for the horizontal bar in the bottom band.
+    void bottom_bar_follows_the_view_horizontal_scrollbar()
+    {
+        ShellWindow shell;
+        shell.resize(900, 600);
+        EditorTabManager tabs;   // ctor creates the first document + view
+        shell.setEditorWidget(tabs.containerWidget());
+        shell.show();
+        QCoreApplication::processEvents();
+
+        KTextEditor::View* v = tabs.activeView();
+        QVERIFY(v);
+        // One very long line so the horizontal range is non-zero.
+        QString longLine;
+        for (int i = 0; i < 600; ++i)
+            longLine += QStringLiteral("word%1 ").arg(i);
+        v->document()->setText(longLine);
+        QCoreApplication::processEvents();
+
+        // Bind the painted bars to this view's scrollbars (main.cpp does
+        // this; crt-shell cannot, so the composition root wires it).
+        shell.wireScrollbars(v->verticalScrollBar(), v->horizontalScrollBar(),
+                             static_cast<QWidget*>(v));
+        QCoreApplication::processEvents();
+
+        BottomBand* band = shell.bottomBand();
+        QVERIFY2(band, "bottom band missing");
+        QScrollBar* hb = band->horizontalBar();
+        QVERIFY2(hb, "bottom band has no horizontal bar");
+        QScrollBar* real = v->horizontalScrollBar();
+        QVERIFY2(real, "view has no horizontal scrollbar");
+
+        QCOMPARE(hb->maximum(), real->maximum());
+        hb->setValue(real->maximum() / 2);
+        QCOMPARE(real->value(), hb->value());
+    }
+
+    // Scrollbars must actually SCROLL. The installer replaces KTextEditor's
+    // real scrollbar with a painted TextScrollBar, but used to copy its
+    // range/value once and delete it - so dragging the painted bar did nothing
+    // and scrolling the view never moved the bar. link() keeps the real one
+    // alive and mirrors both directions.
+    void painted_scrollbar_proxy_is_wired_to_the_real_one()
+    {
+        QWidget host;
+        QScrollBar real(Qt::Vertical);
+        real.setRange(0, 100);
+        real.setPageStep(10);
+        real.setValue(0);
+
+        auto* proxy = new TextScrollBar(Qt::Vertical, &host);
+        proxy->setRange(0, 100);
+        proxy->setPageStep(10);
+        proxy->setValue(0);
+
+        ScrollBarInstaller::link(&real, proxy);
+
+        // User drags / clicks the painted bar -> the real one moves.
+        proxy->setValue(42);
+        QCOMPARE(real.value(), 42);
+
+        // The view scrolls (wheel, caret movement) -> the painted bar follows.
+        real.setValue(70);
+        QCOMPARE(proxy->value(), 70);
+
+        // The document grows: the proxy's range must track, or the thumb
+        // proportion and the arrows would address a stale document.
+        real.setRange(0, 400);
+        QCOMPARE(proxy->maximum(), 400);
+
+        // ...and the other way round, since the proxy can also be ranged.
+        proxy->setRange(0, 55);
+        QCOMPARE(real.maximum(), 55);
     }
 
     // The RIGHT-BORDER bar's track must be the same fine ▒ stipple the

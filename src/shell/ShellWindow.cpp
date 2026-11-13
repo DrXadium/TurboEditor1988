@@ -6,6 +6,7 @@
 #include "TabStrip.h"
 #include "Minimap.h"
 #include "RightScrollBar.h"
+#include "TextScrollBar.h"
 #include "FKeyStatusBar.h"
 #include "BottomBand.h"
 #include "TvFrame.h"
@@ -18,7 +19,6 @@
 #include <QLayout>
 #include <QPainter>
 #include <QPaintEvent>
-#include <QTimer>
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -189,41 +189,104 @@ void ShellWindow::setEditorWidget(QWidget* w)
     m_editorLayout->addWidget(row);
 
     // TV-revision2 spec 1: Kate's own document vertical is HIDDEN (see
-    // EditorTabManager::applyTvStyle); the window-border RightScrollBar is
-    // now the visible control — bind both directions to the hidden bar.
-    // Geometry-based identification runs once now and once queued, because
-    // the view often has no real size until the layout has run.
-    auto wire = [this, wq = QPointer<QWidget>(w)]() {
-        QWidget* ww = wq.data();
-        if (!m_rightBar || !ww)
-            return;
-        QScrollBar* doc = nullptr;
-        for (QScrollBar* b : ww->findChildren<QScrollBar*>())
-            if (b->orientation() == Qt::Vertical) {
-                doc = b;
-                break;
-            }
-        if (!doc || doc == m_docV)
-            return;
-        if (m_docV) {
-            disconnect(m_docV, nullptr, m_rightBar, nullptr);
-            disconnect(m_rightBar, nullptr, m_docV, nullptr);
-        }
-        m_docV = doc;
-        m_rightBar->setRange(doc->minimum(), doc->maximum());
-        m_rightBar->setPageStep(doc->pageStep());
-        m_rightBar->setValue(doc->value());
-        connect(doc, &QScrollBar::rangeChanged, m_rightBar, &QScrollBar::setRange);
-        connect(doc, &QScrollBar::valueChanged, m_rightBar, &QScrollBar::setValue);
-        connect(m_rightBar, &QScrollBar::valueChanged, doc, &QScrollBar::setValue);
-    };
-    wire();
-    QTimer::singleShot(0, this, wire);
+    // EditorTabManager::applyTvStyle); the window-border RightScrollBar and
+    // the bottom band's horizontal bar are the visible controls. Binding them
+    // to the view's scrollbars is the composition root's job (main.cpp calls
+    // wireScrollbars(), which does the KTextEditor lookup — crt-shell does not
+    // link KTextEditor). This method only installs the editor widget.
 }
 
 void ShellWindow::setCentralWidget(QWidget* w)
 {
     QMainWindow::setCentralWidget(w);
+}
+
+// Bind the painted right-border and bottom-band scrollbars to the given
+// document scrollbars (the KTextEditor::View's own verticalScrollBar() and
+// horizontalScrollBar()), both directions.
+//
+// The old code identified the document scrollbar by scanning
+// findChildren<QScrollBar*>() for the first vertical one and latched onto an
+// empty placeholder (measured live: painted bar 0..0 vs the view's 0..366).
+// Passing the view's accessors in is the reliable identification; the caller
+// (main.cpp) does the KTextEditor lookup because crt-shell does not link
+// KTextEditor. Safe to re-run on tab change: each pass disconnects the
+// previous pair first, so nothing ping-pongs or double-fires.
+void ShellWindow::wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* view)
+{
+    // KTextEditor::View::verticalScrollBar() can return an EMPTY wrapper in
+    // this build: a live probe showed the accessor at 0..0 while the view's
+    // real KateScrollBar carried 0..366. When the accessor has no range,
+    // prefer the real KateScrollBar among the view's children — matched by
+    // class name, so it is still found while the document is empty and the
+    // bar has no range yet (it emits rangeChanged as the document grows).
+    // A non-empty accessor is left alone: it is the one the tests and the
+    // rest of the app identify the view by.
+    auto pick = [view](QScrollBar* accessor, Qt::Orientation orient) -> QScrollBar* {
+        if (!view || !accessor || accessor->maximum() > accessor->minimum())
+            return accessor;
+        QScrollBar* byClass = nullptr;
+        QScrollBar* ranged = nullptr;
+        for (QScrollBar* b : view->findChildren<QScrollBar*>()) {
+            if (b->orientation() != orient || b == accessor)
+                continue;
+            if (b->metaObject()->className() == QLatin1String("KateScrollBar")) {
+                if (!byClass)
+                    byClass = b;
+            } else if (b->maximum() > b->minimum() && !ranged) {
+                ranged = b;
+            }
+        }
+        return byClass ? byClass : (ranged ? ranged : accessor);
+    };
+    docV = pick(docV, Qt::Vertical);
+    docH = pick(docH, Qt::Horizontal);
+
+    // --- Vertical: the right-border bar mirrors the view's vertical ---
+    if (m_rightBar) {
+        if (m_docV && m_docV != docV) {
+            disconnect(m_docV, nullptr, m_rightBar, nullptr);
+            disconnect(m_rightBar, nullptr, m_docV, nullptr);
+        }
+        if (docV && docV != m_docV) {
+            m_docV = docV;
+            connect(docV, &QScrollBar::rangeChanged, m_rightBar, &QScrollBar::setRange);
+            connect(docV, &QScrollBar::valueChanged, m_rightBar, &QScrollBar::setValue);
+            connect(m_rightBar, &QScrollBar::valueChanged, docV, &QScrollBar::setValue);
+        }
+        // Seed on EVERY pass, not only when the object identity changes. The
+        // view's KateScrollBar is the same object throughout, but it is 0..0
+        // at construction and only gains its range once the document has
+        // content. Seeding only on a new object left the painted bar stuck at
+        // 0..0 for the whole session.
+        if (docV) {
+            m_rightBar->setRange(docV->minimum(), docV->maximum());
+            m_rightBar->setPageStep(docV->pageStep());
+            m_rightBar->setValue(docV->value());
+        }
+    }
+
+    // --- Horizontal: the bottom band mirrors the view's horizontal ---
+    BottomBand* band = m_bottomBand;
+    TextScrollBar* hb = band ? band->horizontalBar() : nullptr;
+    if (hb) {
+        if (m_docH && m_docH != docH) {
+            disconnect(m_docH, nullptr, hb, nullptr);
+            disconnect(hb, nullptr, m_docH, nullptr);
+        }
+        if (docH && docH != m_docH) {
+            m_docH = docH;
+            connect(docH, &QScrollBar::rangeChanged, hb, &QScrollBar::setRange);
+            connect(docH, &QScrollBar::valueChanged, hb, &QScrollBar::setValue);
+            connect(hb, &QScrollBar::valueChanged, docH, &QScrollBar::setValue);
+        }
+        // Same always-seed rule as the vertical bar.
+        if (docH) {
+            hb->setRange(docH->minimum(), docH->maximum());
+            hb->setPageStep(docH->pageStep());
+            hb->setValue(docH->value());
+        }
+    }
 }
 
 TabStrip* ShellWindow::tabStrip() const
