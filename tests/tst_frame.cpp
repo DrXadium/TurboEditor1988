@@ -10,6 +10,7 @@
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
 #include "src/shell/BottomBand.h"
+#include "src/shell/TextScrollBar.h"
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -307,6 +308,103 @@ private slots:
             if (isBgBlue(img.pixelColor(x, ruleY)))
                 gap = true;
         QVERIFY2(gap, "bottom rule is unbroken - the cursor position must interrupt it");
+    }
+
+    // The ║ column must run all the way to the EditorHost's bottom edge, or it
+    // stops short of the band and the corner is left floating. (tileV used to
+    // draw only WHOLE cells, leaving up to a cell of blue at the bottom.)
+    void left_border_reaches_the_bottom_edge_of_the_editor_host()
+    {
+        ShellWindow w;
+        w.resize(600, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+        QVERIFY2(host, "editorHost widget not found");
+        const QImage img = host->grab().toImage();
+        QVERIFY2(!img.isNull() && img.height() > 50, "editorHost did not render");
+        const int cw = qMax(6, host->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+
+        int lastWhiteRow = -1;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < cw; ++x)
+                if (isFrameWhite(img.pixelColor(x, y))) { lastWhiteRow = y; break; }
+
+        QVERIFY2(lastWhiteRow >= img.height() - 2,
+                 qPrintable(QStringLiteral("left border stops at row %1 of %2 - it must "
+                                           "reach the bottom edge to meet the corner")
+                                .arg(lastWhiteRow).arg(img.height())));
+    }
+
+    // The ═ rule continues well past the position text before the scrollbar
+    // starts - it does not stop one cell after the numbers.
+    void bottom_rule_extends_to_the_scrollbar_start()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band && band->horizontalBar());
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 300, "bottom band did not render");
+        const int bw = img.width();
+        const int cw = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+
+        // Rightmost white pixel on the rule row, left of the scrollbar.
+        const int hbarLeft = band->horizontalBar()->geometry().left();
+        int ruleRight = -1;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < qMin(bw, hbarLeft); ++x)
+                if (isFrameWhite(img.pixelColor(x, y)))
+                    ruleRight = qMax(ruleRight, x);
+
+        QVERIFY2(ruleRight >= 160,
+                 qPrintable(QStringLiteral("bottom rule ends at x=%1 - it must run on "
+                                           "towards the scrollbar at %2")
+                                .arg(ruleRight).arg(hbarLeft)));
+        // The rule runs right up to the scrollbar's left edge.
+        QVERIFY2(ruleRight >= hbarLeft - 3,
+                 qPrintable(QStringLiteral("bottom rule ends at x=%1, expected to reach "
+                                           "the scrollbar at %2")
+                                .arg(ruleRight).arg(hbarLeft)));
+    }
+
+    // The right corner is BRIGHT green and is preceded by a light ─ in the same
+    // green, reading "─┘" as the reference does.
+    void bottom_right_corner_is_bright_green_after_a_light_rule()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band);
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 300, "bottom band did not render");
+        const int bw = img.width();
+        const int cw = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+
+        const auto isBrightGreen = [](const QColor& c) {
+            return c.green() >= 220 && c.red() < 100 && c.blue() < 100;
+        };
+
+        int bright = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = qMax(0, bw - cw); x < bw; ++x)
+                if (isBrightGreen(img.pixelColor(x, y)))
+                    ++bright;
+        QVERIFY2(bright > 0, "bottom-right corner is not BRIGHT green");
+
+        int leftCellGreen = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = qMax(0, bw - 2 * cw); x < bw - cw; ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.green() > 120 && c.red() < 100 && c.blue() < 100)
+                    ++leftCellGreen;
+            }
+        QVERIFY2(leftCellGreen > 0,
+                 "no ─ to the left of the corner - the row must read ─┘ in green");
     }
 
     // The bottom-right corner is the GREEN ┘ that joins the horizontal

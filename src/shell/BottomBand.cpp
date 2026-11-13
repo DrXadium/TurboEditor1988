@@ -10,8 +10,12 @@
 namespace {
 const QColor kBgBlue(0x00, 0x00, 0xAA);      // band sits on the window blue
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // cursor-position text (spec 6) + frame
-const QColor kGreen(0x00, 0xAA, 0x00);       // bottom-right corner join (spec: green)
+const QColor kGreen(0x00, 0xFF, 0x00);       // bottom-right corner join (BRIGHT green)
 const int kCursorColX = 75;                  // spec: white text at cols 8-12 (x in [75,125])
+// The horizontal scrollbar starts at this character column, leaving a long
+// stretch of ═ between the position text and the bar (the reference IDE runs
+// the rule on well past the numbers before the scrollbar begins).
+const int kHBarStartCol = 23;
 } // namespace
 
 // ONE text row: the position text, the ═ rule and the horizontal scrollbar all
@@ -84,14 +88,12 @@ void BottomBand::layoutHBar()
 {
     if (!m_hbar)
         return;
-    // The scrollbar shares the border row but starts a cell AFTER the position
-    // text ("41:1"), and stops one cell short of the right edge so the green ┘
-    // corner cell stays visible.
+    // The scrollbar shares the border row but starts at a fixed column, leaving
+    // a long run of ═ after the position text. It stops TWO cells short of the
+    // right edge: the last two cells carry the green "─┘" corner.
     const int cellW = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
-    const int space = qMax(4, fontMetrics().horizontalAdvance(QLatin1Char(' ')));
-    const int textEnd = kCursorColX + fontMetrics().horizontalAdvance(cursorPosText());
-    const int left = qMin(width() - cellW, textEnd + space + cellW);
-    const int right = width() - cellW - 1;
+    const int left = qMin(width() - 3 * cellW, kHBarStartCol * cellW);
+    const int right = width() - 2 * cellW - 1;
     if (right <= left) {
         m_hbar->setGeometry(QRect());
         return;
@@ -130,12 +132,14 @@ void BottomBand::paintEvent(QPaintEvent*)
     TvFrame::glyph(p, QRect(0, 0, cellW, rowH), QChar(0x255A), kWhite);
     // ═ from the corner to the position text.
     TvFrame::tileH(p, QRect(cellW, 0, gapStart - cellW, rowH), cellW, QChar(0x2550), kWhite);
-    // ═ from the text to the scrollbar (the rule "continues until it reaches
-    // the scrollbar").
-    const int hbarLeft = qMin(width() - cellW, gapEnd + cellW);
+    // ═ from the text on to the scrollbar start: a long run of rule, not the
+    // single cell it used to be.
+    const int hbarLeft = qMin(width() - 3 * cellW, kHBarStartCol * cellW);
     if (hbarLeft > gapEnd)
         TvFrame::tileH(p, QRect(gapEnd, 0, hbarLeft - gapEnd, rowH), cellW, QChar(0x2550), kWhite);
-    // Green ┘ bottom-right corner.
+    // Bright-green corner reading "─┘": a light horizontal in the cell before
+    // the corner, then the corner itself.
+    TvFrame::glyph(p, QRect(width() - 2 * cellW, 0, cellW, rowH), QChar(0x2500), kGreen);
     TvFrame::glyph(p, QRect(width() - cellW, 0, cellW, rowH), QChar(0x2518), kGreen);
 
     // Cursor position, white, on the same row as the scrollbar.

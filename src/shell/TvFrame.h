@@ -83,7 +83,10 @@ inline void tileH(QPainter& p, const QRect& band, int cellW, QChar ch, const QCo
 {
     if (cellW <= 0 || band.width() <= 0 || band.height() <= 0)
         return;
-    for (int x = band.left(); x + cellW <= band.right() + 1; x += cellW)
+    // Draw the trailing PARTIAL cell too (the painter clips it): stopping at
+    // whole cells left up to a cell of bare background, which is what made the
+    // ║ column stop short of the bottom corner instead of meeting it.
+    for (int x = band.left(); x <= band.right(); x += cellW)
         glyph(p, QRect(x, band.top(), cellW, band.height()), ch, ink);
 }
 
@@ -92,7 +95,7 @@ inline void tileV(QPainter& p, const QRect& band, int cellH, QChar ch, const QCo
 {
     if (cellH <= 0 || band.width() <= 0 || band.height() <= 0)
         return;
-    for (int y = band.top(); y + cellH <= band.bottom() + 1; y += cellH)
+    for (int y = band.top(); y <= band.bottom(); y += cellH)
         glyph(p, QRect(band.left(), y, band.width(), cellH), ch, ink);
 }
 

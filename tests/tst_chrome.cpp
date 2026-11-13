@@ -150,13 +150,13 @@ private slots:
                  qPrintable(QStringLiteral("hbar left=%1, must start after the position "
                                            "text (ends at %2)")
                                 .arg(hb->geometry().left()).arg(textEnd)));
-        // The hbar stops one cell short of the right edge so the ╝ frame
-        // corner stays visible (p13: it previously painted over the corner).
+        // The hbar stops TWO cells short of the right edge: those two cells
+        // carry the bright-green "─┘" corner.
         const int cornerCell = qMax(6, band.fontMetrics().horizontalAdvance(QLatin1Char('M')));
-        QVERIFY2(hb->geometry().right() <= band.width() - cornerCell
-                     && hb->geometry().right() >= band.width() - cornerCell - 3,
-                 qPrintable(QStringLiteral("hbar right=%1, expected ~%2 (before the corner cell)")
-                                .arg(hb->geometry().right()).arg(band.width() - cornerCell)));
+        QVERIFY2(hb->geometry().right() <= band.width() - 2 * cornerCell
+                     && hb->geometry().right() >= band.width() - 2 * cornerCell - 3,
+                 qPrintable(QStringLiteral("hbar right=%1, expected ~%2 (before the ─┘ cells)")
+                                .arg(hb->geometry().right()).arg(band.width() - 2 * cornerCell)));
         // The h-scrollbar fills the border row it shares with the position
         // text. Compare against the row: a standalone widget's resize() is
         // clamped by the platform, so the font cell is not a reliable yardstick.
