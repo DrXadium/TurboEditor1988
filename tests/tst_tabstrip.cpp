@@ -15,6 +15,12 @@ const QColor kGreen(0x00, 0xAA, 0x00);
 const QColor kBlue(0x00, 0x00, 0xAA);
 const QColor kBandGrey(0x55, 0x55, 0x55);   // stipple ink of the tab row
 const QColor kWhite(0xFF, 0xFF, 0xFF);
+const QColor kTabGrey(0xAA, 0xAA, 0xAA);    // ink of an inactive chip
+
+int cellWOf(const QWidget& w)
+{
+    return qMax(6, w.fontMetrics().horizontalAdvance(QLatin1Char('M')));
+}
 
 int countColor(const QImage& img, const QColor& t, int tol)
 {
@@ -119,21 +125,85 @@ private slots:
                                         .arg(x).arg(y)));
     }
 
-    void paints_green_close_and_zoom_boxes() {
+    // Task 20 (mock): the row's four controls sit in CELLS at the row's ends -
+    // ◄ in the window's first cell, and ► + ▼ packed against the right edge
+    // with ▼ in the LAST cell, i.e. directly above the right scrollbar column.
+    void controls_sit_at_the_row_ends_in_cell_units() {
         TabStrip ts;
-        ts.setTabs(QStringList() << "untitled" << "notes", 0);
-        ts.resize(600, 26);
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellW = qMax(6, ts.fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+
+        const QRect prev = ts.prevTabRect(), next = ts.nextTabRect();
+        const QRect add = ts.newTabRect(), list = ts.tabListRect();
+        QCOMPARE(prev.left(), 0);
+        QCOMPARE(prev.width(), cellW);
+        QCOMPARE(list.right(), ts.width() - 1);          // last cell of the row
+        QCOMPARE(list.width(), cellW);
+        QCOMPARE(add.right(), list.left() - 1);          // + one cell left of ▼
+        QCOMPARE(next.right(), add.left() - 1);          // ► one cell left of +
+        QCOMPARE(prev.height(), cellH);
+
+        // The chips start in the cell after ◄ and never run into ►.
+        const QVector<QRect> rects = ts.tabRects();
+        QCOMPARE(rects.size(), 1);
+        QCOMPARE(rects[0].left(), cellW);
+        QVERIFY(rects[0].right() < next.left());
+    }
+
+    // Task 20 (mock notes 2 + 3): each tab is its own bracketed chip with a
+    // BRIGHT green square, in BOTH states; the active title is white and the
+    // inactive title is grey.
+    void chips_are_bracketed_with_a_bright_green_square() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "active" << "idle", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
         const QImage img = ts.grab().toImage();
         QVERIFY(!img.isNull());
-        // Both boxes are green; count green pixels (two ~18x16 boxes).
-        const int green = countColor(img, kGreen, 24);
-        QVERIFY2(green > 120,
-                 qPrintable(QStringLiteral("green close/zoom box pixels=%1, expected >120").arg(green)));
+        const QVector<QRect> rects = ts.tabRects();
+        QCOMPARE(rects.size(), 2);
 
-        // Boxes are present at their queried geometry (left + right).
-        QVERIFY(ts.closeBoxRect().left() < ts.zoomBoxRect().left());
-        QVERIFY(ts.closeBoxRect().left() >= 0);
-        QVERIFY(ts.zoomBoxRect().right() <= ts.width());
+        auto countIn = [&](const QRect& r, const QColor& t, int tol) {
+            int n = 0;
+            for (int y = qMax(0, r.top()); y <= qMin(img.height() - 1, r.bottom()); ++y)
+                for (int x = qMax(0, r.left()); x <= qMin(img.width() - 1, r.right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (qAbs(c.red() - t.red()) <= tol && qAbs(c.green() - t.green()) <= tol &&
+                        qAbs(c.blue() - t.blue()) <= tol)
+                        ++n;
+                }
+            return n;
+        };
+
+        // The green square is bright in BOTH chips (mock note 3) and lives
+        // inside the chip, left of the closing bracket.
+        for (int i = 0; i < 2; ++i) {
+            const QRect sq = ts.closeRect(i);
+            QVERIFY2(sq.width() > 0 && rects[i].contains(sq),
+                     qPrintable(QStringLiteral("chip %1 has no close square").arg(i)));
+            const int green = countIn(sq, kGreen, 8);
+            QVERIFY2(green >= 6, qPrintable(QStringLiteral("chip %1 close square green px=%2")
+                                                .arg(i).arg(green)));
+            // The brackets are ink of the chip's own state, not green.
+            QVERIFY2(countIn(QRect(rects[i].left(), 0, cellWOf(ts), cellH), kGreen, 8) == 0,
+                     "opening bracket is green - it must carry the chip's ink");
+        }
+
+        // Ink per state, measured on the name cell band (square excluded).
+        auto nameBand = [&](int i) {
+            const QRect r = rects[i];
+            const QRect sq = ts.closeRect(i);
+            return QRect(r.left() + cellWOf(ts), r.top(), sq.left() - r.left() - cellWOf(ts),
+                         r.height());
+        };
+        QVERIFY2(countIn(nameBand(0), kWhite, 8) >= 3, "active chip title is not white");
+        QVERIFY2(countIn(nameBand(1), kTabGrey, 8) >= 3, "inactive chip title is not grey");
+        // The two states are distinguishable: no dim grey in the active chip,
+        // no white in the inactive one.
+        QVERIFY2(countIn(nameBand(0), kTabGrey, 8) == 0, "active chip is drawn dim");
+        QVERIFY2(countIn(nameBand(1), kWhite, 8) == 0, "inactive chip is drawn bright");
     }
 
     void tabs_render_as_title_line_segments() {
@@ -150,82 +220,77 @@ private slots:
         QCOMPARE(ts.titles().size(), 3);
     }
 
-    // TV-revision spec 3: tab titles sit in the top border row, WHITE, the
-    // active tab ("hostname" when active=1) highlighted on a gray plate with
-    // white text; inactive labels are white on blue (not gray).
-    void tab_titles_are_white_active_is_gray_plate() {
+    // Task 20 (mock): the green square inside a chip IS that tab's close
+    // button, and it must not also activate the tab.
+    void clicking_the_close_square_emits_tabClosed() {
         TabStrip ts;
-        ts.setTabs(QStringList() << "untitled" << "hostname" << "os-release", 1);
-        ts.resize(640, 26);
-        const QImage img = ts.grab().toImage();
-        QVERIFY(!img.isNull());
-        const QVector<QRect> rects = ts.tabRects();
-        QCOMPARE(rects.size(), 3);
+        ts.setTabs(QStringList() << "one" << "two", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        ts.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&ts));
+        ts.grab();
+        QCoreApplication::processEvents();
+        QVERIFY2(ts.tabRects().size() == 2, "chip rects not computed after render");
 
-        auto countIn = [&](const QRect& r, const QColor& t, int tol) {
-            int n = 0;
-            for (int y = r.top(); y <= r.bottom(); ++y)
-                for (int x = r.left(); x <= r.right(); ++x) {
-                    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
-                        continue;
-                    const QColor c = img.pixelColor(x, y);
-                    if (qAbs(c.red() - t.red()) <= tol && qAbs(c.green() - t.green()) <= tol &&
-                        qAbs(c.blue() - t.blue()) <= tol)
-                        ++n;
-                }
-            return n;
-        };
-        const QColor white(255, 255, 255);
-        const QColor gray(0xAA, 0xAA, 0xAA);
-        const QColor blue(0x00, 0x00, 0xAA);
-
-        // Inactive tab "untitled" (index 0): white text, blue behind (no plate).
-        const int untitledWhite = countIn(rects[0], white, 24);
-        QVERIFY2(untitledWhite >= 3,
-                 qPrintable(QStringLiteral("inactive tab 'untitled' has %1 white px (expected >=3)")
-                                .arg(untitledWhite)));
-        QVERIFY2(countIn(rects[0], gray, 16) == 0,
-                 "inactive tab has a gray plate — must be white on blue");
-
-        // Active tab "hostname" (index 1): gray plate + WHITE text on it.
-        const int hostnameGray = countIn(rects[1], gray, 16);
-        QVERIFY2(hostnameGray >= 20,
-                 qPrintable(QStringLiteral("active tab plate not gray #AAAAAA: %1 px").arg(hostnameGray)));
-        // TV-revision2 spec 2: active tab = BLACK text on the gray plate.
-        const int hostnameBlack = countIn(rects[1], QColor(0, 0, 0), 24);
-        QVERIFY2(hostnameBlack >= 3,
-                 qPrintable(QStringLiteral("active tab text not black: %1 px").arg(hostnameBlack)));
+        QSignalSpy closed(&ts, &TabStrip::tabClosed);
+        QSignalSpy activated(&ts, &TabStrip::tabActivated);
+        QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, ts.closeRect(1).center());
+        QCOMPARE(closed.count(), 1);
+        QCOMPARE(closed.at(0).at(0).toInt(), 1);
+        QCOMPARE(activated.count(), 0);
     }
 
-    // TV-revision spec 3: green [■] close box top-left and [↕] zoom box
-    // top-right, re-pinned to #00AA00.
-    void close_zoom_boxes_are_tv_green() {
+    // Task 20 (mock notes 4 + 5): + asks for a new document, ▼ asks for the
+    // tab list. Both are persistent.
+    void clicking_new_tab_and_tab_list_emit_their_signals() {
         TabStrip ts;
-        ts.setTabs(QStringList() << "untitled", 0);
-        ts.resize(600, 26);
-        const QImage img = ts.grab().toImage();
-        QVERIFY(!img.isNull());
-        const QColor kGreen(0x00, 0xAA, 0x00);
-        auto greenIn = [&](const QRect& box) {
-            int n = 0;
-            for (int y = box.top(); y <= box.bottom(); ++y)
-                for (int x = box.left(); x <= box.right(); ++x) {
-                    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
-                        continue;
-                    const QColor c = img.pixelColor(x, y);
-                    if (qAbs(c.red() - kGreen.red()) <= 24 &&
-                        qAbs(c.green() - kGreen.green()) <= 24 &&
-                        qAbs(c.blue() - kGreen.blue()) <= 24)
-                        ++n;
-                }
-            return n;
-        };
-        const int closeG = greenIn(ts.closeBoxRect());
-        const int zoomG = greenIn(ts.zoomBoxRect());
-        QVERIFY2(closeG >= 10,
-                 qPrintable(QStringLiteral("close box green #00AA00 px=%1, expected >=10").arg(closeG)));
-        QVERIFY2(zoomG >= 6,
-                 qPrintable(QStringLiteral("zoom box green #00AA00 px=%1, expected >=6").arg(zoomG)));
+        ts.setTabs(QStringList() << "one", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        ts.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&ts));
+
+        QSignalSpy add(&ts, &TabStrip::newTabRequested);
+        QSignalSpy list(&ts, &TabStrip::tabListRequested);
+        QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, ts.newTabRect().center());
+        QCOMPARE(add.count(), 1);
+        QCOMPARE(list.count(), 0);
+        QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, ts.tabListRect().center());
+        QCOMPARE(list.count(), 1);
+        QCOMPARE(add.count(), 1);
+    }
+
+    // Task 20 (mock note 1): ◄ / ► scroll the chip window one chip at a time
+    // and are present even when nothing overflows.
+    void arrows_scroll_the_chip_window() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "document1" << "document2" << "document3"
+                                 << "document4" << "document5" << "document6", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        ts.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&ts));
+        ts.grab();
+        QCoreApplication::processEvents();
+
+        QVERIFY2(ts.tabRects().size() < 6,
+                 qPrintable(QStringLiteral("expected overflow, got %1 chips").arg(ts.tabRects().size())));
+        QCOMPARE(ts.firstVisibleTab(), 0);
+        QVERIFY2(!ts.closeRect(0).isEmpty(), "tab 0 not visible at the start");
+
+        QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, ts.nextTabRect().center());
+        QCOMPARE(ts.firstVisibleTab(), 1);
+        // The window really moved: tab 0 is gone from the row, tab 1 is on it.
+        QVERIFY2(ts.closeRect(0).isEmpty(), "tab 0 is still visible after scrolling right");
+        QVERIFY2(!ts.closeRect(1).isEmpty(), "tab 1 is not visible after scrolling right");
+
+        QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, ts.prevTabRect().center());
+        QCOMPARE(ts.firstVisibleTab(), 0);
+
+        // Clamped at the ends: ◄ at the start is a no-op, not a wrap-around.
+        QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, ts.prevTabRect().center());
+        QCOMPARE(ts.firstVisibleTab(), 0);
     }
 
     void clicking_a_tab_emits_tabActivated() {

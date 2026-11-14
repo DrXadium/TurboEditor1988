@@ -2,24 +2,67 @@
 #include "TabStrip.h"
 #include "TvFrame.h"
 #include <QPainter>
-#include <QPainterPath>
 #include <QMouseEvent>
+#include <QResizeEvent>
 #include <QFontMetrics>
 
 namespace {
-const QColor kFrameGray(0xAA, 0xAA, 0xAA);   // active-tab plate
-const QColor kFrameWhite(0xFF, 0xFF, 0xFF);  // TV-revision spec 3: white double line
 const QColor kBgBlue(0x00, 0x00, 0xAA);      // TV window blue desktop
-const QColor kBlack(0, 0, 0);
-const QColor kGreen(0x00, 0xAA, 0x00);       // close/zoom box fill
-const QColor kWhite(0xFF, 0xFF, 0xFF);       // inactive tab label (spec 3)
+const QColor kGreen(0x00, 0xAA, 0x00);       // the per-tab close square
+const QColor kWhite(0xFF, 0xFF, 0xFF);       // active chip ink
+const QColor kTabGrey(0xAA, 0xAA, 0xAA);     // inactive chip ink
 // Task 19 (mock note 2): the row's background is the scrollbar track's stipple
 // design with GREY ink instead of the bars' teal, so the row reads as distinct
 // from them. #555555 (TV dark gray) rather than #AAAAAA: the lighter gray is
-// what the dim tab titles are drawn in, and grey-on-grey would be unreadable -
-// the mock's band is clearly darker than its inactive titles.
+// what the inactive tab titles are drawn in, and grey-on-grey would be
+// unreadable - the mock's band is clearly darker than its inactive titles.
 const QColor kBandGrey(0x55, 0x55, 0x55);
+// The controls (mock notes 1 + 5) carry the scrollbars' TEAL, not their blue
+// arrow ink: the scrollbar arrows are blue on a solid teal cell, and there is
+// no solid cell here - blue on the blue band would be invisible.
+const QColor kTeal(0x00, 0xAA, 0xAA);
 } // namespace
+
+// Solid triangle arrow, same shape as TextScrollBar's end-block glyphs.
+static void drawArrow(QPainter& p, const QRect& r, Qt::ArrowType dir, const QColor& ink)
+{
+    p.save();
+    p.setPen(Qt::NoPen);
+    p.setBrush(ink);
+    QPolygon tri;
+    const int cx = r.center().x(), cy = r.center().y();
+    const int hw = r.width() / 2 - 1, hh = r.height() / 2 - 1;
+    switch (dir) {
+    case Qt::LeftArrow:
+        tri << QPoint(r.left() + 1, cy) << QPoint(cx + hw / 2, cy - hh)
+            << QPoint(cx + hw / 2, cy + hh);
+        break;
+    case Qt::RightArrow:
+        tri << QPoint(r.right() - 1, cy) << QPoint(cx - hw / 2, cy - hh)
+            << QPoint(cx - hw / 2, cy + hh);
+        break;
+    default: // Down
+        tri << QPoint(cx, r.bottom() - 1) << QPoint(cx - hw, cy - hh / 2)
+            << QPoint(cx + hw, cy - hh / 2);
+        break;
+    }
+    p.drawPolygon(tri);
+    p.restore();
+}
+
+// Crisp 1-bit text: subpixel/LCD antialiasing tints the strokes, which both
+// looks wrong through the CRT pass and breaks an exact-ink assertion.
+static void inkText(QPainter& p, const QRect& r, const QString& s, const QColor& ink,
+                    int flags = Qt::AlignLeft | Qt::AlignVCenter)
+{
+    p.save();
+    QFont f = p.font();
+    f.setStyleStrategy(QFont::NoAntialias);
+    p.setFont(f);
+    p.setPen(ink);
+    p.drawText(r, flags, s);
+    p.restore();
+}
 
 TabStrip::TabStrip(QWidget* parent) : QWidget(parent)
 {
@@ -44,54 +87,148 @@ void TabStrip::updateCellSize()
 void TabStrip::changeEvent(QEvent* ev)
 {
     QWidget::changeEvent(ev);
-    if (ev->type() == QEvent::FontChange)
+    if (ev->type() == QEvent::FontChange) {
         updateCellSize();
+        ensureActiveVisible();
+    }
+}
+
+void TabStrip::resizeEvent(QResizeEvent* ev)
+{
+    QWidget::resizeEvent(ev);
+    ensureActiveVisible();
+}
+
+int TabStrip::cellW() const
+{
+    return qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
+}
+
+int TabStrip::nameCells(const QString& title) const
+{
+    const int cw = cellW();
+    return qMax(1, (fontMetrics().horizontalAdvance(title) + cw - 1) / cw);
+}
+
+// The controls are anchored to the row's ends in CELL units (mock note 1):
+// ◄ in the window's first cell, and ► + ▼ against the right edge with ▼ in
+// the LAST cell - the same column the right scrollbar occupies below it.
+QRect TabStrip::prevTabRect() const
+{
+    return QRect(0, 0, cellW(), height());
+}
+
+QRect TabStrip::tabListRect() const
+{
+    return QRect(width() - cellW(), 0, cellW(), height());
+}
+
+QRect TabStrip::newTabRect() const
+{
+    return QRect(width() - 2 * cellW(), 0, cellW(), height());
+}
+
+QRect TabStrip::nextTabRect() const
+{
+    return QRect(width() - 3 * cellW(), 0, cellW(), height());
+}
+
+// Visible chips, left to right, starting after the ◄ cell. Chips are adjacent
+// (the mock shows `][` touching) and the run stops before the ► cell.
+QVector<QRect> TabStrip::tabRects() const
+{
+    QVector<QRect> out;
+    if (m_titles.isEmpty())
+        return out;
+    const int cw = cellW();
+    const int limit = nextTabRect().left();
+    int x = cw;
+    for (int i = firstShown(); i < m_titles.size(); ++i) {
+        const int w = chipCells(m_titles.at(i)) * cw;
+        if (x + w > limit)
+            break;
+        out.append(QRect(x, 0, w, height()));
+        x += w;
+    }
+    return out;
+}
+
+// The green square inside chip `tabIndex` (its close button). Returns an empty
+// rect when that tab is scrolled out of the window.
+QRect TabStrip::closeRect(int tabIndex) const
+{
+    const QVector<QRect> rects = tabRects();
+    const int j = tabIndex - firstShown();
+    if (j < 0 || j >= rects.size())
+        return {};
+    const QRect r = rects.at(j);
+    const int cw = cellW();
+    // '[' ' ' name ' ' '■' ' ' ']' - the square is the (3 + nameCells)th cell.
+    const int n = nameCells(m_titles.at(tabIndex));
+    return QRect(r.left() + (3 + n) * cw, 0, cw, r.height());
+}
+
+int TabStrip::firstShown() const
+{
+    if (m_titles.isEmpty())
+        return 0;
+    return qBound(0, m_firstVisible, m_titles.size() - 1);
 }
 
 void TabStrip::setTabs(const QStringList& titles, int active)
 {
     m_titles = titles;
     m_active = active;
+    ensureActiveVisible();
     update();
 }
 
-// Box geometries (recomputed in paintEvent; queried by mousePressEvent).
-QRect TabStrip::closeBoxRect() const
+// Keep the active tab inside the visible window: scroll forward until it fits.
+// Called on setTabs / resize / font change - never from tabRects(), which is
+// const and must agree with what was last painted.
+void TabStrip::ensureActiveVisible()
 {
-    return QRect(6, height() / 2 - 8, 18, 16);
-}
-
-QRect TabStrip::zoomBoxRect() const
-{
-    return QRect(width() - 24, height() / 2 - 8, 18, 16);
-}
-
-// Tab segment x-ranges, starting after the close box.
-QVector<QRect> TabStrip::tabRects() const
-{
-    QVector<QRect> out;
-    if (m_titles.isEmpty())
-        return out;
-    const QFontMetrics fm(font());
-    int x = closeBoxRect().right() + 10;
-    const int rightLimit = zoomBoxRect().left() - 8;
-    const int gap = 6;
-    for (int i = 0; i < m_titles.size(); ++i) {
-        const QString label = m_titles.at(i);
-        const int w = fm.horizontalAdvance(label) + 14;
-        if (x + w > rightLimit)
-            break;
-        out.append(QRect(x, 4, w, height() - 8));
-        x += w + gap;
+    if (m_titles.isEmpty()) {
+        m_firstVisible = 0;
+        return;
     }
-    return out;
+    if (width() <= 4 * cellW())   // not laid out yet: nothing fits, do not scroll
+        return;
+    const int last = m_titles.size() - 1;
+    m_firstVisible = qBound(0, m_firstVisible, last);
+    if (m_active < m_firstVisible)
+        m_firstVisible = m_active;
+    for (;;) {
+        int x = cellW();
+        int lastFitting = m_firstVisible - 1;
+        for (int i = m_firstVisible; i <= last; ++i) {
+            const int w = chipCells(m_titles.at(i)) * cellW();
+            if (x + w > nextTabRect().left())
+                break;
+            lastFitting = i;
+            x += w;
+        }
+        if (m_active <= lastFitting || m_firstVisible >= last)
+            return;
+        ++m_firstVisible;
+    }
+}
+
+void TabStrip::scrollChips(int delta)
+{
+    if (m_titles.isEmpty())
+        return;
+    const int next = qBound(0, m_firstVisible + delta, m_titles.size() - 1);
+    if (next == m_firstVisible)
+        return;   // clamped: the arrows do not wrap
+    m_firstVisible = next;
+    update();
 }
 
 void TabStrip::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, false);   // crisp DOS pixels
-    const int midY = height() / 2;
 
     // Row background: the scrollbar track's 1-px stipple, grey ink on window
     // blue (mock note 2). Dithered in BOTH axes - alternating on one axis alone
@@ -110,57 +247,70 @@ void TabStrip::paintEvent(QPaintEvent*)
     // The left ║ column is painted by EditorHost beneath this strip; the right
     // border column belongs to RightScrollBar. No verticals here.
 
-    // Close box [■] — top-left: white brackets around a bright green cell
-    // (TV-revision2 spec 1: white brackets + green ■; no black ink).
-    const QRect cb = closeBoxRect();
-    p.fillRect(cb, kGreen);
-    TvFrame::box(p, cb, kWhite);
+    // Controls (mock notes 1, 4, 5): ◄ ► scroll the chip window, + opens a new
+    // document, ▼ lists every open tab. All four are persistent.
+    drawArrow(p, prevTabRect(), Qt::LeftArrow, kTeal);
+    drawArrow(p, nextTabRect(), Qt::RightArrow, kTeal);
+    drawArrow(p, tabListRect(), Qt::DownArrow, kTeal);
+    TvFrame::glyph(p, newTabRect(), QLatin1Char('+'), kTeal);
 
-    // Zoom box [↕] — top-right: white brackets, window-blue face, GREEN ↕
-    // glyphs (spec: white brackets, green arrow).
-    const QRect zb = zoomBoxRect();
-    p.fillRect(zb, kBgBlue);
-    TvFrame::box(p, zb, kWhite);
-    p.setPen(kGreen);
-    {
-        const int cx = zb.center().x();
-        const int top = zb.top() + 3;
-        const int bot = zb.bottom() - 3;
-        // Up arrow (top half).
-        p.drawLine(cx, top, cx, top + 4);
-        p.drawLine(cx - 3, top + 3, cx, top);
-        p.drawLine(cx + 3, top + 3, cx, top);
-        // Down arrow (bottom half).
-        p.drawLine(cx, bot, cx, bot - 4);
-        p.drawLine(cx - 3, bot - 3, cx, bot);
-        p.drawLine(cx + 3, bot - 3, cx, bot);
-    }
-
-    // Tabs as title-line segments.
+    // Chips: [ name ■ ] - bracketed, no plate, the band shows through.
     const QVector<QRect> rects = tabRects();
-    for (int i = 0; i < rects.size() && i < m_titles.size(); ++i) {
-        const QRect r = rects.at(i);
-        const bool active = (i == m_active);
-        if (active) {
-            // Active tab: gray plate with WHITE text (spec 3).
-            p.fillRect(r, kFrameGray);
-            p.setPen(kBlack);              // spec 2: black text ON the gray plate
-            p.drawText(r, Qt::AlignCenter, m_titles.at(i));
-        } else {
-            // Inactive tab: transparent over blue, white label (spec 3).
-            p.setPen(kWhite);
-            p.drawText(r, Qt::AlignCenter, m_titles.at(i));
-        }
+    const int cw = cellW();
+    for (int j = 0; j < rects.size(); ++j) {
+        const int idx = firstShown() + j;
+        if (idx >= m_titles.size())
+            break;
+        const QRect r = rects.at(j);
+        const bool active = (idx == m_active);
+        // Mock note 3: the active title is bright white, an inactive one grey;
+        // the green square stays bright in BOTH states.
+        const QColor ink = active ? kWhite : kTabGrey;
+        inkText(p, QRect(r.left(), 0, cw, r.height()), QStringLiteral("["), ink,
+                Qt::AlignCenter);
+        inkText(p, QRect(r.right() - cw + 1, 0, cw, r.height()), QStringLiteral("]"), ink,
+                Qt::AlignCenter);
+        const int n = nameCells(m_titles.at(idx));
+        inkText(p, QRect(r.left() + 2 * cw, 0, n * cw, r.height()), m_titles.at(idx), ink);
+        // The square: inset inside its cell so the brackets keep their daylight.
+        p.fillRect(closeRect(idx).adjusted(2, 3, -2, -3), kGreen);
     }
 }
 
 void TabStrip::mousePressEvent(QMouseEvent* ev)
 {
+    const QPoint pos = ev->pos();
+
+    // Controls first: they overlap the row's ends, never a chip.
+    if (newTabRect().contains(pos)) {
+        emit newTabRequested();
+        return;
+    }
+    if (tabListRect().contains(pos)) {
+        emit tabListRequested();
+        return;
+    }
+    if (nextTabRect().contains(pos)) {
+        scrollChips(+1);
+        return;
+    }
+    if (prevTabRect().contains(pos)) {
+        scrollChips(-1);
+        return;
+    }
+
+    // The close square is INSIDE its chip, so it is tested before the chip body
+    // - otherwise closing a tab would first activate it.
     const QVector<QRect> rects = tabRects();
-    for (int i = 0; i < rects.size(); ++i) {
-        if (rects.at(i).contains(ev->pos())) {
-            if (i != m_active)
-                emit tabActivated(i);
+    for (int j = 0; j < rects.size(); ++j) {
+        const int idx = firstShown() + j;
+        if (closeRect(idx).contains(pos)) {
+            emit tabClosed(idx);
+            return;
+        }
+        if (rects.at(j).contains(pos)) {
+            if (idx != m_active)
+                emit tabActivated(idx);
             return;
         }
     }

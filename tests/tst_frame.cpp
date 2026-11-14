@@ -70,45 +70,59 @@ class TstFrame : public QObject
 {
     Q_OBJECT
 private slots:
-    // The TabStrip (title line) paints the green close + zoom boxes at the
-    // top-left / top-right of the window.
-    void title_line_has_close_and_zoom_boxes() {
+    // Task 20 (mock): the tab row's controls sit at the row's ends - ◄ in the
+    // window's FIRST cell, and ▼ in the LAST cell, which is the right
+    // scrollbar's own column, so the two line up. The old [■] close box and
+    // [↕] zoom box are gone: the green square now lives inside each chip.
+    void tab_row_controls_align_with_the_window_edges() {
         ShellWindow w;
         w.resize(800, 600);
+        w.show();
+        QCoreApplication::processEvents();
         TabStrip* ts = w.tabStrip();
-        QVERIFY(ts);
+        auto* bar = w.findChild<QWidget*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(ts && bar, "tab strip or right scrollbar missing");
         ts->setTabs(QStringList() << "untitled", 0);
         const QImage img = w.grab().toImage();
         QVERIFY(!img.isNull());
 
-        // Close/zoom boxes are in TabStrip-local coords; map to the shell grab.
         const QPoint stripOrigin = ts->mapTo(&w, QPoint(0, 0));
-        auto sampleGreenLocal = [&](const QRect& box, const QPoint* pts, int n) {
-            for (int i = 0; i < n; ++i) {
-                const QPoint local = pts[i];
-                const QPoint shell = stripOrigin + box.topLeft() + local;
-                if (shell.x() < 0 || shell.y() < 0 ||
-                    shell.x() >= img.width() || shell.y() >= img.height())
-                    continue;
-                const QColor c = img.pixelColor(shell);
-                if (c.green() > 110 && c.red() < 130 && c.blue() < 130)
-                    return true;
-            }
-            return false;
+        auto tealIn = [&](const QRect& cell) {
+            int n = 0;
+            const QRect r = cell.translated(stripOrigin);
+            for (int y = qMax(0, r.top()); y <= qMin(img.height() - 1, r.bottom()); ++y)
+                for (int x = qMax(0, r.left()); x <= qMin(img.width() - 1, r.right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (qAbs(c.red() - 0x00) <= 8 && qAbs(c.green() - 0xAA) <= 8 &&
+                        qAbs(c.blue() - 0xAA) <= 8)
+                        ++n;
+                }
+            return n;
         };
-        const QRect cb = ts->closeBoxRect(), zb = ts->zoomBoxRect();
-        const QPoint closePts[] = { QPoint(2, 2), QPoint(cb.width() - 4, 2),
-                                    QPoint(2, cb.height() - 4) };
-        // Zoom face is window blue with green ↕ strokes — sample the stem
-        // and the diagonal joints (spec 1: green glyphs, no black ink).
-        const QPoint zoomPts[] = { QPoint(zb.width() / 2, 4),
-                                   QPoint(zb.width() / 2, zb.height() - 5),
-                                   QPoint(zb.width() / 2 - 3, 4) };
-        const bool closeGreen = sampleGreenLocal(cb, closePts, 3);
-        const bool zoomGreen = sampleGreenLocal(zb, zoomPts, 3);
-        QVERIFY2(closeGreen && zoomGreen,
-                 qPrintable(QStringLiteral("green boxes missing (close=%1 zoom=%2)")
-                                .arg(closeGreen).arg(zoomGreen)));
+
+        QCOMPARE(stripOrigin.x(), 0);                       // starts at the window edge
+        QVERIFY2(tealIn(ts->prevTabRect()) > 3, "◄ control missing from the first cell");
+        QVERIFY2(tealIn(ts->tabListRect()) > 3, "▼ control missing from the last cell");
+        QVERIFY2(tealIn(ts->newTabRect()) > 3, "+ control missing");
+        QVERIFY2(tealIn(ts->nextTabRect()) > 3, "► control missing");
+
+        // ▼ occupies exactly the scrollbar's column, so the row terminates on
+        // the same cell the bar does.
+        const int barLeft = bar->mapTo(&w, QPoint(0, 0)).x();
+        const int listLeft = stripOrigin.x() + ts->tabListRect().left();
+        QCOMPARE(listLeft, barLeft);
+
+        // No standalone green close box at the top-left any more.
+        const QRect firstCell(stripOrigin, QSize(ts->prevTabRect().width(),
+                                                 ts->height()));
+        int green = 0;
+        for (int y = firstCell.top(); y <= firstCell.bottom(); ++y)
+            for (int x = firstCell.left(); x <= firstCell.right(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.green() > 110 && c.red() < 130 && c.blue() < 130)
+                    ++green;
+            }
+        QCOMPARE(green, 0);
     }
 
     // The editor host paints left + right vertical frame edges (gray) along
