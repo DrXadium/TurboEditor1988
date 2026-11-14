@@ -16,6 +16,7 @@
 #include "src/shell/BorlandStyle.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/BorlandMenu.h"
+#include "src/shell/TabListMenu.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
 
@@ -88,6 +89,26 @@ private slots:
     }
 
     // Task 10: Kate's option menus present in Borland chrome.
+    // Task 21 (mock note 5): ▼ opens a dropdown of every open tab, styled
+    // exactly like the menu-bar dropdowns (a BorlandMenu), with the active tab
+    // checked and each entry carrying its tab index.
+    void tab_list_dropdown_lists_every_tab_like_a_borland_menu() {
+        const QStringList titles = QStringList() << "alpha" << "beta" << "gamma";
+        QMenu* menu = TabListMenu::build(nullptr, titles, 1);
+        QVERIFY2(menu, "no menu built");
+        QVERIFY2(qobject_cast<BorlandMenu*>(menu),
+                 "the tab list must use the menu-bar dropdown class, not a bare QMenu");
+        const QList<QAction*> acts = menu->actions();
+        QCOMPARE(acts.size(), 3);
+        for (int i = 0; i < 3; ++i) {
+            QCOMPARE(acts[i]->text(), titles.at(i));
+            QCOMPARE(acts[i]->data().toInt(), i);
+            QVERIFY2(acts[i]->isCheckable(), "tab entries must show the active one");
+            QCOMPARE(acts[i]->isChecked(), i == 1);
+        }
+        delete menu;
+    }
+
     void menu_bar_has_kate_option_menus() {
         ShellWindow w;
         QMenuBar* mb = w.menuBar();

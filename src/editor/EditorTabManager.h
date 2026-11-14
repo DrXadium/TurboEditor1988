@@ -35,6 +35,10 @@ public:
     void newDocument();
     void openFile(const QUrl& url);
     void setActiveIndex(int index);
+    // Close one tab (the chip's green square). The active index follows the
+    // removal; closing the LAST tab leaves one fresh untitled document, so the
+    // strip and the editor never go empty.
+    void closeTab(int index);
 
     // Session snapshot accessors (Task 7): per-tab file URL + cursor position
     // and the active tab, so the composition root can persist a named session.

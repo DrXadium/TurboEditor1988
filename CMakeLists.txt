@@ -41,6 +41,8 @@ add_library(crt-shell STATIC
   src/shell/MenuBar.h
   src/shell/TabStrip.cpp
   src/shell/TabStrip.h
+  src/shell/TabListMenu.cpp
+  src/shell/TabListMenu.h
   src/shell/Minimap.cpp
   src/shell/Minimap.h
   src/shell/FKeyStatusBar.cpp

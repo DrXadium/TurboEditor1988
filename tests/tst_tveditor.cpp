@@ -89,6 +89,43 @@ private slots:
         QVERIFY2(KTextEditor::Editor::instance(), "no KTextEditor");
     }
 
+    // Task 21: a tab chip's green square closes that tab. The active index
+    // follows the removal, and closing the LAST tab leaves one fresh untitled
+    // document - the strip and the editor never go empty.
+    void closing_a_tab_removes_it_and_keeps_one_document()
+    {
+        EditorTabManager m;          // the constructor creates one document
+        m.newDocument();             // 2
+        m.newDocument();             // 3
+        QCOMPARE(m.tabCount(), 3);
+        QCOMPARE(m.containerWidget()->count(), 3);
+        QCOMPARE(m.activeIndex(), 2);
+
+        QSignalSpy spy(&m, &EditorTabManager::tabsChanged);
+        m.closeTab(1);               // a tab BEFORE the active one
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(m.tabCount(), 2);
+        QCOMPARE(m.containerWidget()->count(), 2);
+        QCOMPARE(m.activeIndex(), 1);
+        QVERIFY(m.activeView() && m.activeDocument());
+
+        m.closeTab(1);               // the ACTIVE tab: the next takes its place
+        QCOMPARE(m.tabCount(), 1);
+        QCOMPARE(m.activeIndex(), 0);
+        QVERIFY2(m.activeView() && m.activeDocument(), "no active document after closing");
+
+        m.closeTab(0);               // the LAST tab: replaced, not left empty
+        QCOMPARE(m.tabCount(), 1);
+        QCOMPARE(m.containerWidget()->count(), 1);
+        QCOMPARE(m.activeIndex(), 0);
+        QVERIFY2(m.activeView() && m.activeDocument(), "closing the last tab left no editor");
+
+        // Out-of-range indices are a no-op, not a crash.
+        m.closeTab(-1);
+        m.closeTab(99);
+        QCOMPARE(m.tabCount(), 1);
+    }
+
     // Edit menu must offer standard Cut / Copy / Paste. This KTextEditor build
     // ships no ClipboardInterface and no action hooks, so the functions are
     // implemented over Document::text/removeText/insertText + QClipboard.

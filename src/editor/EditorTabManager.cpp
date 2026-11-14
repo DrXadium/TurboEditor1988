@@ -286,6 +286,45 @@ void EditorTabManager::setActiveIndex(int index)
     syncTabs();
 }
 
+// Task 21: the tab chip's green square closes that tab. Indices shift with the
+// removal, so the active index is adjusted rather than left pointing at a
+// different document.
+void EditorTabManager::closeTab(int index)
+{
+    if (index < 0 || index >= m_docs.size())
+        return;
+    KTextEditor::Document* doc = m_docs.takeAt(index);
+    KTextEditor::View* view = m_views.takeAt(index);
+    if (view) {
+        m_container->removeWidget(view);
+        view->deleteLater();
+    }
+    if (doc) {
+        // The history is keyed by document; drop it with the document or the
+        // hash keeps dangling keys for the life of the session.
+        m_history.remove(doc);
+        m_historyIndex.remove(doc);
+        doc->deleteLater();
+    }
+
+    if (m_docs.isEmpty()) {
+        // Closing the LAST tab leaves a fresh untitled document: the strip and
+        // the editor never go empty (this app has no multi-window story to
+        // fall back on). newDocument() emits tabsChanged itself.
+        newDocument();
+        return;
+    }
+
+    if (index < m_active)
+        --m_active;
+    else if (m_active >= m_docs.size())
+        m_active = m_docs.size() - 1;   // closed the active LAST tab
+    m_container->setCurrentIndex(m_active);
+    if (KTextEditor::View* v = m_views.value(m_active))
+        m_container->setFocusProxy(v);   // the proxy may have been the closed view
+    syncTabs();
+}
+
 QUrl EditorTabManager::viewFileUrl(int index) const
 {
     if (index < 0 || index >= m_views.size())

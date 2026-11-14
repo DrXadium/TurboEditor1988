@@ -22,6 +22,7 @@
 #include <QTimer>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
+#include "src/shell/TabListMenu.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/RightScrollBar.h"
 #include "src/shell/Minimap.h"
@@ -115,6 +116,28 @@ int main(int argc, char** argv)
                      });
     QObject::connect(shell.tabStrip(), &TabStrip::tabActivated, &tabs,
                      &EditorTabManager::setActiveIndex);
+    // Task 21 (mock): the tab row's other controls act on the documents behind
+    // it - + opens one, the chip's green square closes that tab, and ▼ lists
+    // every open tab in the same dropdown style as the menu bar.
+    if (TabStrip* strip = shell.tabStrip()) {
+        QObject::connect(strip, &TabStrip::newTabRequested, &tabs,
+                         &EditorTabManager::newDocument);
+        QObject::connect(strip, &TabStrip::tabClosed, &tabs, &EditorTabManager::closeTab);
+        QObject::connect(strip, &TabStrip::tabListRequested, &shell, [&shell, &tabs]() {
+            TabStrip* s = shell.tabStrip();
+            if (!s)
+                return;
+            QMenu* menu = TabListMenu::build(s, s->titles(), s->activeIndex());
+            const QRect cell = s->tabListRect();
+            // Drop it from the ▼ cell, below the row.
+            const QPoint at = s->mapToGlobal(QPoint(cell.left(), cell.bottom() + 1));
+            QAction* chosen = menu->exec(at);
+            const int idx = chosen ? chosen->data().toInt() : -1;
+            delete menu;   // the action lives in the menu: read its data first
+            if (idx >= 0)
+                tabs.setActiveIndex(idx);
+        });
+    }
     // The active tab change swaps which KTextEditor::View is current, so the
     // painted scrollbars must re-bind to that view's scrollbars. Without this
     // the right/bottom bars kept pointing at the first tab's scrollbars after
