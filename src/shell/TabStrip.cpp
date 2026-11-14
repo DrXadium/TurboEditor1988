@@ -10,17 +10,23 @@ namespace {
 const QColor kBgBlue(0x00, 0x00, 0xAA);      // TV window blue desktop
 const QColor kGreen(0x00, 0xAA, 0x00);       // the per-tab close square
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // active chip ink
-const QColor kTabGrey(0xAA, 0xAA, 0xAA);     // inactive chip ink
+// Inactive chip ink. The band is bright grey #AAAAAA (Task 22), so the dim
+// title must be DARKER than the band to read at all: #AAAAAA on #AAAAAA dither
+// is invisible (measured: 428 grey px active vs 400 inactive - no signal).
+// TV dark gray #555555 keeps it clearly dimmer than the active white while
+// still reading as grey rather than black (black is banned inside the window).
+const QColor kTabGrey(0x55, 0x55, 0x55);
 // Task 19 (mock note 2): the row's background is the scrollbar track's stipple
 // design with GREY ink instead of the bars' teal, so the row reads as distinct
-// from them. #555555 (TV dark gray) rather than #AAAAAA: the lighter gray is
-// what the inactive tab titles are drawn in, and grey-on-grey would be
-// unreadable - the mock's band is clearly darker than its inactive titles.
-const QColor kBandGrey(0x55, 0x55, 0x55);
-// The controls (mock notes 1 + 5) carry the scrollbars' TEAL, not their blue
-// arrow ink: the scrollbar arrows are blue on a solid teal cell, and there is
-// no solid cell here - blue on the blue band would be invisible.
+// from them.
+// Task 22 (user): #555555 read as a near-black mud against the window blue -
+// the mock's band is a BRIGHT grey, so the stipple is TV light gray #AAAAAA.
+const QColor kBandGrey(0xAA, 0xAA, 0xAA);
+// The controls (mock notes 1, 4, 5): the scrollbars' END-CELL design - a SOLID
+// CYAN cell with a DARK BLUE glyph in it, not a bare teal glyph floating on the
+// grey dither (which read as noise; user report).
 const QColor kTeal(0x00, 0xAA, 0xAA);
+const QColor kBlue(0x00, 0x00, 0xAA);
 } // namespace
 
 // Solid triangle arrow, same shape as TextScrollBar's end-block glyphs.
@@ -145,10 +151,12 @@ QVector<QRect> TabStrip::tabRects() const
     int x = cw;
     for (int i = firstShown(); i < m_titles.size(); ++i) {
         const int w = chipCells(m_titles.at(i)) * cw;
+        // One whole cell of daylight between chips (user: the chips read as a
+        // single run when they touched `][`).
         if (x + w > limit)
             break;
         out.append(QRect(x, 0, w, height()));
-        x += w;
+        x += w + cw;
     }
     return out;
 }
@@ -248,11 +256,15 @@ void TabStrip::paintEvent(QPaintEvent*)
     // border column belongs to RightScrollBar. No verticals here.
 
     // Controls (mock notes 1, 4, 5): ◄ ► scroll the chip window, + opens a new
-    // document, ▼ lists every open tab. All four are persistent.
-    drawArrow(p, prevTabRect(), Qt::LeftArrow, kTeal);
-    drawArrow(p, nextTabRect(), Qt::RightArrow, kTeal);
-    drawArrow(p, tabListRect(), Qt::DownArrow, kTeal);
-    TvFrame::glyph(p, newTabRect(), QLatin1Char('+'), kTeal);
+    // document, ▼ lists every open tab. All four are persistent. Each is the
+    // scrollbar END-CELL design: a solid cyan cell, blue glyph on top.
+    const QRect controls[] = { prevTabRect(), nextTabRect(), newTabRect(), tabListRect() };
+    for (const QRect& c : controls)
+        p.fillRect(c, kTeal);
+    drawArrow(p, prevTabRect(), Qt::LeftArrow, kBlue);
+    drawArrow(p, nextTabRect(), Qt::RightArrow, kBlue);
+    drawArrow(p, tabListRect(), Qt::DownArrow, kBlue);
+    TvFrame::glyph(p, newTabRect(), QLatin1Char('+'), kBlue);
 
     // Chips: [ name ■ ] - bracketed, no plate, the band shows through.
     const QVector<QRect> rects = tabRects();

@@ -74,6 +74,72 @@ private slots:
     // window's FIRST cell, and ▼ in the LAST cell, which is the right
     // scrollbar's own column, so the two line up. The old [■] close box and
     // [↕] zoom box are gone: the green square now lives inside each chip.
+    // The document border row's ╗ must occupy the LAST cell of its own row,
+    // with the right scrollbar starting BELOW that row - at every window size.
+    // (Reported broken at a smaller window: the bar's top cell had climbed into
+    // the corner row and erased the corner.)
+    void top_right_corner_is_intact_at_every_size() {
+        const QSize sizes[] = { QSize(1280, 800), QSize(640, 400), QSize(900, 600),
+                                QSize(1024, 768) };
+        for (const QSize& sz : sizes) {
+            ShellWindow w;
+            w.resize(sz);
+            w.show();
+            QCoreApplication::processEvents();
+            auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+            auto* titleRow = w.findChild<QWidget*>(QStringLiteral("editorTitleRow"));
+            auto* bar = w.findChild<QWidget*>(QStringLiteral("rightScrollBar"));
+            QVERIFY2(host && titleRow && bar, "host, border row or scrollbar missing");
+            const QImage img = host->grab().toImage();
+            QVERIFY(!img.isNull());
+            const int cw = qMax(6, host->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+            const QPoint t = titleRow->mapTo(host, QPoint(0, 0));
+            const QRect corner(t.x() + host->width() - cw, t.y(), cw, titleRow->height());
+
+            int white = 0, teal = 0;
+            for (int y = qMax(0, corner.top()); y <= qMin(img.height() - 1, corner.bottom()); ++y)
+                for (int x = qMax(0, corner.left()); x <= qMin(img.width() - 1, corner.right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (isFrameWhite(c))
+                        ++white;
+                    if (qAbs(c.red() - 0x00) <= 8 && qAbs(c.green() - 0xAA) <= 8 &&
+                        qAbs(c.blue() - 0xAA) <= 8)
+                        ++teal;
+                }
+            QVERIFY2(white >= 6,
+                     qPrintable(QStringLiteral("%1x%2: ╗ corner has only %3 white px")
+                                    .arg(sz.width()).arg(sz.height()).arg(white)));
+            QVERIFY2(teal == 0,
+                     qPrintable(QStringLiteral("%1x%2: the scrollbar paints %3 teal px INTO the "
+                                               "corner cell - the bar starts too high")
+                                    .arg(sz.width()).arg(sz.height()).arg(teal)));
+
+            // The bar itself must begin at or below the border row's bottom.
+            const QPoint b = bar->mapTo(host, QPoint(0, 0));
+            QVERIFY2(b.y() >= t.y() + titleRow->height(),
+                     qPrintable(QStringLiteral("%1x%2: bar top %3 is above the border row's "
+                                               "bottom %4")
+                                    .arg(sz.width()).arg(sz.height())
+                                    .arg(b.y()).arg(t.y() + titleRow->height())));
+        }
+    }
+
+    // The tab row sits a little clear of the menu bar (user: "a bit more padding
+    // between the top of the tab bar and the menu bar"), as the mock shows.
+    void tab_row_clears_the_menu_bar() {
+        ShellWindow w;
+        w.resize(900, 600);
+        w.show();
+        QCoreApplication::processEvents();
+        TabStrip* ts = w.tabStrip();
+        QVERIFY(ts);
+        const int menuBottom = w.menuBar()->mapTo(&w, QPoint(0, 0)).y() + w.menuBar()->height();
+        const int tabsTop = ts->mapTo(&w, QPoint(0, 0)).y();
+        QVERIFY2(tabsTop - menuBottom >= 4,
+                 qPrintable(QStringLiteral("only %1 px of daylight between the menu bar and "
+                                           "the tab row").arg(tabsTop - menuBottom)));
+    }
+
     void tab_row_controls_align_with_the_window_edges() {
         ShellWindow w;
         w.resize(800, 600);

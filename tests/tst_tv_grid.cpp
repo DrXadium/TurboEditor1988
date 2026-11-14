@@ -225,7 +225,8 @@ private slots:
         // document's border row down is still the blue field.
         {
             int hit = 0, total = 0;
-            const QColor a(0x00, 0x00, 0xAA), b(0x55, 0x55, 0x55);
+            // Task 22: the dither ink is TV light gray, not dark gray.
+            const QColor a(0x00, 0x00, 0xAA), b(0xAA, 0xAA, 0xAA);
             for (int y = qMax(0, tabsR.top()); y <= qMin(H - 1, tabsR.bottom()); ++y)
                 for (int x = 0; x < W; ++x) {
                     const QColor c = frame.pixelColor(x, y);

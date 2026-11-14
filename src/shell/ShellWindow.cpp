@@ -28,6 +28,10 @@ namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
 const QColor kFrameWhite(0xFF, 0xFF, 0xFF);   // TV-revision spec 3: white double line
 const QColor kBgBlue(0x00, 0x00, 0xAA);
+// Task 22: daylight between the menu bar and the tab row (user: "a bit more
+// padding"). The menu bar sits above the central widget, not in its layout, so
+// the gap is this layout's top margin.
+const int kTabsTopMargin = 4;
 
 // Central editor host: fills the TV window-blue desktop, then draws the
 // left/right/bottom double-line frame edges as part of its OWN paint (so a
@@ -285,7 +289,10 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     // Reserve the frame: EditorHost paints the left double line at x=1..2 and
     // the bottom pair on the last two rows. The margins must clear it, or the
     // editor/tab children paint over the border and the frame disappears.
-    lay->setContentsMargins(0, 0, 0, 0);
+    // Task 22 (user): a little daylight between the menu bar and the tab row.
+    // The menu bar is NOT a layout item, so this is the layout's TOP margin
+    // (the left column inset belongs to the content row).
+    lay->setContentsMargins(0, kTabsTopMargin, 0, 0);
     lay->setSpacing(0);
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);

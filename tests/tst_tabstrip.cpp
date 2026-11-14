@@ -13,9 +13,10 @@
 namespace {
 const QColor kGreen(0x00, 0xAA, 0x00);
 const QColor kBlue(0x00, 0x00, 0xAA);
-const QColor kBandGrey(0x55, 0x55, 0x55);   // stipple ink of the tab row
+const QColor kBandGrey(0xAA, 0xAA, 0xAA);   // stipple ink of the tab row (bright grey)
 const QColor kWhite(0xFF, 0xFF, 0xFF);
-const QColor kTabGrey(0xAA, 0xAA, 0xAA);    // ink of an inactive chip
+const QColor kTabGrey(0x55, 0x55, 0x55);    // ink of an inactive chip (on the bright band)
+const QColor kTeal(0x00, 0xAA, 0xAA);       // control-cell fill
 
 int cellWOf(const QWidget& w)
 {
@@ -200,9 +201,15 @@ private slots:
         };
         QVERIFY2(countIn(nameBand(0), kWhite, 8) >= 3, "active chip title is not white");
         QVERIFY2(countIn(nameBand(1), kTabGrey, 8) >= 3, "inactive chip title is not grey");
-        // The two states are distinguishable: no dim grey in the active chip,
-        // no white in the inactive one.
-        QVERIFY2(countIn(nameBand(0), kTabGrey, 8) == 0, "active chip is drawn dim");
+        // The two states are distinguished by GREY density: the band itself is
+        // now bright grey (#AAAAAA), so an absolute "no grey" cannot work - the
+        // inactive chip must still carry visibly more grey than the active one,
+        // whose only grey is the dither showing through.
+        QVERIFY2(countIn(nameBand(1), kTabGrey, 8) >= countIn(nameBand(0), kTabGrey, 8) + 40,
+                 qPrintable(QStringLiteral("chip states not distinguished: active grey=%1, "
+                                           "inactive grey=%2")
+                                .arg(countIn(nameBand(0), kTabGrey, 8))
+                                .arg(countIn(nameBand(1), kTabGrey, 8))));
         QVERIFY2(countIn(nameBand(1), kWhite, 8) == 0, "inactive chip is drawn bright");
     }
 
@@ -263,6 +270,77 @@ private slots:
 
     // Task 20 (mock note 1): ◄ / ► scroll the chip window one chip at a time
     // and are present even when nothing overflows.
+    // Task 22 (mock notes 1, 4, 5): the controls are drawn the way the
+    // scrollbars draw their end cells - a SOLID CYAN cell with a DARK BLUE
+    // glyph in it - not a teal glyph floating on the grey dither.
+    void controls_are_blue_glyphs_on_solid_cyan_cells() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        auto counts = [&](const QRect& cell) {
+            int teal = 0, blue = 0, band = 0;
+            for (int y = qMax(0, cell.top()); y <= qMin(img.height() - 1, cell.bottom()); ++y)
+                for (int x = qMax(0, cell.left()); x <= qMin(img.width() - 1, cell.right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (isNear(c, kTeal))
+                        ++teal;
+                    else if (isNear(c, kBandGrey, 6))
+                        ++band;
+                    else if (isNear(c, kBlue, 6))
+                        ++blue;
+                }
+            return QString("teal=%1 blue=%2 band=%3").arg(teal).arg(blue).arg(band);
+        };
+
+        const QRect cells[] = { ts.prevTabRect(), ts.nextTabRect(),
+                                ts.newTabRect(), ts.tabListRect() };
+        const char* names[] = { "◄", "►", "+", "▼" };
+        for (int i = 0; i < 4; ++i) {
+            int teal = 0, blue = 0, band = 0;
+            for (int y = qMax(0, cells[i].top()); y <= qMin(img.height() - 1, cells[i].bottom()); ++y)
+                for (int x = qMax(0, cells[i].left()); x <= qMin(img.width() - 1, cells[i].right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (isNear(c, kTeal))
+                        ++teal;
+                    else if (isNear(c, kBandGrey, 6))
+                        ++band;
+                    else if (isNear(c, kBlue, 6))
+                        ++blue;
+                }
+            Q_UNUSED(counts);
+            // The cell is FILLED: the dither underneath must not show through.
+            QVERIFY2(teal * 2 >= (cells[i].width() * cells[i].height()),
+                     qPrintable(QStringLiteral("%1 control is not a solid cyan cell (%2)")
+                                    .arg(names[i])
+                                    .arg(QString("%1 teal, %2 blue, %3 band").arg(teal).arg(blue).arg(band))));
+            // ... and it carries a DARK BLUE glyph on top of the cyan.
+            QVERIFY2(blue >= 4,
+                     qPrintable(QStringLiteral("%1 control has no blue glyph (%2 teal, %3 blue)")
+                                    .arg(names[i]).arg(teal).arg(blue)));
+        }
+    }
+
+    // Task 22 (user): a cell of daylight between chips, as the mock shows -
+    // the chips were touching (`][`) and read as one run.
+    void chips_are_separated_by_daylight() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha" << "beta" << "gamma", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        const int cw = cellWOf(ts);
+        ts.resize(800, cellH);
+        const QVector<QRect> rects = ts.tabRects();
+        QCOMPARE(rects.size(), 3);
+        for (int i = 1; i < rects.size(); ++i)
+            QVERIFY2(rects[i].left() - rects[i - 1].right() - 1 >= cw,
+                     qPrintable(QStringLiteral("chips %1/%2 are %3 px apart, need a whole cell")
+                                    .arg(i - 1).arg(i)
+                                    .arg(rects[i].left() - rects[i - 1].right() - 1)));
+    }
+
     void arrows_scroll_the_chip_window() {
         TabStrip ts;
         ts.setTabs(QStringList() << "document1" << "document2" << "document3"

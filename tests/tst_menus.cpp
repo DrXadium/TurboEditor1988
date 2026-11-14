@@ -16,6 +16,7 @@
 #include "src/shell/BorlandStyle.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/BorlandMenu.h"
+#include "src/shell/TabStrip.h"
 #include "src/shell/TabListMenu.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
@@ -92,6 +93,89 @@ private slots:
     // Task 21 (mock note 5): ▼ opens a dropdown of every open tab, styled
     // exactly like the menu-bar dropdowns (a BorlandMenu), with the active tab
     // checked and each entry carrying its tab index.
+    // Task 22 (reported live): the dropdown opened OFF THE WINDOW. Anchored at
+    // the ▼ cell's LEFT edge, a 163 px list on a 1280 px window hung 155 px past
+    // the right edge, so the compositor could only ever show a sliver - it read
+    // as "clicking ▼ does nothing". It must right-align to the control and stay
+    // inside the shell.
+    void tab_list_opens_inside_the_window() {
+        const QRect shell(0, 0, 1280, 800);
+        const QSize menu(163, 104);
+        // The ▼ control is the window's last three cells: x 1272..1279.
+        const QRect cell(1272, 25, 8, 16);
+        const QPoint at = TabListMenu::anchoredPos(cell, menu, shell);
+        QVERIFY2(at.x() >= shell.left(), "list runs off the left edge");
+        QVERIFY2(at.x() + menu.width() <= shell.left() + shell.width(),
+                 qPrintable(QStringLiteral("list runs off the right edge: x=%1 w=%2")
+                                .arg(at.x()).arg(menu.width())));
+        QCOMPARE(at.x() + menu.width(), cell.right() + 1);   // right-aligned
+        QCOMPARE(at.y(), cell.bottom() + 1);                 // below the row
+        // A control in the MIDDLE of the row must still open below it.
+        const QRect mid(400, 25, 8, 16);
+        const QPoint midAt = TabListMenu::anchoredPos(mid, menu, shell);
+        QCOMPARE(midAt.y(), mid.bottom() + 1);
+        QVERIFY2(midAt.x() + menu.width() <= shell.left() + shell.width(), "clamped");
+        // A list taller than the room left is pinned inside, not left hanging.
+        const QPoint tall = TabListMenu::anchoredPos(QRect(400, 780, 8, 16),
+                                                     QSize(163, 104), shell);
+        QVERIFY2(tall.y() + 104 <= shell.top() + shell.height(),
+                 qPrintable(QStringLiteral("list hangs off the bottom: y=%1").arg(tall.y())));
+    }
+
+    // Regression (reported live): opening the ▼ tab list RE-FLows the shell -
+    // the editor body and its scrollbar climb over the document border row and
+    // erase the frame's top-right corner. Cause: the menu was parented to the
+    // TabStrip, which lives INSIDE the editor host's layout, so showing it
+    // (WA_DontShowOnScreen, as the popup registrar does) disturbed that layout.
+    void tab_list_popup_does_not_reflow_the_shell() {
+        ShellWindow w;
+        w.resize(640, 400);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        w.show();
+        QCoreApplication::processEvents();
+
+        TabStrip* strip = w.tabStrip();
+        auto* titleRow = w.findChild<QWidget*>(QStringLiteral("editorTitleRow"));
+        auto* bar = w.findChild<QWidget*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(strip && titleRow && bar, "strip, border row or scrollbar missing");
+
+        const QRect stripBefore = strip->geometry();
+        const QRect titleBefore = titleRow->geometry();
+        const QRect barBefore = bar->geometry();
+        const QRect menuBefore = w.menuBar()->geometry();
+
+        QMenu* menu = TabListMenu::build(strip, QStringList() << "alpha" << "beta", 0);
+        // Exactly the path the app's PopupRegistrar takes when the menu shows.
+        b.registerPopup(menu);
+        QCoreApplication::processEvents();
+        QVERIFY(menu->isVisible());
+
+        // The menu must SURFACE as a popup: hand it the cursor grab the way
+        // QMenu::exec does. Without it the list is never shown to the user and
+        // the window manager never sees a popup there either.
+        menu->grabMouse();
+        menu->setFocus(Qt::PopupFocusReason);
+        QVERIFY2(menu->isVisible() && menu->testAttribute(Qt::WA_DontShowOnScreen),
+                 "tab list did not surface as a non-native popup");
+
+        QVERIFY2(strip->geometry() == stripBefore,
+                 qPrintable(QStringLiteral("tab row moved: %1 -> %2")
+                                .arg(QString("%1,%2 %3x%4")
+                                         .arg(stripBefore.x()).arg(stripBefore.y())
+                                         .arg(stripBefore.width()).arg(stripBefore.height()),
+                                     QString("%1,%2 %3x%4")
+                                         .arg(strip->geometry().x()).arg(strip->geometry().y())
+                                         .arg(strip->geometry().width()).arg(strip->geometry().height()))));
+        QVERIFY2(titleRow->geometry() == titleBefore,
+                 "document border row moved - the frame's corner row is displaced");
+        QVERIFY2(bar->geometry() == barBefore,
+                 "right scrollbar moved - it now covers the border row's corner");
+        QVERIFY2(w.menuBar()->geometry() == menuBefore, "menu bar moved");
+
+        delete menu;
+    }
+
     void tab_list_dropdown_lists_every_tab_like_a_borland_menu() {
         const QStringList titles = QStringList() << "alpha" << "beta" << "gamma";
         QMenu* menu = TabListMenu::build(nullptr, titles, 1);

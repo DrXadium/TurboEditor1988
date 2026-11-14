@@ -123,19 +123,32 @@ int main(int argc, char** argv)
         QObject::connect(strip, &TabStrip::newTabRequested, &tabs,
                          &EditorTabManager::newDocument);
         QObject::connect(strip, &TabStrip::tabClosed, &tabs, &EditorTabManager::closeTab);
-        QObject::connect(strip, &TabStrip::tabListRequested, &shell, [&shell, &tabs]() {
+        QObject::connect(strip, &TabStrip::tabListRequested, &shell,
+                         [&shell, &tabs]() {
             TabStrip* s = shell.tabStrip();
             if (!s)
                 return;
             QMenu* menu = TabListMenu::build(s, s->titles(), s->activeIndex());
             const QRect cell = s->tabListRect();
-            // Drop it from the ▼ cell, below the row.
-            const QPoint at = s->mapToGlobal(QPoint(cell.left(), cell.bottom() + 1));
-            QAction* chosen = menu->exec(at);
-            const int idx = chosen ? chosen->data().toInt() : -1;
-            delete menu;   // the action lives in the menu: read its data first
-            if (idx >= 0)
-                tabs.setActiveIndex(idx);
+            // popup(), never exec(): the shell is never mapped (WA_DontShowOnScreen),
+            // so exec()'s nested event loop blocks the GUI thread forever - the
+            // reported "clicking ▼ breaks the layout" was a frozen shell. The
+            // bridge composites the popup and drives it with synthesized events,
+            // exactly like the menu bar's dropdowns.
+            QObject::connect(menu, &QMenu::triggered, &tabs, [&tabs](QAction* a) {
+                const int idx = a ? a->data().toInt() : -1;
+                if (idx >= 0)
+                    tabs.setActiveIndex(idx);
+            });
+            QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+            // Drop it from the ▼ cell, below the row - and keep the whole list
+            // INSIDE the window. Anchoring the left edge at the cell pushed a
+            // 163 px menu off the right edge of a 1280 px window (only 8 px of
+            // it could ever be composited), which is why the dropdown looked
+            // like it never opened. Right-align to the cell, then clamp.
+            const QRect shellRect(shell.mapToGlobal(QPoint(0, 0)), shell.size());
+            const QRect cellGlobal(s->mapToGlobal(cell.topLeft()), cell.size());
+            menu->popup(TabListMenu::anchoredPos(cellGlobal, menu->sizeHint(), shellRect));
         });
     }
     // The active tab change swaps which KTextEditor::View is current, so the
@@ -651,6 +664,24 @@ int main(int argc, char** argv)
             const QPoint p = ed->mapTo(&shell, ed->rect().center());
             bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
                                      Qt::RightButton, Qt::NoModifier, p.x(), p.y());
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_TABLIST=1 clicks the ▼ tab-list
+    // control through the bridge - the same path a real click takes - so the
+    // dropdown can be captured without a pointer. Synthetic XTEST clicks cannot
+    // reach the app's Xwayland surface from the relay shell, so this is the only
+    // way to see the list open on screen.
+    if (qEnvironmentVariableIsSet("CRT_KATE_TABLIST")) {
+        QTimer::singleShot(1200, &app, [&shell, &bridge]() {
+            TabStrip* s = shell.tabStrip();
+            if (!s || s->width() <= 0)
+                return;
+            const QPoint p = s->mapTo(&shell, s->tabListRect().center());
+            bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                     Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+            bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                     Qt::NoButton, Qt::NoModifier, p.x(), p.y());
         });
     }
 
