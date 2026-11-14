@@ -266,7 +266,11 @@ void TabStrip::paintEvent(QPaintEvent*)
     drawArrow(p, tabListRect(), Qt::DownArrow, kBlue);
     TvFrame::glyph(p, newTabRect(), QLatin1Char('+'), kBlue);
 
-    // Chips: [ name ■ ] - bracketed, no plate, the band shows through.
+    // Chips: [ name ■ ] - bracketed, on the EDITOR's background (user, Task 23).
+    // The chip is a window onto the document: everything from `[` to `]` is
+    // filled with the window blue, so the strip's brighter dither stops at the
+    // brackets and each tab reads as a separate opening. Same for both states -
+    // the state shows in the title ink, not in the plate.
     const QVector<QRect> rects = tabRects();
     const int cw = cellW();
     for (int j = 0; j < rects.size(); ++j) {
@@ -274,6 +278,7 @@ void TabStrip::paintEvent(QPaintEvent*)
         if (idx >= m_titles.size())
             break;
         const QRect r = rects.at(j);
+        p.fillRect(r, kBlue);
         const bool active = (idx == m_active);
         // Mock note 3: the active title is bright white, an inactive one grey;
         // the green square stays bright in BOTH states.

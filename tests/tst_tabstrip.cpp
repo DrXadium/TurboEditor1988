@@ -326,6 +326,43 @@ private slots:
 
     // Task 22 (user): a cell of daylight between chips, as the mock shows -
     // the chips were touching (`][`) and read as one run.
+    // Task 23 (user): a chip is a window onto the editor - everything from `[`
+    // to `]` sits on the EDITOR's background, not on the strip's brighter
+    // dither, so each tab stands out from the band. Active AND inactive.
+    void chip_interiors_are_the_editor_background() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha" << "beta", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(800, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+        const QVector<QRect> rects = ts.tabRects();
+        QCOMPARE(rects.size(), 2);
+
+        for (int i = 0; i < rects.size(); ++i) {
+            const QRect r = rects.at(i);
+            int blue = 0, band = 0;
+            for (int y = qMax(0, r.top()); y <= qMin(img.height() - 1, r.bottom()); ++y)
+                for (int x = qMax(0, r.left()); x <= qMin(img.width() - 1, r.right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (isNear(c, kBlue, 6))
+                        ++blue;
+                    else if (isNear(c, kBandGrey, 6))
+                        ++band;
+                }
+            // Not one pixel of the strip's dither may show inside a chip.
+            QVERIFY2(band == 0,
+                     qPrintable(QStringLiteral("chip %1: %2 strip-dither px inside the "
+                                               "brackets - the band bleeds through")
+                                    .arg(i).arg(band)));
+            // ... and the editor blue has to be what fills it.
+            QVERIFY2(blue * 2 >= r.width() * r.height(),
+                     qPrintable(QStringLiteral("chip %1 is not on the editor background "
+                                               "(%2 blue of %3 px)")
+                                    .arg(i).arg(blue).arg(r.width() * r.height())));
+        }
+    }
+
     void chips_are_separated_by_daylight() {
         TabStrip ts;
         ts.setTabs(QStringList() << "alpha" << "beta" << "gamma", 0);
