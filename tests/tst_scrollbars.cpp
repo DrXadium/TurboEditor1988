@@ -9,6 +9,7 @@
 #include <QScrollBar>
 #include <QMenuBar>
 #include <QMenu>
+#include <QLabel>
 #include "src/shell/TextScrollBar.h"
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TabStrip.h"
@@ -625,13 +626,18 @@ private slots:
                  qPrintable(QStringLiteral("bar right edge %1 != window width %2")
                                 .arg(rightEdge).arg(shell.width() - 1)));
 
-        // Under the title row (top-right corner) ... above the BottomBand.
-        TabStrip* strip = shell.tabStrip();
-        QVERIFY(strip);
-        const QPoint stl = strip->mapTo(&shell, QPoint(0, 0));
-        QVERIFY2(tl.y() == stl.y() + strip->height(),
-                 qPrintable(QStringLiteral("bar top %1 not directly below title row bottom %2")
-                                .arg(tl.y()).arg(stl.y() + strip->height())));
+        // Directly under the DOCUMENT's top border row (the ╔ ═ name ═ ╗ row,
+        // whose ╗ is this bar's top cell) ... and above the BottomBand.
+        // It used to start under the tab row; the top border row now sits
+        // between them, so the bar begins one row lower.
+        auto* title = shell.findChild<QLabel*>(QStringLiteral("editorTitle"));
+        QVERIFY2(title, "document title row (editorTitle) not found");
+        const int titleRowBottom = title->mapTo(&shell, QPoint(0, 0)).y()
+                                   + title->height() - 1;
+        QVERIFY2(tl.y() == titleRowBottom + 1,
+                 qPrintable(QStringLiteral("bar top %1 is not directly below the top border "
+                                           "row (bottom %2)")
+                                .arg(tl.y()).arg(titleRowBottom)));
         const QPoint btl = shell.bottomBand()->mapTo(&shell, QPoint(0, 0));
         const int barBottom = bar->mapTo(&shell, QPoint(0, bar->height() - 1)).y();
         QVERIFY2(barBottom == btl.y() - 1,

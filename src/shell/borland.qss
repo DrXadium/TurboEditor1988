@@ -108,6 +108,13 @@ QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel {
 /* Editor placeholder glyph text: yellow like editor text (spec 4). Also
    never black — spec 1 bans pure black inside the window. */
 QLabel#editorPlaceholder { background: transparent; color: #FFFF55; }
+/* Document title in the top border row: WHITE, the same ink as the ═ it
+   interrupts, on the window blue (never black). */
+QLabel#editorTitle { background: transparent; color: #FFFFFF; }
+/* The band that reserves the top border row paints NOTHING: EditorHost draws
+   the ╔ ═ ╗ there, and an opaque band would erase it (the global QWidget rule
+   above gives every widget a #0000AA background). */
+QWidget#editorTitleRow { background: transparent; }
 /* TV push buttons: green field, white/black label (raised bevel via style). */
 QPushButton {
     background-color: #00AA00;

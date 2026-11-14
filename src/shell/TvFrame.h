@@ -86,8 +86,17 @@ inline void tileH(QPainter& p, const QRect& band, int cellW, QChar ch, const QCo
     // Draw the trailing PARTIAL cell too (the painter clips it): stopping at
     // whole cells left up to a cell of bare background, which is what made the
     // ║ column stop short of the bottom corner instead of meeting it.
+    //
+    // The clip is what makes "partial" mean partial: `glyph()` draws a WHOLE
+    // character into its rect and only the QPainter's clip stops it, so without
+    // this a band whose width is not a whole number of cells overdraws up to
+    // one cell PAST its right edge - the ═ rule then bleeds into the corner
+    // cell it is supposed to terminate beside.
+    p.save();
+    p.setClipRect(band);
     for (int x = band.left(); x <= band.right(); x += cellW)
         glyph(p, QRect(x, band.top(), cellW, band.height()), ch, ink);
+    p.restore();
 }
 
 // Tile `ch` down `band`, one character per `cellH`-tall cell.
@@ -95,8 +104,12 @@ inline void tileV(QPainter& p, const QRect& band, int cellH, QChar ch, const QCo
 {
     if (cellH <= 0 || band.width() <= 0 || band.height() <= 0)
         return;
+    // Same trailing-partial-cell rule as tileH, and the same need for a clip.
+    p.save();
+    p.setClipRect(band);
     for (int y = band.top(); y <= band.bottom(); y += cellH)
         glyph(p, QRect(band.left(), y, band.width(), cellH), ch, ink);
+    p.restore();
 }
 
 } // namespace TvFrame

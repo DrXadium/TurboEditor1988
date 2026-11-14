@@ -12,6 +12,8 @@
 #include "src/shell/BottomBand.h"
 #include "src/shell/TextScrollBar.h"
 #include "src/shell/RightScrollBar.h"
+#include "src/shell/TvFrame.h"
+#include <QLabel>
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -564,6 +566,159 @@ private slots:
                  qPrintable(QStringLiteral("left border strokes differ: column [%1] vs "
                                            "corner [%2] - the corner is thicker on one side")
                                 .arg(columnInk, cornerInk)));
+    }
+
+    // The document editor's TOP border row is drawn BELOW the tab row:
+    //   ╔ in the upper-left cell, ═ running right, two spaces, the open file's
+    //   name, two spaces, ═ again, then ╗ in the cell above the scrollbar.
+    void title_row_has_corners_rule_and_the_file_name()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+        QVERIFY2(host, "editorHost not found");
+        auto* name = w.findChild<QLabel*>(QStringLiteral("editorTitle"));
+        QVERIFY2(name, "editorTitle (the file name in the top border row) not found");
+        QVERIFY2(!name->text().isEmpty(), "editorTitle has no text");
+
+        const QImage img = host->grab().toImage();
+        QVERIFY2(!img.isNull(), "editorHost did not render");
+        const int cw = qMax(6, host->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const QRect row = name->geometry();
+        QVERIFY2(row.height() >= 8 && row.top() + row.height() <= img.height(),
+                 qPrintable(QStringLiteral("title row %1+%2 is not a sane row inside the host")
+                                .arg(row.top()).arg(row.height())));
+
+        const auto inkAt = [&](int x, int y) { return isFrameWhite(img.pixelColor(x, y)); };
+        const auto inkIn = [&](const QRect& r) {
+            int n = 0;
+            for (int y = r.top(); y <= r.bottom(); ++y)
+                for (int x = r.left(); x <= r.right(); ++x)
+                    if (inkAt(x, y))
+                        ++n;
+            return n;
+        };
+
+        // (1) ╔: the cell carries the two horizontal strokes of a CORNER. The
+        // tell is that ink reaches the cell's LAST column on those rows - a ║
+        // never inks beyond its two stroke columns (measured: ║ is `..##.##.`).
+        const QRect leftCell(0, row.top(), cw, row.height());
+        int cornerRows = 0;
+        for (int y = leftCell.top(); y <= leftCell.bottom(); ++y)
+            if (inkAt(leftCell.right(), y))
+                ++cornerRows;
+        QVERIFY2(cornerRows >= 2,
+                 qPrintable(QStringLiteral("upper-left cell is not a ╔ corner: only %1 row(s) "
+                                           "reach the cell's last column (a ║ reaches none)")
+                                .arg(cornerRows)));
+
+        // (2) ╗: the last cell is a corner too, and it sits in the SAME cell as
+        // the scrollbar column, so the row terminates on the bar's top edge.
+        auto* bar = w.findChild<RightScrollBar*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(bar, "rightScrollBar not found");
+        const int barLeft = bar->mapTo(host, QPoint(0, 0)).x();
+        QVERIFY2(barLeft == img.width() - cw,
+                 qPrintable(QStringLiteral("scrollbar column starts at x=%1 but the title row's "
+                                           "last cell starts at x=%2 - ╗ cannot align with it")
+                                .arg(barLeft).arg(img.width() - cw)));
+        const QRect rightCell(img.width() - cw, row.top(), cw, row.height());
+        int rightCornerRows = 0;
+        for (int y = rightCell.top(); y <= rightCell.bottom(); ++y)
+            if (inkAt(rightCell.left(), y))
+                ++rightCornerRows;
+        QVERIFY2(rightCornerRows >= 2,
+                 qPrintable(QStringLiteral("last cell of the title row is not a ╗ corner "
+                                           "(%1 row(s) reach its first column)")
+                                .arg(rightCornerRows)));
+
+        // (3) The name is bracketed by exactly TWO character cells of daylight.
+        const QRect twoLeft(row.left() - 2 * cw, row.top(), 2 * cw, row.height());
+        const QRect twoRight(row.right() + 1, row.top(), 2 * cw, row.height());
+        QVERIFY2(inkIn(twoLeft) == 0,
+                 qPrintable(QStringLiteral("the two cells before the file name are not clear "
+                                           "(%1 white px)").arg(inkIn(twoLeft))));
+        QVERIFY2(inkIn(twoRight) == 0,
+                 qPrintable(QStringLiteral("the two cells after the file name are not clear "
+                                           "(%1 white px)").arg(inkIn(twoRight))));
+
+        // (4) ═ runs from the ╔ to the name's gap and on to the ╗.
+        const QRect leftRun(cw, row.top(), row.left() - 3 * cw, row.height());
+        const QRect rightRun(twoRight.right() + 1, row.top(),
+                             img.width() - cw - (twoRight.right() + 1), row.height());
+        QVERIFY2(inkIn(leftRun) > 2 * cw,
+                 qPrintable(QStringLiteral("no ═ rule between ╔ and the file name (%1 px)")
+                                .arg(inkIn(leftRun))));
+        QVERIFY2(inkIn(rightRun) > 2 * cw,
+                 qPrintable(QStringLiteral("no ═ rule between the file name and ╗ (%1 px)")
+                                .arg(inkIn(rightRun))));
+    }
+
+    // ╔ must line up with the ║ column beneath it: same two stroke columns, so
+    // the join reads as one continuous double line.
+    void title_corner_dovetails_with_the_left_border_column()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+        auto* name = w.findChild<QLabel*>(QStringLiteral("editorTitle"));
+        QVERIFY(host && name);
+        const QImage img = host->grab().toImage();
+        QVERIFY(!img.isNull());
+        const int cw = qMax(6, host->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const QRect row = name->geometry();
+        const int midY = row.bottom() + 1 + img.height() / 3;
+        QVERIFY2(midY < img.height(), "no room below the title row to sample the column");
+
+        // Sample the BOTTOM row of the corner cell: by then the ╔'s horizontal
+        // strokes are behind it and only its two vertical strokes remain, so it
+        // must match the ║ cell column for column.
+        QString corner, column;
+        for (int x = 0; x < cw; ++x) {
+            corner += isFrameWhite(img.pixelColor(x, row.bottom())) ? QLatin1Char('#')
+                                                                    : QLatin1Char('.');
+            column += isFrameWhite(img.pixelColor(x, midY)) ? QLatin1Char('#')
+                                                            : QLatin1Char('.');
+        }
+        QVERIFY2(corner == column,
+                 qPrintable(QStringLiteral("title corner [%1] does not line up with the ║ "
+                                           "column [%2] - the join is stepped")
+                                .arg(corner, column)));
+    }
+
+    // A tiled rule must stop AT its band: the tile helper draws whole
+    // characters, so a band that is not a whole number of cells wide used to
+    // overdraw up to one cell past its edge and bleed into the corner glyph it
+    // terminates beside.
+    void tiled_rule_does_not_overdraw_its_band()
+    {
+        const int cw = 8;
+        QImage img(cw * 6, 16, QImage::Format_RGB32);
+        img.fill(QColor(0x00, 0x00, 0xAA));
+        QPainter p(&img);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        QFont f(QStringLiteral("PxPlus IBM VGA8"));
+        f.setPixelSize(16);
+        p.setFont(f);
+        // A band 3 cells + 4 px wide: the fourth tile must be clipped at 28.
+        const QRect band(0, 0, cw * 3 + 4, 16);
+        TvFrame::tileH(p, band, cw, QChar(0x2550), QColor(0xFF, 0xFF, 0xFF));
+        p.end();
+
+        int outside = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = band.right() + 1; x < img.width(); ++x)
+                if (isFrameWhite(img.pixelColor(x, y)))
+                    ++outside;
+        QVERIFY2(outside == 0,
+                 qPrintable(QStringLiteral("%1 white px painted past the band's right edge "
+                                           "(x>%2) - the rule bleeds into the corner cell")
+                                .arg(outside).arg(band.right())));
     }
 };
 

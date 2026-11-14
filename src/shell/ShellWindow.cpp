@@ -32,7 +32,9 @@ const QColor kBgBlue(0x00, 0x00, 0xAA);
 // Central editor host: fills the TV window-blue desktop, then draws the
 // left/right/bottom double-line frame edges as part of its OWN paint (so a
 // child editor painting inside won't cover the frame — this widget's paint is
-// the frame layer). The TabStrip title line supplies the top edge + boxes.
+// the frame layer). The TabStrip (the file-tab row) sits ABOVE the frame; the
+// document's own top border row — ╔ ═ name ═ ╗ — is painted here, below it,
+// in the band reserved by the (paint-less) title-row widget.
 class EditorHost : public QWidget
 {
 public:
@@ -40,18 +42,60 @@ public:
     {
         setObjectName("editorHost");
         setAutoFillBackground(false);   // we paint the blue bg ourselves
+
+        // The document's top border row is a BAND of this widget, below the tab
+        // row and above the editor body. The band is reserved by a paint-less
+        // widget the shell inserts into the layout (this class owns it so the
+        // row's height and its painted glyphs can never disagree); everything
+        // on it is painted here, edge to edge, so the corners can sit in the
+        // frame's own cells.
+        m_titleRow = new QWidget(this);
+        m_titleRow->setObjectName(QStringLiteral("editorTitleRow"));
+        m_titleRow->setAutoFillBackground(false);
+        // Belt and braces with the QSS rule: a styled background here would
+        // paint over the ╔ ═ ╗ that this class draws in the same band.
+        m_titleRow->setAttribute(Qt::WA_NoSystemBackground, true);
+        m_titleRow->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        // The band's position is decided by the layout, AFTER the label has
+        // been placed. Track it: a label positioned once would keep the row's
+        // construction-time y and paint the name on the tab row above.
+        m_titleRow->installEventFilter(this);
+
+        // The name itself is a real child widget (not painted text) so the
+        // shell can retitle it per tab and tests can read it back.
+        m_title = new QLabel(QStringLiteral("untitled"), this);
+        m_title->setObjectName("editorTitle");
+        m_title->setAlignment(Qt::AlignCenter);
+        m_title->setAutoFillBackground(false);
+        // Clicks on the border row belong to the frame, not to the label.
+        m_title->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     }
+
+    // The band the shell must insert into its layout, between the tab row and
+    // the editor body. It paints nothing: the glyphs are this widget's job.
+    QWidget* titleRow() const { return m_titleRow; }
 
     // One character cell: the frame edge is a whole cell thick (TV look).
     int cellW() const { return qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M'))); }
     int cellH() const { return qMax(8, fontMetrics().height()); }
 
-    // The layout's left margin is the frame column, so the children start
-    // just right of it. It must be re-measured when the font lands: the QSS
-    // font is applied AFTER this widget is constructed, so a margin taken at
-    // construction time is one cell too narrow - the children then start ON
-    // the border column and paint over its outer stroke (that is what made the
-    // left border look "thicker on one side" at the bottom-left corner).
+    void setTitle(const QString& name)
+    {
+        if (m_title->text() == name)
+            return;
+        m_title->setText(name);
+        layoutTitle();
+        update();
+    }
+    QString title() const { return m_title->text(); }
+
+    // The layout's left margin is the frame column and its top margin is the
+    // title row, so the children start inside the frame. Both must be
+    // re-measured when the font lands: the QSS font is applied AFTER this
+    // widget is constructed, so a margin taken at construction time is one
+    // cell too narrow - the children then start ON the border column and paint
+    // over its outer stroke (that is what made the left border look "thicker
+    // on one side" at the bottom-left corner).
     void updateFrameMargins()
     {
         auto* l = layout();
@@ -60,8 +104,55 @@ public:
         const QMargins m = l->contentsMargins();
         if (m.left() != cellW())
             l->setContentsMargins(cellW(), m.top(), m.right(), m.bottom());
+        if (m_titleRow)
+            m_titleRow->setFixedHeight(cellH());
+        layoutTitle();
+    }
+
+    // Place the name on the character grid: a whole number of cells wide,
+    // centred in the row, leaving exactly two cells of rule-free daylight
+    // either side for the paintEvent to skip. Coordinates are the HOST's, so
+    // the label lines up with glyphs painted across the full width.
+    void layoutTitle()
+    {
+        if (!m_title || !m_titleRow)
+            return;
+        const int cw = cellW();
+        const int ch = cellH();
+        const QFontMetrics fm(font());
+        int cells = (fm.horizontalAdvance(m_title->text()) + cw - 1) / cw;
+        const int maxCells = qMax(1, width() / cw - 6);   // corner + 2 + 2 + corner
+        cells = qBound(1, cells, maxCells);
+        const int w = cells * cw;
+        const int x = ((width() - w) / 2 / cw) * cw;
+        m_title->setGeometry(QRect(x, m_titleRow->geometry().top(), w, ch));
+        m_title->raise();   // the band widget is later in the child list
+        // Same crisp 1-bit rendering as the frame glyphs: antialiased text
+        // tints the strokes and reads soft next to the box-drawing characters.
+        QFont f = font();
+        f.setStyleStrategy(QFont::NoAntialias);
+        if (m_title->font() != f)
+            m_title->setFont(f);
+    }
+
+    // The title row's cell range, minus the corner cells: [start, end) in px.
+    int titleGapStart() const
+    {
+        return m_title ? m_title->geometry().left() - 2 * cellW() : -1;
+    }
+    int titleGapEnd() const
+    {
+        return m_title ? m_title->geometry().right() + 1 + 2 * cellW() : -1;
     }
 protected:
+    bool eventFilter(QObject* watched, QEvent* ev) override
+    {
+        if (watched == m_titleRow &&
+            (ev->type() == QEvent::Move || ev->type() == QEvent::Resize))
+            layoutTitle();
+        return QWidget::eventFilter(watched, ev);
+    }
+
     void resizeEvent(QResizeEvent* ev) override
     {
         QWidget::resizeEvent(ev);
@@ -81,17 +172,43 @@ protected:
         p.setRenderHint(QPainter::Antialiasing, false);
         const QRect r = rect();
         p.fillRect(r, kBgBlue);
+
+        // --- Top border row: ╔ ═ (two spaces) name (two spaces) ═ ╗ ---
+        // ╔ occupies the first cell; ╗ the LAST cell, which is the scrollbar's
+        // own column, so the row terminates exactly on the bar's top edge.
+        const int cw = cellW();
+        const int ch = cellH();
+        const int rowTop = m_titleRow ? m_titleRow->geometry().top() : 0;
+        const int rowH = m_titleRow ? m_titleRow->geometry().height() : ch;
+        TvFrame::glyph(p, QRect(0, rowTop, cw, rowH), QChar(0x2554), kFrameWhite);
+        const int gapStart = titleGapStart();
+        const int gapEnd = titleGapEnd();
+        if (gapStart > cw)
+            TvFrame::tileH(p, QRect(cw, rowTop, gapStart - cw, rowH), cw,
+                           QChar(0x2550), kFrameWhite);
+        if (gapEnd > 0 && gapEnd < r.width() - cw)
+            TvFrame::tileH(p, QRect(gapEnd, rowTop, r.width() - cw - gapEnd, rowH), cw,
+                           QChar(0x2550), kFrameWhite);
+        TvFrame::glyph(p, QRect(r.width() - cw, rowTop, cw, rowH), QChar(0x2557),
+                       kFrameWhite);
+
         // Left border column: the ║ GLYPH tiled down a cell-wide band. Drawing
         // it as two hairlines gave exactly 2 px per row and read as thin; the
         // glyph uses the font's own full-weight strokes.
         // No right verticals: TV-revision2 spec 1 hands the right border
         // column to the 1-cell RightScrollBar (teal ▲/▒/■/▼).
-        TvFrame::tileV(p, QRect(0, 0, cellW(), r.height()), cellH(),
+        // It starts BELOW the title row: the ╔'s strokes are the top of the ║.
+        const int colTop = rowTop + rowH;
+        TvFrame::tileV(p, QRect(0, colTop, cw, r.height() - colTop), ch,
                        QChar(0x2551), kFrameWhite);
         // NOTE: the bottom border row is owned by BottomBand (it also carries
         // the cursor position and the horizontal scrollbar). Drawing it here
         // too produced two rules with a blue gap between them.
     }
+
+private:
+    QWidget* m_titleRow = nullptr;
+    QLabel* m_title = nullptr;
 };
 } // namespace
 
@@ -161,6 +278,10 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     lay->setSpacing(0);
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);
+    // The DOCUMENT's top border row (╔ ═ name ═ ╗) sits BELOW the tab row and
+    // ABOVE the editor body. The band widget only reserves the row; EditorHost
+    // paints it across the full width so ╔ and ╗ land in the frame's own cells.
+    lay->addWidget(central->titleRow());
     // Body row: editor slot (stretch) + the window-border scrollbar column.
     auto* body = new QWidget(central);
     body->setObjectName(QStringLiteral("editorBody"));
@@ -255,6 +376,18 @@ void ShellWindow::setEditorWidget(QWidget* w)
     // to the view's scrollbars is the composition root's job (main.cpp calls
     // wireScrollbars(), which does the KTextEditor lookup — crt-shell does not
     // link KTextEditor). This method only installs the editor widget.
+}
+
+// The document's top border row reads ╔ ═ name ═ ╗. EditorHost owns that row
+// (it paints the frame), so the name is forwarded to it rather than kept here:
+// one owner for the row, and the label stays a real child the tests can read.
+void ShellWindow::setEditorTitle(const QString& name)
+{
+    auto* host = findChild<QWidget*>(QStringLiteral("editorHost"));
+    if (!host)
+        return;
+    static_cast<EditorHost*>(host)->setTitle(name.isEmpty() ? QStringLiteral("untitled")
+                                                           : name);
 }
 
 void ShellWindow::setCentralWidget(QWidget* w)

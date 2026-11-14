@@ -22,6 +22,9 @@ public:
     // Replaces the placeholder area BELOW the TabStrip with the real editor
     // widget (EditorTabManager::container). TabStrip stays intact above it.
     void setEditorWidget(QWidget* w);
+    // Name shown in the document's TOP border row (the ╔ ═ name ═ ╗ row drawn
+    // below the tab row). The composition root calls this on every tab change.
+    void setEditorTitle(const QString& name);
     // Re-binds the painted right/bottom scrollbars to the document scrollbars
     // of the current view (pass KTextEditor::View::verticalScrollBar() and
     // horizontalScrollBar(); crt-shell does not link KTextEditor, so the

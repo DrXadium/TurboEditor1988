@@ -108,6 +108,10 @@ int main(int argc, char** argv)
                      [&shell](const QStringList& titles, int active) {
                          if (TabStrip* strip = shell.tabStrip())
                              strip->setTabs(titles, active);
+                         // The document's top border row (╔ ═ name ═ ╗) names
+                         // the ACTIVE document, so it tracks the same signal
+                         // the tab row does.
+                         shell.setEditorTitle(titles.value(active));
                      });
     QObject::connect(shell.tabStrip(), &TabStrip::tabActivated, &tabs,
                      &EditorTabManager::setActiveIndex);
@@ -129,8 +133,10 @@ int main(int argc, char** argv)
                          });
     }
     // Seed the strip with the initial tab (created by the manager ctor).
-    if (TabStrip* strip0 = shell.tabStrip())
+    if (TabStrip* strip0 = shell.tabStrip()) {
         strip0->setTabs(QStringList() << QStringLiteral("untitled"), 0);
+        shell.setEditorTitle(QStringLiteral("untitled"));
+    }
 
     // Named sessions (Task 7): snapshot open files + cursor on quit, restore
     // the last session at startup (no-op on a fresh install: nothing saved yet).
