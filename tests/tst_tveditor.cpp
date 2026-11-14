@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QImage>
 #include <QClipboard>
+#include <QTemporaryDir>
 #include <QHash>
 #include <QFontInfo>
 #include <QFontDatabase>
@@ -92,6 +93,53 @@ private slots:
     // Task 21: a tab chip's green square closes that tab. The active index
     // follows the removal, and closing the LAST tab leaves one fresh untitled
     // document - the strip and the editor never go empty.
+    // Task 25 (user): Kate's untitled-tab behaviour. As soon as there is text in
+    // a document that has no file, the tab names itself from the first TEN
+    // characters of what was typed - and keeps doing so until a real filename
+    // exists, at which point the filename wins.
+    void untitled_tab_names_itself_from_the_typed_text()
+    {
+        EditorTabManager m;          // the constructor creates one document
+        QSignalSpy spy(&m, &EditorTabManager::tabsChanged);
+        KTextEditor::Document* doc = m.activeDocument();
+        QVERIFY(doc);
+
+        auto title = [&spy] {
+            return spy.isEmpty() ? QString()
+                                 : spy.last().at(0).toStringList().value(0);
+        };
+        QCOMPARE(m.tabCount(), 1);
+
+        // Typing gives the tab a name: exactly the first ten characters.
+        doc->setText(QStringLiteral("hello world and more"));
+        QVERIFY2(!spy.isEmpty(), "typing did not refresh the tab titles");
+        QCOMPARE(title(), QStringLiteral("hello worl"));
+
+        // The name follows the buffer while it is still untitled.
+        doc->setText(QStringLiteral("goodbye"));
+        QCOMPARE(title(), QStringLiteral("goodbye"));
+
+        // A short first line is the whole name - the name never runs past the
+        // line break into the next line's text.
+        doc->setText(QStringLiteral("short\nsecond line"));
+        QCOMPARE(title(), QStringLiteral("short"));
+
+        // Leading whitespace is not part of the name.
+        doc->setText(QStringLiteral("   indented"));
+        QCOMPARE(title(), QStringLiteral("indented"));
+
+        // An empty buffer is untitled again.
+        doc->setText(QString());
+        QCOMPARE(title(), QStringLiteral("untitled"));
+
+        // Saving gives it a real filename, which then wins.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QUrl target = QUrl::fromLocalFile(dir.filePath(QStringLiteral("notes.txt")));
+        QVERIFY(doc->saveAs(target));
+        QCOMPARE(title(), QStringLiteral("notes.txt"));
+    }
+
     void closing_a_tab_removes_it_and_keeps_one_document()
     {
         EditorTabManager m;          // the constructor creates one document

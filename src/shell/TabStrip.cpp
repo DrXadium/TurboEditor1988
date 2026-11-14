@@ -120,38 +120,37 @@ int TabStrip::nameCells(const QString& title) const
 // the LAST cell - the same column the right scrollbar occupies below it.
 QRect TabStrip::prevTabRect() const
 {
-    return QRect(0, 0, cellW(), height());
+    return QRect(0, 0, 2 * cellW(), height());
 }
 
 QRect TabStrip::tabListRect() const
 {
-    return QRect(width() - cellW(), 0, cellW(), height());
+    return QRect(width() - 2 * cellW(), 0, 2 * cellW(), height());
 }
 
 QRect TabStrip::newTabRect() const
 {
-    return QRect(width() - 2 * cellW(), 0, cellW(), height());
+    return QRect(width() - 4 * cellW(), 0, 2 * cellW(), height());
 }
 
 QRect TabStrip::nextTabRect() const
 {
-    return QRect(width() - 3 * cellW(), 0, cellW(), height());
+    return QRect(width() - 6 * cellW(), 0, 2 * cellW(), height());
 }
 
-// Visible chips, left to right, starting after the ◄ cell. Chips are adjacent
-// (the mock shows `][` touching) and the run stops before the ► cell.
+// Visible chips, left to right. A whole cell of the strip's own background
+// separates them from the controls at either end (user, Task 25) and from each
+// other (Task 22), so a chip never touches a neighbour or a button.
 QVector<QRect> TabStrip::tabRects() const
 {
     QVector<QRect> out;
     if (m_titles.isEmpty())
         return out;
     const int cw = cellW();
-    const int limit = nextTabRect().left();
-    int x = cw;
+    const int limit = nextTabRect().left() - cw;
+    int x = prevTabRect().right() + 1 + cw;
     for (int i = firstShown(); i < m_titles.size(); ++i) {
         const int w = chipCells(m_titles.at(i)) * cw;
-        // One whole cell of daylight between chips (user: the chips read as a
-        // single run when they touched `][`).
         if (x + w > limit)
             break;
         out.append(QRect(x, 0, w, height()));

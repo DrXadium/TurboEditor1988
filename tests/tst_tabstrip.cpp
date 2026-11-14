@@ -139,17 +139,19 @@ private slots:
         const QRect prev = ts.prevTabRect(), next = ts.nextTabRect();
         const QRect add = ts.newTabRect(), list = ts.tabListRect();
         QCOMPARE(prev.left(), 0);
-        QCOMPARE(prev.width(), cellW);
+        // Task 25: each control is a scrollbar-sized square = two cells wide.
+        QCOMPARE(prev.width(), 2 * cellW);
         QCOMPARE(list.right(), ts.width() - 1);          // last cell of the row
-        QCOMPARE(list.width(), cellW);
-        QCOMPARE(add.right(), list.left() - 1);          // + one cell left of ▼
-        QCOMPARE(next.right(), add.left() - 1);          // ► one cell left of +
+        QCOMPARE(list.width(), 2 * cellW);
+        QCOMPARE(add.right(), list.left() - 1);          // + immediately left of ▼
+        QCOMPARE(next.right(), add.left() - 1);          // ► immediately left of +
         QCOMPARE(prev.height(), cellH);
 
-        // The chips start in the cell after ◄ and never run into ►.
+        // A cell of the strip's background sits between ◄ and the first chip,
+        // and the chips never run into ►.
         const QVector<QRect> rects = ts.tabRects();
         QCOMPARE(rects.size(), 1);
-        QCOMPARE(rects[0].left(), cellW);
+        QCOMPARE(rects[0].left(), prev.right() + 1 + cellW);
         QVERIFY(rects[0].right() < next.left());
     }
 
@@ -270,6 +272,77 @@ private slots:
 
     // Task 20 (mock note 1): ◄ / ► scroll the chip window one chip at a time
     // and are present even when nothing overflows.
+    // Task 25 (user): the four controls must be easier hit targets - the size
+    // of the horizontal scrollbar's end buttons. Those are SQUARES whose width
+    // is the bar's thickness, i.e. two cells here (the row is one cell tall),
+    // so each control is 2 cells wide and the right-hand three are adjacent.
+    void controls_are_scrollbar_sized_hit_targets() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(800, cellH);
+        const int cw = cellWOf(ts);
+        const QRect prev = ts.prevTabRect();
+        const QRect next = ts.nextTabRect();
+        const QRect nw = ts.newTabRect();
+        const QRect list = ts.tabListRect();
+        const QRect all[] = { prev, next, nw, list };
+        const char* names[] = { "◄", "►", "+", "▼" };
+        for (int i = 0; i < 4; ++i)
+            QVERIFY2(all[i].width() == 2 * cw,
+                     qPrintable(QStringLiteral("%1 control is %2 px wide, want two cells (%3)")
+                                    .arg(names[i]).arg(all[i].width()).arg(2 * cw)));
+        QCOMPARE(prev.left(), 0);
+        QCOMPARE(list.right(), ts.width() - 1);
+        QCOMPARE(next.left(), nw.left() - 2 * cw);   // adjacent pair
+        QCOMPARE(nw.left(), list.left() - 2 * cw);
+    }
+
+    // Task 25 (user): the strip's own background shows between the first chip
+    // and ◄, and between the last chip and ►. The trailing gap is checked across
+    // a SWEEP of widths: at any single width the chips may happen to stop short
+    // of the ► control whatever the limit is, so only a sweep proves the limit
+    // itself reserves the cell.
+    void chips_are_inset_from_the_controls() {
+        TabStrip ts;
+        QStringList many;
+        for (int i = 0; i < 40; ++i)
+            many << QStringLiteral("t%1").arg(i);
+        ts.setTabs(many, 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        const int cw = cellWOf(ts);
+
+        int worstTrail = 1 << 30, worstW = 0;
+        for (int w = 240; w <= 900; ++w) {
+            ts.resize(w, cellH);
+            const QVector<QRect> rects = ts.tabRects();
+            if (rects.isEmpty())
+                continue;
+            const int trail = ts.nextTabRect().left() - rects.last().right() - 1;
+            if (trail < worstTrail) {
+                worstTrail = trail;
+                worstW = w;
+            }
+        }
+        QVERIFY2(worstTrail >= cw,
+                 qPrintable(QStringLiteral("only %1 px between the last chip and ► at "
+                                           "width %2 (want a whole cell, %3)")
+                                .arg(worstTrail).arg(worstW).arg(cw)));
+
+        // The leading gap, at the same sweep.
+        int worstLead = 1 << 30;
+        for (int w = 240; w <= 900; w += 13) {
+            ts.resize(w, cellH);
+            const QVector<QRect> rects = ts.tabRects();
+            if (rects.isEmpty())
+                continue;
+            worstLead = qMin(worstLead, rects.first().left() - ts.prevTabRect().right() - 1);
+        }
+        QVERIFY2(worstLead >= cw,
+                 qPrintable(QStringLiteral("only %1 px between ◄ and the first chip")
+                                .arg(worstLead)));
+    }
+
     // Task 22 (mock notes 1, 4, 5): the controls are drawn the way the
     // scrollbars draw their end cells - a SOLID CYAN cell with a DARK BLUE
     // glyph in it - not a teal glyph floating on the grey dither.

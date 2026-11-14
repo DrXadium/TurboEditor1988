@@ -529,6 +529,19 @@ void EditorTabManager::watchHistory(KTextEditor::Document* doc)
     }
     connect(doc, &KTextEditor::Document::textChanged, this,
             [this, doc](KTextEditor::Document*) { pushHistory(doc); });
+    // Task 25: an untitled tab names itself after the typed text, so every edit
+    // to a document without a file must refresh the titles. Saved documents are
+    // skipped - their title is the filename and cannot change by typing.
+    connect(doc, &KTextEditor::Document::textChanged, this,
+            [this, doc](KTextEditor::Document*) {
+                if (doc->url().isEmpty())
+                    syncTabs();
+            });
+    // Task 25: saving gives the document a real filename, which replaces the
+    // typed-text name immediately - without this the tab kept showing the first
+    // ten typed characters until some unrelated event re-emitted the titles.
+    connect(doc, &KTextEditor::Document::documentUrlChanged, this,
+            [this](KTextEditor::Document*) { syncTabs(); });
 }
 
 void EditorTabManager::pushHistory(KTextEditor::Document* doc)
@@ -747,9 +760,19 @@ void EditorTabManager::syncTabs()
 {
     QStringList titles;
     for (KTextEditor::Document* d : m_docs) {
-        QString t = d->url().isEmpty()
-            ? QStringLiteral("untitled")
-            : QFileInfo(d->url().toLocalFile()).fileName();
+        QString t;
+        if (d->url().isEmpty()) {
+            // Kate's untitled-tab behaviour (user, Task 25): a document with no
+            // file is named after what has been typed into it - the first line,
+            // trimmed, cut to ten characters. It keeps following the buffer
+            // until the document is saved, at which point the filename wins.
+            const QString text = d->text();
+            const int eol = text.indexOf(QLatin1Char('\n'));
+            const QString firstLine = (eol < 0 ? text : text.left(eol)).trimmed();
+            t = firstLine.isEmpty() ? QStringLiteral("untitled") : firstLine.left(10);
+        } else {
+            t = QFileInfo(d->url().toLocalFile()).fileName();
+        }
         if (t.isEmpty())
             t = QStringLiteral("untitled");
         titles << t;

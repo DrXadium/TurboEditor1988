@@ -172,11 +172,13 @@ private slots:
         QVERIFY2(tealIn(ts->newTabRect()) > 3, "+ control missing");
         QVERIFY2(tealIn(ts->nextTabRect()) > 3, "► control missing");
 
-        // ▼ occupies exactly the scrollbar's column, so the row terminates on
-        // the same cell the bar does.
+        // The row terminates on the same edge the bar does. Task 25: ▼ is now a
+        // two-cell square, so it is its RIGHT edge that meets the window edge -
+        // the control spans the scrollbar's column and one cell to its left.
         const int barLeft = bar->mapTo(&w, QPoint(0, 0)).x();
         const int listLeft = stripOrigin.x() + ts->tabListRect().left();
-        QCOMPARE(listLeft, barLeft);
+        QCOMPARE(listLeft + ts->tabListRect().width(), barLeft + bar->width());
+        QCOMPARE(listLeft, barLeft - ts->tabListRect().width() + bar->width());
 
         // No standalone green close box at the top-left any more.
         const QRect firstCell(stripOrigin, QSize(ts->prevTabRect().width(),
