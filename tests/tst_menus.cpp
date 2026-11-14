@@ -93,6 +93,61 @@ private slots:
     // Task 21 (mock note 5): ▼ opens a dropdown of every open tab, styled
     // exactly like the menu-bar dropdowns (a BorlandMenu), with the active tab
     // checked and each entry carrying its tab index.
+    // Task 26 (user): the ✓ of a checked item COLLIDED with its label - it was
+    // drawn at the panel's left edge, over the text. It belongs at the RIGHT of
+    // the item, one cell in from the end, with the label's column left clean.
+    void check_mark_sits_at_the_right_end_of_the_item() {
+        BorlandMenu menu;
+        QAction* checked = menu.addAction(QStringLiteral("alpha"));
+        checked->setCheckable(true);
+        checked->setChecked(true);
+        QAction* plain = menu.addAction(QStringLiteral("beta"));
+        plain->setCheckable(true);
+        menu.adjustSize();
+        menu.show();
+        QCoreApplication::processEvents();
+
+        const QImage img = menu.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        QVERIFY(!img.isNull());
+        const QFontMetrics fm = menu.fontMetrics();
+        const int cell = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
+        const int contentLeft = BorlandMenu::borderInset() + BorlandMenu::borderWidth();
+        const int contentRight = img.width() - BorlandMenu::borderInset()
+                               - BorlandMenu::borderWidth() - 1;
+        const auto isInk = [](const QColor& c) {
+            return c.red() < 60 && c.green() < 60 && c.blue() < 60;
+        };
+
+        const QRect row = menu.actionGeometry(checked);
+        QVERIFY2(row.isValid() && row.height() > 4, "no item geometry");
+
+        int leftInk = 0, rightInk = 0, rightmost = -1;
+        for (int y = row.top(); y <= row.bottom() && y < img.height(); ++y)
+            // Content area only: the black border stroke at each edge is not
+            // item ink and must not be mistaken for the check.
+            for (int x = contentLeft; x <= contentRight && x < img.width(); ++x) {
+                if (!isInk(img.pixelColor(x, y)))
+                    continue;
+                if (x < contentLeft + cell)
+                    ++leftInk;                  // the label's own column
+                if (x > contentRight - 3 * cell) {
+                    ++rightInk;
+                    rightmost = qMax(rightmost, x);
+                }
+            }
+
+        QVERIFY2(leftInk == 0,
+                 qPrintable(QStringLiteral("%1 ink px in the label column - the check "
+                                           "still sits over the text").arg(leftInk)));
+        QVERIFY2(rightInk > 3,
+                 qPrintable(QStringLiteral("no check at the right end (%1 ink px)")
+                                .arg(rightInk)));
+        QVERIFY2(rightmost <= contentRight - cell,
+                 qPrintable(QStringLiteral("the check runs into the item's end: rightmost "
+                                           "ink at %1, must stop by %2")
+                                .arg(rightmost).arg(contentRight - cell)));
+    }
+
     // Task 22 (reported live): the dropdown opened OFF THE WINDOW. Anchored at
     // the ▼ cell's LEFT edge, a 163 px list on a 1280 px window hung 155 px past
     // the right edge, so the compositor could only ever show a sliver - it read

@@ -74,11 +74,20 @@ void BorlandMenu::paintEvent(QPaintEvent*)
 
         const int baseline = r.y() + (r.height() - fm.height()) / 2 + fm.ascent();
 
-        // Check slot in column 1, item text from column 2 (one blank cell of
-        // left padding, then the check column).
-        if (a->isCheckable() && a->isChecked()) {
+        // Task 26 (user): the ✓ goes at the RIGHT end of the item, one cell in
+        // from the content edge. Drawn at the panel's left edge it collided with
+        // the label; the label's column stays clean now, so the check column is
+        // reserved on the right instead.
+        const bool showCheck = a->isCheckable() && a->isChecked();
+        int shortcutRight = contentRight - cell;
+        if (showCheck) {
+            const int cw = fm.horizontalAdvance(QStringLiteral("\u2713"));
             p.setPen(kBlack);
-            p.drawText(QPoint(cell, baseline), QStringLiteral("\u2713"));
+            p.drawText(QPoint(contentRight - cell - cw + 1, baseline),
+                       QStringLiteral("\u2713"));
+            // A shortcut on a checked item moves left of the check, so the two
+            // never overlap.
+            shortcutRight -= cw + cell;
         }
 
         // "label\tshortcut" (Qt's convention for menu display text). The
@@ -123,7 +132,7 @@ void BorlandMenu::paintEvent(QPaintEvent*)
         if (!shortcut.isEmpty()) {
             p.setPen(kBlack);
             const int sw = fm.horizontalAdvance(shortcut);
-            p.drawText(QPoint(contentRight - cell - sw, baseline), shortcut);
+            p.drawText(QPoint(shortcutRight - sw, baseline), shortcut);
         }
     }
 }
