@@ -15,7 +15,7 @@ const QColor kGreen(0x00, 0xAA, 0x00);
 const QColor kBlue(0x00, 0x00, 0xAA);
 const QColor kBandGrey(0xAA, 0xAA, 0xAA);   // stipple ink of the tab row (bright grey)
 const QColor kWhite(0xFF, 0xFF, 0xFF);
-const QColor kTabGrey(0x55, 0x55, 0x55);    // ink of an inactive chip (on the bright band)
+const QColor kTabGrey(0x88, 0x88, 0x88);    // ink of an inactive chip (on the editor blue)
 const QColor kTeal(0x00, 0xAA, 0xAA);       // control-cell fill
 
 int cellWOf(const QWidget& w)

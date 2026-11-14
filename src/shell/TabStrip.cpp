@@ -10,12 +10,11 @@ namespace {
 const QColor kBgBlue(0x00, 0x00, 0xAA);      // TV window blue desktop
 const QColor kGreen(0x00, 0xAA, 0x00);       // the per-tab close square
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // active chip ink
-// Inactive chip ink. The band is bright grey #AAAAAA (Task 22), so the dim
-// title must be DARKER than the band to read at all: #AAAAAA on #AAAAAA dither
-// is invisible (measured: 428 grey px active vs 400 inactive - no signal).
-// TV dark gray #555555 keeps it clearly dimmer than the active white while
-// still reading as grey rather than black (black is banned inside the window).
-const QColor kTabGrey(0x55, 0x55, 0x55);
+// Inactive chip ink. It sits on the EDITOR blue now (Task 23), not on the band,
+// so the old #555555 - which existed only to stay darker than the #AAAAAA
+// dither - read as nearly black against the window. #888888 is a clear step
+// lighter while still obviously dimmer than the active chip's white.
+const QColor kTabGrey(0x88, 0x88, 0x88);
 // Task 19 (mock note 2): the row's background is the scrollbar track's stipple
 // design with GREY ink instead of the bars' teal, so the row reads as distinct
 // from them.
