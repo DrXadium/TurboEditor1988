@@ -500,6 +500,71 @@ private slots:
                                 .arg(stemCentre2 / 2.0).arg(colCentre2 / 2.0)
                                 .arg((stemCentre2 - colCentre2) / 2.0)));
     }
+
+    // The editor frame margin must clear the border column, or the child
+    // widgets (tab strip, editor body) start ON the column and paint over its
+    // outer stroke - which is why the left border looked "thicker on one side"
+    // at the bottom-left corner.
+    void editor_frame_margin_clears_the_border_column()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+        QVERIFY2(host, "editorHost not found");
+        QVERIFY2(host->layout(), "editorHost has no layout");
+
+        // One character cell, measured NOW (after the QSS font is applied).
+        const int cellW = qMax(6, host->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const int margin = host->layout()->contentsMargins().left();
+        QVERIFY2(margin == cellW,
+                 qPrintable(QStringLiteral("editor frame margin is %1 px but the border "
+                                           "column is %2 px wide - children start on the "
+                                           "column and paint over its outer stroke")
+                                .arg(margin).arg(cellW)));
+    }
+
+    // The left border's strokes must be identical above and inside the corner:
+    // ║ (the column) and ╚ (the corner) are both double-line glyphs, so their
+    // two vertical strokes must line up column for column.
+    void left_border_strokes_match_the_bottom_left_corner()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
+        BottomBand* band = w.bottomBand();
+        QVERIFY(host && band);
+
+        const int cellW = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+
+        // Column strokes: sample a row in the middle of the editor area.
+        const QImage hostImg = host->grab().toImage();
+        QVERIFY2(!hostImg.isNull() && hostImg.height() > 40, "editorHost did not render");
+        const int midY = hostImg.height() / 2;
+        QString columnInk, cornerInk;
+        for (int x = 0; x < cellW; ++x) {
+            columnInk += isFrameWhite(hostImg.pixelColor(x, midY)) ? QLatin1Char('#')
+                                                                  : QLatin1Char('.');
+        }
+
+        // Corner strokes: a row above the corner's horizontal bars.
+        const QImage bandImg = band->grab().toImage();
+        QVERIFY2(!bandImg.isNull() && bandImg.height() > 8, "bottom band did not render");
+        for (int x = 0; x < cellW; ++x) {
+            cornerInk += isFrameWhite(bandImg.pixelColor(x, 2)) ? QLatin1Char('#')
+                                                                : QLatin1Char('.');
+        }
+
+        QVERIFY2(columnInk == cornerInk,
+                 qPrintable(QStringLiteral("left border strokes differ: column [%1] vs "
+                                           "corner [%2] - the corner is thicker on one side")
+                                .arg(columnInk, cornerInk)));
+    }
 };
 
 int main(int argc, char** argv)

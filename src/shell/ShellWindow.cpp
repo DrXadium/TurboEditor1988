@@ -45,7 +45,36 @@ public:
     // One character cell: the frame edge is a whole cell thick (TV look).
     int cellW() const { return qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M'))); }
     int cellH() const { return qMax(8, fontMetrics().height()); }
+
+    // The layout's left margin is the frame column, so the children start
+    // just right of it. It must be re-measured when the font lands: the QSS
+    // font is applied AFTER this widget is constructed, so a margin taken at
+    // construction time is one cell too narrow - the children then start ON
+    // the border column and paint over its outer stroke (that is what made the
+    // left border look "thicker on one side" at the bottom-left corner).
+    void updateFrameMargins()
+    {
+        auto* l = layout();
+        if (!l)
+            return;
+        const QMargins m = l->contentsMargins();
+        if (m.left() != cellW())
+            l->setContentsMargins(cellW(), m.top(), m.right(), m.bottom());
+    }
 protected:
+    void resizeEvent(QResizeEvent* ev) override
+    {
+        QWidget::resizeEvent(ev);
+        updateFrameMargins();
+    }
+
+    void changeEvent(QEvent* ev) override
+    {
+        QWidget::changeEvent(ev);
+        if (ev->type() == QEvent::FontChange)
+            updateFrameMargins();
+    }
+
     void paintEvent(QPaintEvent*) override
     {
         QPainter p(this);
