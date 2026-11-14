@@ -7,6 +7,8 @@
 #include <QImage>
 #include <QClipboard>
 #include <QHash>
+#include <QFontInfo>
+#include <QFontDatabase>
 #include <algorithm>
 #include <ktexteditor/editor.h>
 #include <ktexteditor/view.h>
@@ -226,6 +228,36 @@ private slots:
         const int n = countColor(img, yellow, 40);
         QVERIFY2(n > 20,
                  qPrintable(QStringLiteral("only %1 yellow text pixels (expected yellow editor text, text is probably still gray)").arg(n)));
+    }
+
+    // The editor text must use the bundled Turbo Vision face: the rest of the
+    // chrome (menu, tabs, borders, scrollbars) is drawn with PxPlus IBM VGA8 on
+    // an 8 px character grid, and a different editor face made the middle of
+    // the window look narrower than the chrome around it.
+    void editor_uses_the_pxplus_face()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+
+        const QFont f = v->configValue(QStringLiteral("font")).value<QFont>();
+        const QString family = QFontInfo(f).family();
+        QVERIFY2(family == QStringLiteral("PxPlus IBM VGA8"),
+                 qPrintable(QStringLiteral("editor font is '%1', expected the bundled "
+                                           "PxPlus IBM VGA8 face").arg(family)));
+        QVERIFY2(f.pixelSize() > 0 && f.pixelSize() == 16,
+                 qPrintable(QStringLiteral("editor font pixel size is %1, expected 16 "
+                                           "(the chrome cell height)")
+                                .arg(f.pixelSize())));
+
+        // The config value is only half of it: the WIDGET must actually use the
+        // face, or the editor still renders with the system font.
+        const QString widgetFamily = QFontInfo(v->font()).family();
+        QVERIFY2(widgetFamily == QStringLiteral("PxPlus IBM VGA8"),
+                 qPrintable(QStringLiteral("editor widget renders with '%1' although its "
+                                           "font config says '%2'")
+                                .arg(widgetFamily, family)));
     }
 
     // Spec 4: selection is a light gray-lavender block #C8C8D8.

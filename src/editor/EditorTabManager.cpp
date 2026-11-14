@@ -19,6 +19,41 @@
 #include <QEvent>
 #include <QScrollBar>
 #include <QLineEdit>
+#include <QFont>
+#include <QFontDatabase>
+#include <QFile>
+#include <QMutex>
+#include <QMutexLocker>
+
+// Register the bundled TV face so the editor can actually resolve it. The font
+// lives in fonts/fonts.qrc (linked into libcrt-shell), and resources in a
+// STATIC library are not auto-registered - ShellWindow calls Q_INIT_RESOURCE
+// (fonts), but that only helps binaries that link the shell. EditorTabManager
+// must register it too, or setFamily("PxPlus IBM VGA8") silently falls back to
+// the system face and the editor renders a different font than the chrome.
+//
+// NOTE: Q_INIT_RESOURCE expands to a do/while and references a symbol whose
+// name is generated WITHOUT the enclosing namespace - so the call must live at
+// file scope, never inside an anonymous namespace (or the compiler mangles it
+// to (anonymous namespace)::qInitResources_fonts and the link fails).
+static const QString& tvFamily()
+{
+    static QMutex mutex;
+    static bool loaded = false;
+    static QString family;
+    QMutexLocker lock(&mutex);
+    if (!loaded) {
+        loaded = true;
+        Q_INIT_RESOURCE(fonts);
+        QFile ttf(QStringLiteral(":/fonts/PxPlus_IBM_VGA8.ttf"));
+        if (ttf.open(QIODevice::ReadOnly)) {
+            const int id = QFontDatabase::addApplicationFontFromData(ttf.readAll());
+            if (id >= 0 && !QFontDatabase::applicationFontFamilies(id).isEmpty())
+                family = QFontDatabase::applicationFontFamilies(id).first();
+        }
+    }
+    return family;
+}
 
 EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
 {
@@ -94,6 +129,23 @@ void EditorTabManager::applyTvStyle(KTextEditor::View* view)
 {
     if (!view)
         return;
+    // The whole chrome (menu, tabs, frame, scrollbars) is drawn with the
+    // bundled PxPlus IBM VGA8 face on an 8 px character grid; KTextEditor's
+    // own "font" config defaults to the system font (Adwaita Mono here), so the
+    // editor text was a different face - the middle of the window then looked
+    // narrower than the chrome around it. Pin the face here so every new view
+    // gets it; setFontSize()/zoom only ever change the pixel size.
+    const QString family = tvFamily();
+    if (!family.isEmpty()) {
+        QFont f = view->configValue(QStringLiteral("font")).value<QFont>();
+        f.setFamily(family);
+        f.setPixelSize(16);
+        view->setConfigValue(QStringLiteral("font"), f);
+        // setConfigValue() updates the "font" setting but does not repaint the
+        // widget with it - the view kept rendering in Noto Sans. Push the font
+        // onto the widget itself so the glyphs on screen are the bundled face.
+        view->setFont(f);
+    }
     const QColor blue(0x00, 0x00, 0xAA);
     const QColor yellow(0xFF, 0xFF, 0x55);
     view->setAutoFillBackground(true);

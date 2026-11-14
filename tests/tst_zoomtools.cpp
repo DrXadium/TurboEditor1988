@@ -75,21 +75,32 @@ private slots:
                  QStringLiteral("hello\nworld\n"));
     }
 
-    void zoom_in_increases_font_point_size() {
+    void zoom_in_increases_font_size() {
         EditorTabManager m;
         m.newDocument();
         KTextEditor::View* v = m.activeView();
         QVERIFY(v);
-        const int base = v->configValue("font").value<QFont>().pointSize();
-        QVERIFY2(base > 0, "initial font point size <= 0");
+        // The font is PIXEL-based (setFontSize sets the pixel size, and zoom
+        // keeps it pixel-based), so measure the unit the font actually uses
+        // rather than assuming points.
+        const QFont baseFont = v->configValue("font").value<QFont>();
+        QVERIFY2(baseFont.pixelSize() > 0 || baseFont.pointSize() > 0,
+                 "initial font has neither pixel nor point size");
+        const int base = baseFont.pixelSize() > 0 ? baseFont.pixelSize()
+                                                  : baseFont.pointSize();
 
         m.setZoom(+1);
-        const int up = v->configValue("font").value<QFont>().pointSize();
+        const QFont upFont = v->configValue("font").value<QFont>();
+        const int up = upFont.pixelSize() > 0 ? upFont.pixelSize() : upFont.pointSize();
         QVERIFY2(up > base,
-                 qPrintable(QStringLiteral("zoom-in: %1 <= base %2").arg(up).arg(base)));
+                 qPrintable(QStringLiteral("zoom-in: %1 <= base %2 (unit px=%3)")
+                                .arg(up).arg(base)
+                                .arg(upFont.pixelSize() > 0 ? "px" : "pt")));
 
         m.setZoom(-1);
-        const int down = v->configValue("font").value<QFont>().pointSize();
+        const QFont downFont = v->configValue("font").value<QFont>();
+        const int down = downFont.pixelSize() > 0 ? downFont.pixelSize()
+                                                  : downFont.pointSize();
         QVERIFY2(down < up,
                  qPrintable(QStringLiteral("zoom-out: %1 >= up %2").arg(down).arg(up)));
     }
@@ -156,7 +167,9 @@ private slots:
         m.installActions(&host);
         KTextEditor::View* v = m.activeView();
         QVERIFY(v);
-        const int base = v->configValue("font").value<QFont>().pointSize();
+        const QFont baseFont = v->configValue("font").value<QFont>();
+        const int base = baseFont.pixelSize() > 0 ? baseFont.pixelSize()
+                                                  : baseFont.pointSize();
 
         // Trigger the Ctrl+= action; font must grow.
         for (QAction* a : host.findChildren<QAction*>()) {
@@ -165,7 +178,8 @@ private slots:
                 break;
             }
         }
-        const int up = v->configValue("font").value<QFont>().pointSize();
+        const QFont upFont = v->configValue("font").value<QFont>();
+        const int up = upFont.pixelSize() > 0 ? upFont.pixelSize() : upFont.pointSize();
         QVERIFY2(up > base, "Ctrl+= action did not zoom in");
     }
 
