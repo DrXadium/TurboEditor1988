@@ -15,11 +15,17 @@ class RightScrollBar : public TextScrollBar
 {
     Q_OBJECT
 public:
-    // One cell wide: matches the app's monospace grid (tests pin <= 12 px).
-    static constexpr int kCellWidth = 12;
-
     explicit RightScrollBar(QWidget* parent = nullptr);
 
 protected:
     void paintEvent(QPaintEvent* ev) override;
+    void changeEvent(QEvent* ev) override;
+
+private:
+    // One CHARACTER CELL wide, measured from the font. The border column has to
+    // sit on the frame's character grid or the bottom-right corner glyph cannot
+    // dovetail with it: a hardcoded 12 px was one and a half cells at the
+    // bundled 16 px VGA face (cell = 8 px), which left the ┘ stem 7 px in from
+    // the column's left edge.
+    void updateCellWidth();
 };

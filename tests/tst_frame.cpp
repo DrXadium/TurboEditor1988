@@ -11,6 +11,7 @@
 #include "src/shell/TabStrip.h"
 #include "src/shell/BottomBand.h"
 #include "src/shell/TextScrollBar.h"
+#include "src/shell/RightScrollBar.h"
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -428,6 +429,76 @@ private slots:
                 if (isGreen(img.pixelColor(x, y)))
                     ++green;
         QVERIFY2(green > 0, "bottom-right corner is not green");
+    }
+
+    // The bottom-right corner must DOVETAIL with the right-border scrollbar
+    // column: the corner glyph has to occupy the SAME character cell as the
+    // column, so its ┘ stem is centred under the column it joins.
+    //
+    // Measured bug: the column was a hardcoded 12 px while the character grid
+    // is cellW (8 px at the bundled 16 px VGA face) - one and a half cells. The
+    // ┘ was drawn in an 8 px cell inside a 12 px column, so its stem floated
+    // 7 px in from the column's left edge and the corner never lined up.
+    void bottom_right_corner_dovetails_with_the_right_scrollbar_column()
+    {
+        ShellWindow w;
+        w.resize(900, 400);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* bar = w.findChild<RightScrollBar*>(QStringLiteral("rightScrollBar"));
+        QVERIFY2(bar, "rightScrollBar (the window's right border column) not found");
+
+        BottomBand* band = w.bottomBand();
+        QVERIFY(band && band->horizontalBar());
+        const int cw = qMax(6, band->fontMetrics().horizontalAdvance(QLatin1Char('M')));
+        const int bw = band->width();
+        QVERIFY2(bw > 300, "bottom band has no sane width");
+
+        // (1) The border column must be exactly ONE character cell wide.
+        QVERIFY2(bar->width() == cw,
+                 qPrintable(QStringLiteral("right border column is %1 px wide, but one "
+                                           "character cell is %2 px - the corner glyph "
+                                           "can never dovetail with a column off the grid")
+                                .arg(bar->width()).arg(cw)));
+
+        // (2) It must occupy the corner glyph's cell: the band's last cell.
+        const QPoint colTL = bar->mapTo(&w, QPoint(0, 0));
+        const QPoint bandTL = band->mapTo(&w, QPoint(0, 0));
+        const int cornerCellLeft = bandTL.x() + bw - cw;
+        QVERIFY2(colTL.x() == cornerCellLeft,
+                 qPrintable(QStringLiteral("right column starts at x=%1 but the corner "
+                                           "glyph's cell starts at x=%2 - they are not "
+                                           "the same cell")
+                                .arg(colTL.x()).arg(cornerCellLeft)));
+
+        // (3) The green ┘ stem must be centred under the column.
+        const QImage img = band->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 300, "bottom band did not render");
+        int stemLeft = -1, stemRight = -1;
+        for (int x = bw - cw; x < bw; ++x) {
+            int greenRows = 0;
+            for (int y = 0; y < img.height(); ++y)
+                if (isGreen(img.pixelColor(x, y)))
+                    ++greenRows;
+            if (greenRows >= 4) {
+                if (stemLeft < 0)
+                    stemLeft = x;
+                stemRight = x;
+            }
+        }
+        QVERIFY2(stemLeft >= 0, "corner cell has no green vertical stem");
+
+        // Compare in ABSOLUTE coordinates (the stem was found in band-local px).
+        const int stemAbsLeft = bandTL.x() + stemLeft;
+        const int stemAbsRight = bandTL.x() + stemRight;
+        const int stemCentre2 = stemAbsLeft + stemAbsRight;  // 2 * centre
+        const int colCentre2 = 2 * colTL.x() + cw - 1;       // 2 * centre (absolute)
+        QVERIFY2(qAbs(stemCentre2 - colCentre2) <= 2,
+                 qPrintable(QStringLiteral("corner stem centre %1 is not centred under "
+                                           "the right column centre %2 (off by %3 px)")
+                                .arg(stemCentre2 / 2.0).arg(colCentre2 / 2.0)
+                                .arg((stemCentre2 - colCentre2) / 2.0)));
     }
 };
 

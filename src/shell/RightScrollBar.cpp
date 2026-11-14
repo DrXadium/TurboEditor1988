@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "RightScrollBar.h"
+#include <QEvent>
 #include <QPainter>
 
 namespace {
@@ -37,7 +38,22 @@ RightScrollBar::RightScrollBar(QWidget* parent)
     : TextScrollBar(Qt::Vertical, parent)
 {
     setObjectName(QStringLiteral("rightScrollBar"));
-    setFixedWidth(kCellWidth);
+    updateCellWidth();
+}
+
+// One character cell: the same cellW the frame glyphs are drawn in, so the
+// corner ┘ and the border column occupy one and the same cell.
+void RightScrollBar::updateCellWidth()
+{
+    setFixedWidth(qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M'))));
+}
+
+void RightScrollBar::changeEvent(QEvent* ev)
+{
+    QScrollBar::changeEvent(ev);
+    // The QSS font (and thus the cell width) can be applied after construction.
+    if (ev->type() == QEvent::FontChange)
+        updateCellWidth();
 }
 
 void RightScrollBar::paintEvent(QPaintEvent*)
