@@ -115,6 +115,11 @@ QLabel#editorTitle { background: transparent; color: #FFFFFF; }
    the ╔ ═ ╗ there, and an opaque band would erase it (the global QWidget rule
    above gives every widget a #0000AA background). */
 QWidget#editorTitleRow { background: transparent; }
+/* The editor body is inset by one cell (the frame's left column) but the WIDGET
+   still spans the full width, so its styled background would paint over the ║
+   column that EditorHost draws underneath it - the same defect the title-row
+   band had. Transparent: the host owns that column's pixels. */
+QWidget#editorBody { background: transparent; }
 /* TV push buttons: green field, white/black label (raised bevel via style). */
 QPushButton {
     background-color: #00AA00;

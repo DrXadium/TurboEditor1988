@@ -8,9 +8,13 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include "src/shell/TabStrip.h"
+#include "src/shell/ShellWindow.h"
 
 namespace {
 const QColor kGreen(0x00, 0xAA, 0x00);
+const QColor kBlue(0x00, 0x00, 0xAA);
+const QColor kBandGrey(0x55, 0x55, 0x55);   // stipple ink of the tab row
+const QColor kWhite(0xFF, 0xFF, 0xFF);
 
 int countColor(const QImage& img, const QColor& t, int tol)
 {
@@ -24,12 +28,97 @@ int countColor(const QImage& img, const QColor& t, int tol)
         }
     return n;
 }
+
+bool isNear(const QColor& c, const QColor& t, int tol = 24)
+{
+    return qAbs(c.red() - t.red()) <= tol && qAbs(c.green() - t.green()) <= tol &&
+           qAbs(c.blue() - t.blue()) <= tol;
+}
 } // namespace
 
 class TstTabStrip : public QObject
 {
     Q_OBJECT
 private slots:
+    // Task 19: the tab row spans the WHOLE window width (it starts at the
+    // window's left edge, above the frame's left column, exactly like the
+    // mock's left arrow cell) and is exactly ONE character cell tall - the
+    // same row height as the document border row below it.
+    void strip_is_full_width_and_one_cell_tall() {
+        ShellWindow w;
+        w.resize(900, 600);
+        TabStrip* ts = w.tabStrip();
+        QVERIFY2(ts, "no tab strip");
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QCoreApplication::processEvents();
+
+        QCOMPARE(ts->mapTo(&w, QPoint(0, 0)).x(), 0);
+        QCOMPARE(ts->width(), w.centralWidget()->width());
+        QVERIFY2(ts->height() == ts->fontMetrics().height(),
+                 qPrintable(QStringLiteral("strip height=%1, one cell=%2")
+                                .arg(ts->height()).arg(ts->fontMetrics().height())));
+    }
+
+    // Task 19 (mock note 2): the row's background is the scrollbar track's
+    // stipple design with GREY ink instead of teal, and the row carries NO
+    // rule of its own - the document's top border row below it is the only
+    // border rule.
+    void band_is_grey_dither_on_blue_with_no_rule() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << QStringLiteral("a"), 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(800, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        // Both inks are present, in roughly equal share: a 1-px checkerboard.
+        const int blue = countColor(img, kBlue, 8);
+        const int grey = countColor(img, kBandGrey, 8);
+        const int total = img.width() * img.height();
+        QVERIFY2(blue * 100 / total >= 30 && blue * 100 / total <= 65,
+                 qPrintable(QStringLiteral("band blue share=%1%").arg(blue * 100 / total)));
+        QVERIFY2(grey * 100 / total >= 30 && grey * 100 / total <= 65,
+                 qPrintable(QStringLiteral("band grey share=%1%").arg(grey * 100 / total)));
+
+        // No rule: no row may be mostly white. The old title line ran a white
+        // double rule the full width (measured 1150/1280 px per row).
+        for (int y = 0; y < img.height(); ++y) {
+            int white = 0;
+            for (int x = 0; x < img.width(); ++x)
+                if (isNear(img.pixelColor(x, y), kWhite))
+                    ++white;
+            QVERIFY2(white * 2 <= img.width(),
+                     qPrintable(QStringLiteral("row %1 is %2/%3 white - a rule is still drawn")
+                                    .arg(y).arg(white).arg(img.width())));
+        }
+
+        // Dither, not stripes or a solid fill: in an empty stretch of band (no
+        // chip, no control) no two ADJACENT pixels share the grey ink, in
+        // EITHER axis.
+        //
+        // Both axes are required. A single-axis check passes a STRIPE pattern:
+        // with `y & 1` the sampled row 0 happens to be the blue row, and the
+        // column sample alternates - so the test was green while the row was
+        // banded. (Found by mutation-testing this very assertion.)
+        const int x0 = img.width() / 2;
+        const int span = 40;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = x0; x + 1 < x0 + span && x + 1 < img.width(); ++x)
+                QVERIFY2(!(isNear(img.pixelColor(x, y), kBandGrey, 8) &&
+                           isNear(img.pixelColor(x + 1, y), kBandGrey, 8)),
+                         qPrintable(QStringLiteral("horizontal grey run at (%1,%2) - "
+                                                   "the band is striped, not dithered")
+                                        .arg(x).arg(y)));
+        for (int x = x0; x < x0 + span && x < img.width(); ++x)
+            for (int y = 0; y + 1 < img.height(); ++y)
+                QVERIFY2(!(isNear(img.pixelColor(x, y), kBandGrey, 8) &&
+                           isNear(img.pixelColor(x, y + 1), kBandGrey, 8)),
+                         qPrintable(QStringLiteral("vertical grey run at (%1,%2) - "
+                                                   "the band is striped, not dithered")
+                                        .arg(x).arg(y)));
+    }
+
     void paints_green_close_and_zoom_boxes() {
         TabStrip ts;
         ts.setTabs(QStringList() << "untitled" << "notes", 0);

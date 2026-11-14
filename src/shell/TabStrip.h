@@ -28,8 +28,13 @@ signals:
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent* ev) override;
+    void changeEvent(QEvent* ev) override;
 
 private:
+    // One character cell, re-measured when the QSS font lands: the strip is
+    // exactly one cell tall, so a construction-time height would be wrong.
+    void updateCellSize();
+
     QStringList m_titles;
     int m_active = 0;
 };

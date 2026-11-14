@@ -75,6 +75,16 @@ public:
     // the editor body. It paints nothing: the glyphs are this widget's job.
     QWidget* titleRow() const { return m_titleRow; }
 
+    // The row below the title row (editor body + scrollbar column). Only THIS
+    // row is inset by the frame's left column: the tab row above it spans the
+    // window edge to edge, so its left control sits in the window's first cell
+    // (mock note 1), directly above the ║ column.
+    void setContentRow(QWidget* w)
+    {
+        m_contentRow = w;
+        updateFrameMargins();
+    }
+
     // One character cell: the frame edge is a whole cell thick (TV look).
     int cellW() const { return qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M'))); }
     int cellH() const { return qMax(8, fontMetrics().height()); }
@@ -98,14 +108,14 @@ public:
     // on one side" at the bottom-left corner).
     void updateFrameMargins()
     {
-        auto* l = layout();
-        if (!l)
-            return;
-        const QMargins m = l->contentsMargins();
-        if (m.left() != cellW())
-            l->setContentsMargins(cellW(), m.top(), m.right(), m.bottom());
         if (m_titleRow)
             m_titleRow->setFixedHeight(cellH());
+        if (m_contentRow && m_contentRow->layout()) {
+            const QMargins m = m_contentRow->layout()->contentsMargins();
+            if (m.left() != cellW())
+                m_contentRow->layout()->setContentsMargins(cellW(), m.top(), m.right(),
+                                                           m.bottom());
+        }
         layoutTitle();
     }
 
@@ -208,6 +218,7 @@ protected:
 
 private:
     QWidget* m_titleRow = nullptr;
+    QWidget* m_contentRow = nullptr;
     QLabel* m_title = nullptr;
 };
 } // namespace
@@ -274,7 +285,7 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     // Reserve the frame: EditorHost paints the left double line at x=1..2 and
     // the bottom pair on the last two rows. The margins must clear it, or the
     // editor/tab children paint over the border and the frame disappears.
-    lay->setContentsMargins(central->cellW(), 0, 0, 0);
+    lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);
@@ -288,6 +299,14 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     auto* bodyLay = new QHBoxLayout(body);
     bodyLay->setContentsMargins(0, 0, 0, 0);
     bodyLay->setSpacing(0);
+    // The frame's left column inset applies to the CONTENT row only (set after
+    // its own margins so it is not overwritten): the tab row above spans the
+    // full width, the editor body starts inside the ║ column. The body itself
+    // stays full-width and must not paint: its background would cover the ║
+    // column the host draws under it (QSS makes it transparent; belt and
+    // braces here, exactly as for the title-row band).
+    body->setAttribute(Qt::WA_NoSystemBackground, true);
+    central->setContentRow(body);
     auto* slot = new QWidget(body);
     slot->setObjectName(QStringLiteral("editorSlot"));
     auto* slotLay = new QVBoxLayout(slot);

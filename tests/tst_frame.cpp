@@ -113,10 +113,11 @@ private slots:
 
     // The editor host paints left + right vertical frame edges (gray) along
     // its sides, with blue between.
-    // Task 4: the DOS double-line frame box has all FOUR corners — the title
-    // line (TabStrip) supplies the top two, the editor host the bottom two.
-    // Sample the actual frame-box corners (not the menubar/status bar, which
-    // are also gray and would mask a missing frame corner).
+    // Task 4: the DOS double-line frame box has all FOUR corners.
+    // Task 19: the top two are the ╔ ╗ of the DOCUMENT's border row (the band
+    // below the tab row), not the tab row's ends - the tab row carries no rule
+    // of its own any more. Sample the actual frame-box corners (not the
+    // menubar/status bar, which are also gray and would mask a missing corner).
     void frame_has_all_four_corners() {
         ShellWindow w;
         w.resize(400, 300);
@@ -124,22 +125,24 @@ private slots:
         QCoreApplication::processEvents();
         TabStrip* ts = w.tabStrip();
         BottomBand* band = w.bottomBand();
-        QVERIFY(ts && band);
+        QWidget* titleRow = w.findChild<QWidget*>(QStringLiteral("editorTitleRow"));
+        QVERIFY(ts && band && titleRow);
         const QImage img = w.grab().toImage();
         QVERIFY(!img.isNull());
 
-        const QPoint tsOrigin = ts->mapTo(&w, QPoint(0, 0));
+        const QPoint titleOrigin = titleRow->mapTo(&w, QPoint(0, 0));
         const QPoint bOrigin = band->mapTo(&w, QPoint(0, 0));
 
         // Frame-box corners in shell coordinates:
-        //   top-left/top-right: the title line's left/right ends.
+        //   top-left/top-right: the document border row's first/last cells.
         //   bottom-left/bottom-right: the BOTTOM BAND's BORDER ROW — the lower
         //   of the band's two rows (the scrollbar owns the upper one). The
         //   bottom-right corner is GREEN by spec, so it is matched separately.
         const int borderY = band->height() - band->fontMetrics().height() / 2;
+        const int cornerY = titleRow->height() / 2;
         const QPoint corners[4] = {
-            tsOrigin + QPoint(3, ts->height() - 4),                 // top-left
-            tsOrigin + QPoint(ts->width() - 4, ts->height() - 4),   // top-right
+            titleOrigin + QPoint(3, cornerY),                       // top-left
+            titleOrigin + QPoint(titleRow->width() - 4, cornerY),    // top-right
             bOrigin + QPoint(3, borderY),                           // bottom-left
             bOrigin + QPoint(band->width() - 4, borderY)            // bottom-right
         };
@@ -148,8 +151,8 @@ private slots:
         for (int i = 0; i < 4; ++i) {
             bool found = false;
             const QPoint c = corners[i];
-            for (int dy = -3; dy <= 3 && !found; ++dy)
-                for (int dx = -3; dx <= 3 && !found; ++dx) {
+            for (int dy = -4; dy <= 4 && !found; ++dy)
+                for (int dx = -4; dx <= 4 && !found; ++dx) {
                     const int x = c.x() + dx, y = c.y() + dy;
                     if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
                         continue;
@@ -504,9 +507,14 @@ private slots:
     }
 
     // The editor frame margin must clear the border column, or the child
-    // widgets (tab strip, editor body) start ON the column and paint over its
+    // widgets (editor body, editor) start ON the column and paint over its
     // outer stroke - which is why the left border looked "thicker on one side"
     // at the bottom-left corner.
+    //
+    // Task 19: the inset lives on the CONTENT row, not on the host's layout.
+    // The tab row above it spans the window edge to edge (its left control sits
+    // in the window's first cell, above the ║ column), so a host-wide margin
+    // would push the tab row off the window edge.
     void editor_frame_margin_clears_the_border_column()
     {
         ShellWindow w;
@@ -516,16 +524,24 @@ private slots:
 
         auto* host = w.findChild<QWidget*>(QStringLiteral("editorHost"));
         QVERIFY2(host, "editorHost not found");
-        QVERIFY2(host->layout(), "editorHost has no layout");
+        auto* body = w.findChild<QWidget*>(QStringLiteral("editorBody"));
+        QVERIFY2(body && body->layout(), "editor body row not found");
 
         // One character cell, measured NOW (after the QSS font is applied).
         const int cellW = qMax(6, host->fontMetrics().horizontalAdvance(QLatin1Char('M')));
-        const int margin = host->layout()->contentsMargins().left();
+        const int margin = body->layout()->contentsMargins().left();
         QVERIFY2(margin == cellW,
                  qPrintable(QStringLiteral("editor frame margin is %1 px but the border "
                                            "column is %2 px wide - children start on the "
                                            "column and paint over its outer stroke")
                                 .arg(margin).arg(cellW)));
+
+        // The content row itself is inset inside the host by that same cell.
+        QCOMPARE(body->mapTo(host, QPoint(0, 0)).x(), 0);   // full width, paints nothing
+        QWidget* slot = w.findChild<QWidget*>(QStringLiteral("editorSlot"));
+        QVERIFY2(slot, "editor slot not found");
+        QVERIFY2(slot->mapTo(host, QPoint(0, 0)).x() >= cellW,
+                 "editor slot starts on the border column");
     }
 
     // The left border's strokes must be identical above and inside the corner:

@@ -13,14 +13,39 @@ const QColor kBgBlue(0x00, 0x00, 0xAA);      // TV window blue desktop
 const QColor kBlack(0, 0, 0);
 const QColor kGreen(0x00, 0xAA, 0x00);       // close/zoom box fill
 const QColor kWhite(0xFF, 0xFF, 0xFF);       // inactive tab label (spec 3)
+// Task 19 (mock note 2): the row's background is the scrollbar track's stipple
+// design with GREY ink instead of the bars' teal, so the row reads as distinct
+// from them. #555555 (TV dark gray) rather than #AAAAAA: the lighter gray is
+// what the dim tab titles are drawn in, and grey-on-grey would be unreadable -
+// the mock's band is clearly darker than its inactive titles.
+const QColor kBandGrey(0x55, 0x55, 0x55);
 } // namespace
 
 TabStrip::TabStrip(QWidget* parent) : QWidget(parent)
 {
     setObjectName("tabStrip");
-    setMinimumHeight(24);
-    setAutoFillBackground(false);   // paintEvent draws the title line itself
+    setAutoFillBackground(false);   // paintEvent draws the row itself
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    updateCellSize();
+}
+
+// The row is exactly ONE character cell tall - the same row height as the
+// document's border row below it (mock: the tab row and the ╔ ═ ╗ row are the
+// same band). The QSS font is applied after construction, so the height is
+// re-measured whenever the font changes; otherwise the row keeps the default
+// font's height (24 px against the PxPlus face's 16 px cell).
+void TabStrip::updateCellSize()
+{
+    const int h = qMax(8, fontMetrics().height());
+    if (minimumHeight() != h || maximumHeight() != h)
+        setFixedHeight(h);
+}
+
+void TabStrip::changeEvent(QEvent* ev)
+{
+    QWidget::changeEvent(ev);
+    if (ev->type() == QEvent::FontChange)
+        updateCellSize();
 }
 
 void TabStrip::setTabs(const QStringList& titles, int active)
@@ -68,14 +93,20 @@ void TabStrip::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing, false);   // crisp DOS pixels
     const int midY = height() / 2;
 
-    // Desktop blue background (the title line sits on the window blue).
+    // Row background: the scrollbar track's 1-px stipple, grey ink on window
+    // blue (mock note 2). Dithered in BOTH axes - alternating on one axis alone
+    // leaves continuous bands that read as stripes (the defect the bars had).
     p.fillRect(rect(), kBgBlue);
+    p.save();
+    p.setPen(Qt::NoPen);
+    for (int y = 0; y < height(); ++y)
+        for (int x = 0; x < width(); ++x)
+            if ((x + y) & 1)
+                p.fillRect(QRect(x, y, 1, 1), kBandGrey);
+    p.restore();
 
-    // The window's TOP border row. In Turbo Vision the tab titles sit IN the
-    // border row and interrupt it, so there is ONE double rule running through
-    // the row's centre — not a rule at the top plus another at the bottom
-    // (that drew a separate title bar and left the frame looking broken).
-    TvFrame::doubleH(p, rect(), kFrameWhite);
+    // NO rule in this row: the document's own top border row - ╔ ═ name ═ ╗,
+    // painted by EditorHost directly below - is the only border rule (mock).
     // The left ║ column is painted by EditorHost beneath this strip; the right
     // border column belongs to RightScrollBar. No verticals here.
 

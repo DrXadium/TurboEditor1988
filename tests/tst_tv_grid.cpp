@@ -219,8 +219,31 @@ private slots:
         };
         // Row order, top to bottom.
         bandDominant(0, menuR.bottom(), QColor(0xAA, 0xAA, 0xAA), 28, "menu");
-        bandDominant(tabsR.top(), tabsR.bottom(), QColor(0x00, 0x00, 0xAA), 28,
-                     "top-border");
+        // Task 19 (mock note 2): the tab row is the scrollbar track's stipple
+        // design in GREY ink instead of teal, so neither ink holds a majority
+        // on its own - the two together fill the band. Everything from the
+        // document's border row down is still the blue field.
+        {
+            int hit = 0, total = 0;
+            const QColor a(0x00, 0x00, 0xAA), b(0x55, 0x55, 0x55);
+            for (int y = qMax(0, tabsR.top()); y <= qMin(H - 1, tabsR.bottom()); ++y)
+                for (int x = 0; x < W; ++x) {
+                    const QColor c = frame.pixelColor(x, y);
+                    ++total;
+                    const bool inA = qAbs(c.red() - a.red()) <= 8 &&
+                                     qAbs(c.green() - a.green()) <= 8 &&
+                                     qAbs(c.blue() - a.blue()) <= 8;
+                    const bool inB = qAbs(c.red() - b.red()) <= 8 &&
+                                     qAbs(c.green() - b.green()) <= 8 &&
+                                     qAbs(c.blue() - b.blue()) <= 8;
+                    if (inA || inB)
+                        ++hit;
+                }
+            QVERIFY2(total > 0 && hit * 20 >= total * 17,
+                     qPrintable(QStringLiteral("tab row is not the grey-on-blue dither: "
+                                               "%1/%2 px in palette")
+                                    .arg(hit).arg(total)));
+        }
         bandDominant(tabsR.bottom() + 1, bandR.top() - 1, QColor(0x00, 0x00, 0xAA), 28,
                      "editor");
         bandDominant(bandR.top(), bandR.bottom(), QColor(0x00, 0x00, 0xAA), 28,
@@ -238,8 +261,13 @@ private slots:
                 }
             return n;
         };
-        QVERIFY2(whiteIn(tabsR.top(), tabsR.bottom()) > 20,
-                 "window top border (double lines/boxes) not drawn");
+        // Task 19: the top border row is the DOCUMENT's ╔ ═ ╗ row below the tab
+        // row - the tab row carries no rule of its own any more.
+        auto* titleRow = w.findChild<QWidget*>(QStringLiteral("editorTitleRow"));
+        QVERIFY2(titleRow, "document border row not found");
+        const QRect titleR = rectInWindow(titleRow);
+        QVERIFY2(whiteIn(titleR.top(), titleR.bottom()) > 20,
+                 "document top border row (double lines/corners) not drawn");
         QVERIFY2(whiteIn(bandR.top(), bandR.bottom()) > 20,
                  "window bottom border (double lines/position) not drawn");
 
