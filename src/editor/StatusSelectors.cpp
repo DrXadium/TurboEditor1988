@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QFontMetrics>
+#include <QMenu>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
 
@@ -97,6 +98,21 @@ QSize StatusSelectors::minimumSizeHint() const
                  qMax(10, fontMetrics().height()));
 }
 
+QPoint StatusSelectors::docTypeCenter() const
+{
+    return docTypeRect().center();
+}
+
+QPoint StatusSelectors::encodingCenter() const
+{
+    return encodingRect().center();
+}
+
+QPoint StatusSelectors::spellCenter() const
+{
+    return spellRect().center();
+}
+
 // Each indicator is a fixed-width cell sized to its text; laid out left to
 // right with a gap. Returns are in widget-local coordinates.
 QRect StatusSelectors::spellRect() const
@@ -150,6 +166,46 @@ void StatusSelectors::mousePressEvent(QMouseEvent* ev)
         emit overwriteToggled(!m_ovr);
         return;
     }
-    // The other three open their dropdowns (wired in later tasks).
+    if (docTypeRect().contains(ev->pos())) {
+        openDocTypeMenu();
+        return;
+    }
+    // The other two open their dropdowns (wired in later tasks).
     QWidget::mousePressEvent(ev);
+}
+
+// The doc-type dropdown: every highlighting mode the document can take, as a
+// TV-styled scrollable menu. popup() (never exec() - the shell is never mapped
+// and exec()'s nested loop hangs forever).
+void StatusSelectors::openDocTypeMenu()
+{
+    if (!m_doc)
+        return;
+    delete m_menu;
+    m_menu = new QMenu(this);
+    const QStringList modes = m_doc->highlightingModes();
+    const QString current = m_doc->highlightingMode();
+    for (const QString& m : modes) {
+        QAction* a = m_menu->addAction(m);
+        a->setCheckable(true);
+        a->setChecked(m == current);
+        a->setData(m);
+    }
+    connect(m_menu, &QMenu::triggered, this, [this](QAction* a) {
+        if (m_doc && a)
+            m_doc->setHighlightingMode(a->data().toString());
+    });
+    // Anchor below the indicator, clamped inside the top-level window.
+    const QPoint global = mapToGlobal(docTypeRect().topLeft());
+    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
+                                 : QRect(global, size());
+    QPoint pos = global;
+    const QSize ms = m_menu->sizeHint();
+    if (pos.x() + ms.width() > shell.right())
+        pos.setX(shell.right() - ms.width());
+    if (pos.x() < shell.left())
+        pos.setX(shell.left());
+    if (pos.y() + ms.height() > shell.bottom())
+        pos.setY(global.y() - ms.height());
+    m_menu->popup(pos);
 }

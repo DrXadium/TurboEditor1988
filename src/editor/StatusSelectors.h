@@ -42,6 +42,15 @@ public:
     QString spellText() const;
     QString overwriteText() const;   // "INS" or "OVR"
 
+    // Click geometry (widget-local centre of each indicator) - exposed so tests
+    // can drive the dropdowns with a synthetic click.
+    QPoint docTypeCenter() const;
+    QPoint encodingCenter() const;
+    QPoint spellCenter() const;
+
+    // The menu most recently opened by a click, for tests to inspect.
+    QMenu* openMenu() const { return m_menu; }
+
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
@@ -60,8 +69,11 @@ private:
     QRect docTypeRect() const;
     QRect overwriteRect() const;
 
+    void openDocTypeMenu();
+
     bool m_ovr = false;
     KTextEditor::Document* m_doc = nullptr;
     KTextEditor::View* m_view = nullptr;
     QString m_spell;
+    QMenu* m_menu = nullptr;   // owned by this widget (parented)
 };

@@ -4,7 +4,10 @@
 #include <QtTest>
 #include <sonnet/speller.h>
 #include <QImage>
+#include <QMenu>
 #include "src/editor/StatusSelectors.h"
+#include <ktexteditor/editor.h>
+#include <ktexteditor/document.h>
 
 namespace {
 const QColor kOvrRed(0xAA, 0x00, 0x00);
@@ -60,6 +63,71 @@ private slots:
         QVERIFY2(insRed == 0.0,
                  qPrintable(QStringLiteral("INS indicator is red (%1% of pixels) - only OVR is red")
                                 .arg(insRed * 100.0, 0, 'f', 2)));
+    }
+
+    // Task 3: the doc-type label shows the document's highlighting mode.
+    void doc_type_label_shows_current_mode()
+    {
+        KTextEditor::Document* doc = KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        doc->setText(QStringLiteral("int main() {}"));
+        QVERIFY2(doc->setHighlightingMode(QStringLiteral("C++")),
+                 "C++ highlighting mode not available");
+
+        StatusSelectors s;
+        s.setDocument(doc);
+        QCOMPARE(s.docTypeText(), QStringLiteral("C++"));
+
+        // Switch to a guaranteed-valid alternate mode (hardcoded names like
+        // "Plain Text" are not what Kate reports; pick from the real list).
+        QString alt;
+        for (const QString& m : doc->highlightingModes())
+            if (m != QStringLiteral("C++")) { alt = m; break; }
+        QVERIFY2(!alt.isEmpty(), "no alternate highlighting mode available");
+        QVERIFY2(doc->setHighlightingMode(alt), "could not switch highlighting mode");
+        QCOMPARE(s.docTypeText(), alt);
+        delete doc;
+    }
+
+    // Task 3: the dropdown lists the available modes and picking one applies it.
+    void doc_type_dropdown_lists_modes_and_applies_pick()
+    {
+        KTextEditor::Document* doc = KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        doc->setText(QStringLiteral("int main() {}"));
+
+        StatusSelectors s;
+        s.setDocument(doc);
+
+        // Open the dropdown by clicking the doc-type indicator.
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.docTypeCenter());
+        QCoreApplication::processEvents();
+
+        // The popup must be open and offer every mode the document can take.
+        QMenu* menu = s.openMenu();
+        QVERIFY2(menu, "clicking the doc-type indicator did not open a menu");
+        QVERIFY(menu->isVisible());
+        const QStringList modes = doc->highlightingModes();
+        QVERIFY2(modes.size() > 1, "document reports too few highlighting modes");
+        QStringList menuTexts;
+        for (QAction* a : menu->actions())
+            menuTexts << a->text();
+        for (const QString& m : modes)
+            QVERIFY2(menuTexts.contains(m),
+                     qPrintable(QStringLiteral("mode '%1' missing from the dropdown").arg(m)));
+
+        // Pick a mode different from the current one; the document must switch.
+        const QString before = doc->highlightingMode();
+        QString pick;
+        for (const QString& m : modes)
+            if (m != before) { pick = m; break; }
+        QVERIFY2(!pick.isEmpty(), "no alternate mode to pick");
+        menu->actions().at(menuTexts.indexOf(pick))->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(doc->highlightingMode(), pick);
+
+        menu->hide();
+        delete doc;
     }
 };
 
