@@ -124,6 +124,9 @@ private:
     // the previous view's connection, re-emits the new view's position, and
     // follows it from then on.
     void trackActiveCursor();
+    // Deliver a FocusIn to the view's KateViewInternal canvas so Kate starts
+    // its caret-blink timer (never fires on its own on this unmapped shell).
+    void startCaretBlink(KTextEditor::View* view);
 
     // One undo step: the whole document text plus where the caret sat.
     struct HistoryEntry {

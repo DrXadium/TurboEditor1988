@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <QGuiApplication>
+#include <QApplication>
+#include <QFocusEvent>
 #include <QClipboard>
 #include "EditorTabManager.h"
 #include <ktexteditor/editor.h>
@@ -187,6 +189,29 @@ void EditorTabManager::applyTvStyle(KTextEditor::View* view)
         }
     new VerticalScrollHider(view);   // re-hide stub is idempotent
     applyTvTheme(view);
+    startCaretBlink(view);
+}
+
+// Kate starts its caret-blink timer ONLY in KateViewInternal::focusInEvent.
+// This shell is never mapped (WA_DontShowOnScreen), so Qt never delivers
+// FocusIn on its own and the caret renders solid forever. Deliver a FocusIn to
+// the canvas by hand: it starts the repeating m_cursorTimer, which toggles
+// renderer()->drawCaret() each tick - the blink. It also runs slotGotFocus(),
+// which enables Kate's edit actions (a bonus: arrows/backspace depend on it).
+// Find the canvas by class name (the same trick applyTvStyle uses for
+// KateViewBar); it is a QWidget child of the view.
+void EditorTabManager::startCaretBlink(KTextEditor::View* view)
+{
+    if (!view)
+        return;
+    for (QWidget* w : view->findChildren<QWidget*>()) {
+        if (qstrcmp(w->metaObject()->className(), "KateViewInternal") == 0) {
+            // Post (not send) so we return immediately; the event is handled
+            // on the next event-loop pass, exactly like a real focus change.
+            QApplication::postEvent(w, new QFocusEvent(QEvent::FocusIn, Qt::OtherFocusReason));
+            return;
+        }
+    }
 }
 
 // Select the bundled Turbo Vision theme (src/editor/tvtheme/tvtheme.qrc,

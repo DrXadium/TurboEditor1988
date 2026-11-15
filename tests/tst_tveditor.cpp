@@ -10,7 +10,9 @@
 #include <QHash>
 #include <QFontInfo>
 #include <QFontDatabase>
+#include <QSet>
 #include <algorithm>
+#include <climits>
 #include <ktexteditor/editor.h>
 #include <ktexteditor/view.h>
 #include <ktexteditor/document.h>
@@ -417,6 +419,68 @@ private slots:
         }
         QVERIFY2(foundBar, "KateViewBar not found (KTE layout changed?)");
         QVERIFY2(barHidden, "KateViewBar (green chip row) is visible — spec says omit");
+    }
+
+    // Task 6: the editor caret must BLINK like a real terminal cursor. Kate
+    // starts its blink timer only in KateViewInternal::focusInEvent - which
+    // never fires on this shell (the window is never mapped, so Qt never
+    // delivers FocusIn). Without a delivered FocusIn the caret is painted solid
+    // and never toggles. Prove the blink by grabbing the caret's pixels twice
+    // across more than one flash interval: they must DIFFER.
+    void editor_caret_blinks()
+    {
+        const int saved = QApplication::cursorFlashTime();
+        QApplication::setCursorFlashTime(200);
+
+        EditorTabManager m;
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("blink me"));
+        v->setCursorPosition(KTextEditor::Cursor(0, 0));
+        // The shell is never mapped, so the view is never "exposed" - grab()
+        // renders it offscreen regardless. Wait for a layout pass instead.
+        v->resize(400, 200);
+        QCoreApplication::processEvents();
+
+        // Isolate the CARET on its own ROW (Kate's cursorPositionCoordinates
+        // gives the caret's y). The text is static (no typing), so the only
+        // thing that can change that row's ink over time is the caret blinking
+        // on/off. Count non-background pixels on the caret's row across flash
+        // intervals; a blinking caret makes the count toggle, a solid one does
+        // not. Sampling the whole view is useless (unrelated repaints change
+        // hundreds of pixels: measured 755 over 100x98).
+        const QPoint caret = v->cursorPositionCoordinates();
+        const int row = caret.y();
+        const QColor bg(0x00, 0x00, 0xAA);   // window blue
+
+        // Warm-up grab first: the very first render can differ from steady
+        // state (unpainted -> painted), which is not a blink. Discard it.
+        v->grab();
+        QCoreApplication::processEvents();
+
+        // Count how many DISTINCT ink states that cell takes over STEADY-STATE
+        // time. A blinking caret takes two (on/off); a solid one takes one.
+        QSet<QRgb> states;
+        for (int attempt = 0; attempt < 6; ++attempt) {
+            const QImage img = v->grab().toImage().convertToFormat(QImage::Format_RGB32);
+            // Count non-background pixels on the caret's row (text + caret).
+            int ink = 0;
+            const int y = qBound(0, row, img.height() - 1);
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (!(c.red() < 16 && c.green() < 16 && c.blue() > 0x80))   // not blue bg
+                    ++ink;
+            }
+            states.insert(QRgb(ink));   // distinct ink COUNTS over time
+            QTest::qWait(QApplication::cursorFlashTime() + 40);
+            QCoreApplication::processEvents();
+        }
+
+        QApplication::setCursorFlashTime(saved);
+        QVERIFY2(states.size() >= 2,
+                 qPrintable(QStringLiteral("caret row took only %1 distinct ink count(s) over time - "
+                                            "it is solid, not blinking")
+                                .arg(states.size())));
     }
 };
 
