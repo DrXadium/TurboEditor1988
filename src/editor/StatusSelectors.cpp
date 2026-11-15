@@ -17,6 +17,8 @@ const QColor kInk(0x00, 0x00, 0x00);
 const QColor kOvrRed(0xAA, 0x00, 0x00);
 // One space between indicators, in pixels (a cell's worth of daylight).
 const int kGap = 8;
+// Boundary between two cells: prev.right() + 1 + kGap.
+const int kBoundary = kGap + 1;
 } // namespace
 
 StatusSelectors::StatusSelectors(QWidget* parent) : QWidget(parent)
@@ -108,7 +110,7 @@ QSize StatusSelectors::sizeHint() const
     // spell + encoding + docType + overwrite, each with a gap between.
     const int w = fm.horizontalAdvance(spellText()) + fm.horizontalAdvance(encodingText()) +
                   fm.horizontalAdvance(docTypeText()) + fm.horizontalAdvance(overwriteText()) +
-                  3 * kGap;
+                  3 * kBoundary;
     return QSize(w, qMax(10, fm.height()));
 }
 
@@ -133,33 +135,54 @@ QPoint StatusSelectors::spellCenter() const
     return spellRect().center();
 }
 
-// Each indicator is a fixed-width cell sized to its text; laid out left to
-// right with a gap. Returns are in widget-local coordinates.
-QRect StatusSelectors::spellRect() const
+// Each indicator is a cell sized to its text, laid out left to right with a
+// gap. When the widget is narrower than the content (the F-row squeezed on a
+// small window), the cells shrink PROPORTIONALLY so every label stays inside
+// the row - the paint step then elides each label to its cell. Natural width
+// (wide widget) is unchanged.
+std::array<int, 4> StatusSelectors::cellWidths() const
 {
     const QFontMetrics fm(font());
-    return QRect(0, 0, fm.horizontalAdvance(spellText()), height());
+    std::array<int, 4> nat{fm.horizontalAdvance(spellText()),
+                           fm.horizontalAdvance(encodingText()),
+                           fm.horizontalAdvance(docTypeText()),
+                           fm.horizontalAdvance(overwriteText())};
+    const int boundaries = 3 * kBoundary;
+    const int content = nat[0] + nat[1] + nat[2] + nat[3];
+    const int avail = qMax(0, width() - boundaries);
+    if (content <= avail || content == 0)
+        return nat;
+    // Shrink proportionally, floor at 0.
+    const double scale = double(avail) / double(content);
+    std::array<int, 4> out;
+    for (int i = 0; i < 4; ++i)
+        out[i] = qRound(nat[i] * scale);
+    return out;
+}
+
+// Cell origins: cumulative widths + boundaries. Returns are widget-local.
+QRect StatusSelectors::spellRect() const
+{
+    const auto w = cellWidths();
+    return QRect(0, 0, w[0], height());
 }
 
 QRect StatusSelectors::encodingRect() const
 {
-    const QFontMetrics fm(font());
-    const int left = spellRect().right() + 1 + kGap;
-    return QRect(left, 0, fm.horizontalAdvance(encodingText()), height());
+    const auto w = cellWidths();
+    return QRect(spellRect().right() + kBoundary, 0, w[1], height());
 }
 
 QRect StatusSelectors::docTypeRect() const
 {
-    const QFontMetrics fm(font());
-    const int left = encodingRect().right() + 1 + kGap;
-    return QRect(left, 0, fm.horizontalAdvance(docTypeText()), height());
+    const auto w = cellWidths();
+    return QRect(encodingRect().right() + kBoundary, 0, w[2], height());
 }
 
 QRect StatusSelectors::overwriteRect() const
 {
-    const QFontMetrics fm(font());
-    const int left = docTypeRect().right() + 1 + kGap;
-    return QRect(left, 0, fm.horizontalAdvance(overwriteText()), height());
+    const auto w = cellWidths();
+    return QRect(docTypeRect().right() + kBoundary, 0, w[3], height());
 }
 
 void StatusSelectors::paintEvent(QPaintEvent*)
@@ -167,17 +190,21 @@ void StatusSelectors::paintEvent(QPaintEvent*)
     QPainter p(this);
     p.setRenderHint(QPainter::TextAntialiasing, false);
     const QFontMetrics fm(font());
+    // Elide each label to its (possibly shrunk) cell so nothing overflows.
+    auto elide = [&fm](const QRect& r, const QString& t) {
+        return fm.elidedText(t, Qt::ElideRight, r.width());
+    };
 
     // Spell language (leftmost).
     p.setPen(kInk);
-    p.drawText(spellRect(), Qt::AlignCenter, spellText());
+    p.drawText(spellRect(), Qt::AlignCenter, elide(spellRect(), spellText()));
     // Encoding.
-    p.drawText(encodingRect(), Qt::AlignCenter, encodingText());
+    p.drawText(encodingRect(), Qt::AlignCenter, elide(encodingRect(), encodingText()));
     // Document type (highlighting mode).
-    p.drawText(docTypeRect(), Qt::AlignCenter, docTypeText());
+    p.drawText(docTypeRect(), Qt::AlignCenter, elide(docTypeRect(), docTypeText()));
     // INS/OVR: red only when OVR.
     p.setPen(m_ovr ? kOvrRed : kInk);
-    p.drawText(overwriteRect(), Qt::AlignCenter, overwriteText());
+    p.drawText(overwriteRect(), Qt::AlignCenter, elide(overwriteRect(), overwriteText()));
 }
 
 void StatusSelectors::mousePressEvent(QMouseEvent* ev)
@@ -234,7 +261,20 @@ void StatusSelectors::openDocTypeMenu()
         pos.setX(shell.left());
     if (pos.y() + ms.height() > shell.bottom())
         pos.setY(global.y() - ms.height());
+    attachHint(m_menu, QStringLiteral("Select document type"));
     m_menu->popup(pos);
+}
+
+// Spec 7: while a dropdown is open the F-key row shows a context hint and the
+// four indicators step aside; when it closes, both are restored. Wire that swap
+// to the menu's own show/hide so it happens no matter how the menu dismisses
+// (pick, Escape, click-away).
+void StatusSelectors::attachHint(QMenu* menu, const QString& hint)
+{
+    if (!menu)
+        return;
+    connect(menu, &QMenu::aboutToShow, this, [this, hint]() { emit dropdownOpened(hint); });
+    connect(menu, &QMenu::aboutToHide, this, [this]() { emit dropdownClosed(); });
 }
 
 // The encoding switcher: every encoding Qt can name, as a scrollable menu.
@@ -282,6 +322,7 @@ void StatusSelectors::openEncodingMenu()
         pos.setX(shell.left());
     if (pos.y() + ms.height() > shell.bottom())
         pos.setY(global.y() - ms.height());
+    attachHint(m_menu, QStringLiteral("Select character encoding"));
     m_menu->popup(pos);
 }
 
@@ -318,5 +359,6 @@ void StatusSelectors::openSpellMenu()
         pos.setX(shell.left());
     if (pos.y() + ms.height() > shell.bottom())
         pos.setY(global.y() - ms.height());
+    attachHint(m_menu, QStringLiteral("Select spellcheck language"));
     m_menu->popup(pos);
 }

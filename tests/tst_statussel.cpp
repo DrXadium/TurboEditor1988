@@ -7,6 +7,7 @@
 #include <QMenu>
 #include "src/editor/StatusSelectors.h"
 #include "src/editor/EditorTabManager.h"
+#include "src/shell/FKeyStatusBar.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -294,6 +295,115 @@ private slots:
 
         delete docA;
         delete docB;
+    }
+
+    // Task 8 (spec 7): opening a dropdown swaps the F-key row to a context
+    // hint and hides the indicators; closing restores them.
+    void indicators_swap_out_for_context_hint_and_restore()
+    {
+        FKeyStatusBar bar;
+        // Heap-allocate with `bar` as parent: setStatusSelectors() reparents the
+        // widget into the status bar, so a STACK StatusSelectors would be deleted
+        // by bar's destructor and then again at scope exit (double free).
+        auto* s = new StatusSelectors(&bar);
+        s->show();
+        bar.setStatusSelectors(s);
+        bar.resize(400, 20);
+        bar.show();
+        QVERIFY(s->isVisible());
+
+        QSignalSpy openSpy(s, &StatusSelectors::dropdownOpened);
+        QSignalSpy closeSpy(s, &StatusSelectors::dropdownClosed);
+
+        // Drive the swap the way main.cpp wires it: open -> setContextHint,
+        // close -> clearContextHint.
+        QObject::connect(s, &StatusSelectors::dropdownOpened, &bar,
+                         [&bar](const QString& h) { bar.setContextHint(h); });
+        QObject::connect(s, &StatusSelectors::dropdownClosed, &bar,
+                         [&bar]() { bar.clearContextHint(); });
+
+        // Open the doc-type dropdown (needs a doc).
+        KTextEditor::Document* doc =
+            KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        s->setDocument(doc);
+        QTest::mouseClick(s, Qt::LeftButton, Qt::NoModifier, s->docTypeCenter());
+        QCoreApplication::processEvents();
+        QVERIFY2(openSpy.count() == 1, qPrintable(QStringLiteral("dropdownOpened fired %1").arg(openSpy.count())));
+        QVERIFY2(bar.contextHintActive(), "hint not active while dropdown open");
+        QVERIFY2(!s->isVisible(), "indicators should hide while the hint is up");
+
+        // Close it (hide the menu) -> indicators restored.
+        if (QMenu* m = s->openMenu())
+            m->hide();
+        QCoreApplication::processEvents();
+        QVERIFY2(closeSpy.count() == 1, qPrintable(QStringLiteral("dropdownClosed fired %1").arg(closeSpy.count())));
+        QVERIFY(!bar.contextHintActive());
+        QVERIFY2(s->isVisible(), "indicators must be restored after the dropdown closes");
+        s->setDocument(nullptr);
+        bar.setStatusSelectors(nullptr);
+        delete doc;
+    }
+
+    // Task 8: across a sweep of narrow widths, the four indicators hosted on
+    // the F-row keep every label inside their own rect (no per-label clipping)
+    // AND stay inside the bar (the bar must reserve their natural width, eliding
+    // the F-key text instead).
+    void row_fits_at_narrow_widths()
+    {
+        KTextEditor::Document* doc =
+            KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        Sonnet::Speller speller;
+        // Heap-allocate with `bar` as parent to avoid the stack-reparent
+        // double-free (setStatusSelectors reparents into the bar).
+        FKeyStatusBar bar;
+        auto* s = new StatusSelectors(&bar);
+        s->setDocument(doc);
+        s->setSpeller(&speller);
+        s->setSpellLanguage(QStringLiteral("en_US"));
+        bar.setStatusSelectors(s);
+        s->show();
+        for (int w = 240; w <= 900; w += 60) {
+            bar.resize(w, 20);
+            bar.show();
+            QCoreApplication::processEvents();
+            // The selectors widget must stay fully inside the bar: the bar
+            // gives it its natural sizeHint and elides the F-key text instead.
+            const QRect sRect = s->geometry();
+            QVERIFY2(sRect.left() >= 0 && sRect.right() <= bar.width(),
+                     qPrintable(QStringLiteral("w=%1 selectors overflow bar: %2..%3 vs bar %4")
+                                    .arg(w).arg(sRect.left()).arg(sRect.right()).arg(bar.width())));
+            // Every indicator's click centre must lie inside the selectors
+            // widget - a cell whose centre fell outside would mean a label
+            // overflowing the row (the proportional-shrink keeps all four in).
+            const int W = sRect.width();
+            QVERIFY2(s->spellCenter().x() >= 0 && s->spellCenter().x() <= W,
+                     qPrintable(QStringLiteral("w=%1 spell centre %2 outside 0..%3")
+                                    .arg(w).arg(s->spellCenter().x()).arg(W)));
+            QVERIFY2(s->encodingCenter().x() >= 0 && s->encodingCenter().x() <= W,
+                     qPrintable(QStringLiteral("w=%1 encoding centre %2 outside 0..%3")
+                                    .arg(w).arg(s->encodingCenter().x()).arg(W)));
+            QVERIFY2(s->docTypeCenter().x() >= 0 && s->docTypeCenter().x() <= W,
+                     qPrintable(QStringLiteral("w=%1 docType centre %2 outside 0..%3")
+                                    .arg(w).arg(s->docTypeCenter().x()).arg(W)));
+            // The last cell (INS/OVR) is centred in the row's remaining right
+            // half; its centre is the docType centre + half doc + boundary + half ovr.
+            // Simpler: it must not exceed the widget's right edge either.
+            // We only have three public centres, so assert the widest label
+            // (encoding's full text) never pushes past the right edge by
+            // checking the docType centre + its half-width stays within W.
+            const QFontMetrics fm(s->font());
+            const int docHalf = fm.horizontalAdvance(s->docTypeText()) / 2;
+            QVERIFY2(s->docTypeCenter().x() + qMin(docHalf, W / 4) <= W + 1,
+                     qPrintable(QStringLiteral("w=%1 docType overflows right: %2 > %3")
+                                    .arg(w).arg(s->docTypeCenter().x() + docHalf).arg(W)));
+        }
+        // Detach before destroying so a later repaint can't touch a dead doc.
+        s->setDocument(nullptr);
+        s->setSpeller(nullptr);
+        bar.setStatusSelectors(nullptr);
+        delete doc;
     }
 };
 

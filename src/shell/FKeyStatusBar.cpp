@@ -95,6 +95,10 @@ void FKeyStatusBar::setContextHint(const QString& hint)
 {
     m_hintActive = true;
     m_hint = QStringLiteral("F1 Help \u2502 ") + hint;
+    // While the hint is up the four indicators step aside (they share the same
+    // real estate and the hint replaces the whole row's content, spec 7).
+    if (m_selectors)
+        m_selectors->hide();
     refreshLabel();
 }
 
@@ -104,6 +108,8 @@ void FKeyStatusBar::clearContextHint()
         return;
     m_hintActive = false;
     m_hint.clear();
+    if (m_selectors)
+        m_selectors->show();
     refreshLabel();
 }
 

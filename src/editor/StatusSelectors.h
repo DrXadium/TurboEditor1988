@@ -2,6 +2,7 @@
 #pragma once
 #include <QWidget>
 #include <QString>
+#include <array>
 
 namespace KTextEditor { class Document; class View; }
 namespace Sonnet { class Speller; }
@@ -63,6 +64,11 @@ signals:
     void overwriteToggled(bool ovr);
     // Emitted when the user picks a spell dictionary (the language code).
     void spellLanguageChanged(const QString& code);
+    // A dropdown opened (spec 7: the F-key row swaps to a context hint while
+    // it is open). The hint names what the dropdown is for.
+    void dropdownOpened(const QString& hint);
+    // The dropdown closed - the F-key row and the indicators are restored.
+    void dropdownClosed();
 
 protected:
     void paintEvent(QPaintEvent* ev) override;
@@ -74,10 +80,15 @@ private:
     QRect encodingRect() const;
     QRect docTypeRect() const;
     QRect overwriteRect() const;
+    // The four cell widths (natural text width, shrunk proportionally when the
+    // widget is narrower than the content) so no label ever overflows the row.
+    std::array<int, 4> cellWidths() const;
 
     void openDocTypeMenu();
     void openEncodingMenu();
     void openSpellMenu();
+    // Wire a freshly-built menu's show/hide to the context-hint swap signals.
+    void attachHint(QMenu* menu, const QString& hint);
 
     bool m_ovr = false;
     KTextEditor::Document* m_doc = nullptr;
