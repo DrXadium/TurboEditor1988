@@ -22,6 +22,13 @@ public:
     // The text currently on the bar (F-key row or context hint).
     QString displayedText() const { return m_hintActive ? m_hint : m_text; }
 
+    // The four status indicators (spell, encoding, doc type, INS/OVR), hosted
+    // on the right of this row. Owned by the composition root (crt-editor's
+    // StatusSelectors needs KTextEditor, which crt-shell does not link), so it
+    // arrives as an opaque QWidget* and is added as a status-bar widget.
+    void setStatusSelectors(QWidget* selectors);
+    QWidget* statusSelectors() const { return m_selectors; }
+
 protected:
     void paintEvent(QPaintEvent* ev) override;
 
@@ -31,4 +38,5 @@ private:
     QString m_text;
     QString m_hint;
     bool m_hintActive = false;
+    QWidget* m_selectors = nullptr;
 };

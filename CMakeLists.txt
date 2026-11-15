@@ -110,6 +110,8 @@ add_test(NAME tst_input COMMAND tst_input)
 add_library(crt-editor STATIC
   src/editor/EditorTabManager.cpp
   src/editor/EditorTabManager.h
+  src/editor/StatusSelectors.cpp
+  src/editor/StatusSelectors.h
   src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -128,7 +130,7 @@ add_test(NAME tst_tveditor COMMAND tst_tveditor)
 # Status-line selectors: F-row indicators + dropdowns (spell, encoding, doc
 # type, INS/OVR) and the blinking caret. ctest -R tst_statussel
 add_executable(tst_statussel tests/tst_statussel.cpp)
-target_link_libraries(tst_statussel PRIVATE crt-shell Qt6::Test Qt6::Widgets KF6::SonnetCore)
+target_link_libraries(tst_statussel PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::SonnetCore KF6::TextEditor)
 add_test(NAME tst_statussel COMMAND tst_statussel)
 
 # Task 6: CRT settings (C++ model with QSettings persistence + dialog).

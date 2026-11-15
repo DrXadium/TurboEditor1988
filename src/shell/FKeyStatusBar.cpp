@@ -72,6 +72,22 @@ void FKeyStatusBar::setFKeys(const QString& text)
     refreshLabel();
 }
 
+// The four indicators sit on the right of the row, after the F-key label.
+// Added as a status-bar widget with stretch 0 so the F-key label (stretch 1)
+// keeps the leftover space and elides first on narrow windows.
+void FKeyStatusBar::setStatusSelectors(QWidget* selectors)
+{
+    if (m_selectors == selectors)
+        return;
+    if (m_selectors)
+        removeWidget(m_selectors);
+    m_selectors = selectors;
+    if (m_selectors) {
+        m_selectors->show();   // offscreen render skips hidden children
+        addWidget(m_selectors, 0);
+    }
+}
+
 // Spec 7: while a dropdown is open the status line is REPLACED by a context
 // hint for the highlighted item: "F1" red, " Help " black, a black "│", then
 // the hint text in black.
