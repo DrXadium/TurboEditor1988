@@ -542,8 +542,14 @@ private slots:
     // It is currently drawn with TvFrame::glyph(), which renders the font's own
     // small '+' - a few pixels of blue in a two-cell control, dwarfed by the
     // hand-built arrow polygons. The blue INK must fill a substantial fraction
-    // of the control cell (>= 30% of its area).
+    // of the control cell - enough that it never reads as a tiny mark wedged
+    // between the two arrow triangles. 25% is the floor: the flanking arrows
+    // themselves cover ~27%, so a balanced + lands just above 25% (a 30% floor
+    // was calibrated when the + was over-inked at 40% and now conflicts with
+    // matching the arrows).
     void new_tab_plus_glyph_is_large() {
+        ShellWindow shell;   // bundled VGA typeface = the live cell metrics
+        Q_UNUSED(shell);
         TabStrip ts;
         ts.setTabs(QStringList() << "alpha", 0);
         const int cellH = qMax(8, ts.fontMetrics().height());
@@ -558,8 +564,8 @@ private slots:
                 if (isNear(img.pixelColor(x, y), kBlue, 8))
                     ++blue;
         const double frac = double(blue) / double(add.width() * add.height());
-        QVERIFY2(frac >= 0.30,
-                 qPrintable(QStringLiteral("+ glyph covers %1% of the control (want >=30%)")
+        QVERIFY2(frac >= 0.25,
+                 qPrintable(QStringLiteral("+ glyph covers %1% of the control (want >=25%)")
                                 .arg(frac * 100.0, 0, 'f', 1)));
     }
 
@@ -589,6 +595,49 @@ private slots:
         QVERIFY2(addInk >= nextInk,
                  qPrintable(QStringLiteral("+ ink height %1 < arrow height %2")
                                 .arg(addInk).arg(nextInk)));
+    }
+
+    // User bug: the + read as imbalanced - its blue cross covered far MORE
+    // area than the flanking arrow triangles (~40% vs ~29%), so the cell looked
+    // heavier than its neighbours. The + must carry roughly the SAME blue ink
+    // as an arrow cell (balanced), while staying large enough not to regress to
+    // the tiny-mark problem (>= 25% coverage).
+    void plus_blue_ink_is_balanced_with_the_arrows() {
+        // Use the app's bundled VGA typeface so cellW/cellH match what the
+        // live window renders (the default test font is a different size and
+        // hides the imbalance).
+        ShellWindow shell;   // registers PxPlus IBM VGA8 as the app default
+        Q_UNUSED(shell);
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        auto blueCount = [&](const QRect& r) {
+            int blue = 0;
+            for (int y = r.top(); y <= r.bottom(); ++y)
+                for (int x = r.left(); x <= r.right(); ++x)
+                    if (isNear(img.pixelColor(x, y), kBlue, 8))
+                        ++blue;
+            return blue;
+        };
+        const int plusBlue = blueCount(ts.newTabRect());
+        const int arrowBlue = blueCount(ts.nextTabRect());   // reference glyph
+        const double plusFrac = double(plusBlue) / double(ts.newTabRect().width() *
+                                                          ts.newTabRect().height());
+        // Not a tiny mark...
+        QVERIFY2(plusFrac >= 0.25,
+                 qPrintable(QStringLiteral("+ covers only %1% (want >=25%)")
+                                .arg(plusFrac * 100.0, 0, 'f', 1)));
+        // ...and not heavier than the arrow beside it: within +15% of the
+        // arrow's blue ink. The reported imbalance measured 96 vs 70 = +37%,
+        // which read as visually heavier than its neighbours.
+        QVERIFY2(plusBlue <= int(arrowBlue * 1.15),
+                 qPrintable(QStringLiteral("+ blue ink %1 vs arrow %2 - the + is "
+                                           "too heavy (needs more cyan showing)")
+                                .arg(plusBlue).arg(arrowBlue)));
     }
 };
 

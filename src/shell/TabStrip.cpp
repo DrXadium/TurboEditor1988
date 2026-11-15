@@ -69,19 +69,27 @@ static void drawPlus(QPainter& p, const QRect& r, const QColor& ink)
     p.setPen(Qt::NoPen);
     p.setBrush(ink);
     const int cx = r.center().x(), cy = r.center().y();
-    // Arm thickness: a third of the shorter side, at least 2px, so the cross
-    // never collapses to a hairline on a short row.
-    const int arm = qMax(2, qMin(r.width(), r.height()) / 3);
+    // Arm thickness: a FIFTH of the shorter side, at least 2px, so the cross
+    // never collapses to a hairline on a short row. A third made the cross
+    // cover ~40% of the cell against the arrows' ~29%, reading as a heavier
+    // glyph than its neighbours (user: "needs more cyan over it").
+    const int arm = qMax(2, qMin(r.width(), r.height()) / 4);
+    // Reach: full cell minus a pixel, so the cross is as TALL as the flanking
+    // arrow triangles (they are the visual reference).
     const int half = qMin(r.width(), r.height()) / 2 - 1;   // reach from centre
-    const int h = arm / 2;
+    // The arm's half-extent from the centre line. Integer arm/2 truncates an
+    // odd arm (3 -> 1, a 2px bar), which under-inks the cross; derive the bar
+    // from the arm WIDTH so an odd arm keeps its full 3px stroke.
+    const int lo = -(arm / 2);                 // inclusive low edge
+    const int hi = lo + arm - 1;               // inclusive high edge (width = arm)
     // Vertical bar + horizontal bar as one polygon: a plus (two rects unioned).
     QPolygon cross;
-    cross << QPoint(cx - h, cy - half) << QPoint(cx + h, cy - half)
-          << QPoint(cx + h, cy - h)   << QPoint(cx + half, cy - h)
-          << QPoint(cx + half, cy + h) << QPoint(cx + h, cy + h)
-          << QPoint(cx + h, cy + half) << QPoint(cx - h, cy + half)
-          << QPoint(cx - h, cy + h)   << QPoint(cx - half, cy + h)
-          << QPoint(cx - half, cy - h) << QPoint(cx - h, cy - h);
+    cross << QPoint(cx + lo, cy - half) << QPoint(cx + hi, cy - half)
+          << QPoint(cx + hi, cy + lo)   << QPoint(cx + half, cy + lo)
+          << QPoint(cx + half, cy + hi) << QPoint(cx + hi, cy + hi)
+          << QPoint(cx + hi, cy + half) << QPoint(cx + lo, cy + half)
+          << QPoint(cx + lo, cy + hi)   << QPoint(cx - half, cy + hi)
+          << QPoint(cx - half, cy + lo) << QPoint(cx + lo, cy + lo);
     p.drawPolygon(cross);
     p.restore();
 }

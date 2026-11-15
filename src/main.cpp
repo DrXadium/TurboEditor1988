@@ -194,8 +194,6 @@ int main(int argc, char** argv)
         auto* selectors = new StatusSelectors(&shell);
         static Sonnet::Speller speller;   // owns the dictionary list + current lang
         selectors->setSpeller(&speller);
-        if (FKeyStatusBar* fkeys = shell.fkeyStatusBar())
-            fkeys->setStatusSelectors(selectors);
         // Point the indicators at the active view/document now and on change.
         auto repoint = [selectors](KTextEditor::View* v) {
             selectors->setView(v);
@@ -207,6 +205,12 @@ int main(int argc, char** argv)
         };
         if (KTextEditor::View* v0 = tabs.activeView())
             repoint(v0);
+        // Add to the bar AFTER the first repoint: setStatusSelectors lays the
+        // widget out at its sizeHint, which depends on the doc's labels. Adding
+        // it first (with a null doc) made the bar reserve the tiny placeholder
+        // width and never re-measure once the real text arrived.
+        if (FKeyStatusBar* fkeys = shell.fkeyStatusBar())
+            fkeys->setStatusSelectors(selectors);
         QObject::connect(&tabs, &EditorTabManager::activeViewChanged,
                          selectors, repoint);
         // INS/OVR click toggles the view's overwrite mode (via Kate's Insert

@@ -5,6 +5,7 @@
 #include <QFontMetrics>
 #include <QMenu>
 #include <QStringConverter>
+#include "src/shell/BorlandMenu.h"
 #include <sonnet/speller.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -42,6 +43,7 @@ void StatusSelectors::setDocument(KTextEditor::Document* doc)
         return;
     m_doc = doc;
     update();
+    updateGeometry();   // docType/encoding text feeds sizeHint - re-measure
 }
 
 void StatusSelectors::setView(KTextEditor::View* view)
@@ -58,6 +60,7 @@ void StatusSelectors::setSpellLanguage(const QString& code)
         return;
     m_spell = code;
     update();
+    updateGeometry();   // the spell description can be long - re-measure
 }
 
 void StatusSelectors::setSpeller(Sonnet::Speller* speller)
@@ -66,6 +69,7 @@ void StatusSelectors::setSpeller(Sonnet::Speller* speller)
         return;
     m_speller = speller;
     update();
+    updateGeometry();   // dictionary description changes the label - re-measure
 }
 
 QString StatusSelectors::overwriteText() const
@@ -114,10 +118,15 @@ QSize StatusSelectors::sizeHint() const
     return QSize(w, qMax(10, fm.height()));
 }
 
+// The status bar must NEVER squeeze us below our content: a stretch-0 widget
+// is laid out at its minimumSizeHint when space is tight, and a 60px minimum
+// let QStatusBar crush all four labels into a sliver (they rendered as tiny
+// clipped clusters). Reserve the full natural sizeHint instead - the F-key
+// label (stretch 1) elides first on narrow windows, exactly as the bar's own
+// comment promises.
 QSize StatusSelectors::minimumSizeHint() const
 {
-    return QSize(qMax(60, fontMetrics().horizontalAdvance(overwriteText()) + 2 * kGap),
-                 qMax(10, fontMetrics().height()));
+    return sizeHint();
 }
 
 QPoint StatusSelectors::docTypeCenter() const
@@ -236,7 +245,7 @@ void StatusSelectors::openDocTypeMenu()
     if (!m_doc)
         return;
     delete m_menu;
-    m_menu = new QMenu(this);
+    m_menu = new BorlandMenu(this);   // TV dropdown, same as the menu bar's
     const QStringList modes = m_doc->highlightingModes();
     const QString current = m_doc->highlightingMode();
     for (const QString& m : modes) {
@@ -286,7 +295,7 @@ void StatusSelectors::openEncodingMenu()
     if (!m_doc)
         return;
     delete m_menu;
-    m_menu = new QMenu(this);
+    m_menu = new BorlandMenu(this);   // TV dropdown, same as the menu bar's
     const QString current = m_doc->encoding();
     // Qt6 exposes the encoding enum, not a "list all" - walk the named values.
     static const struct { QStringConverter::Encoding e; const char* name; } kEncodings[] = {
@@ -333,7 +342,7 @@ void StatusSelectors::openSpellMenu()
     if (!m_speller)
         return;
     delete m_menu;
-    m_menu = new QMenu(this);
+    m_menu = new BorlandMenu(this);   // TV dropdown, same as the menu bar's
     const auto dicts = m_speller->availableDictionaries();   // description -> code
     const QString currentCode = m_speller->language();
     for (auto it = dicts.constBegin(); it != dicts.constEnd(); ++it) {

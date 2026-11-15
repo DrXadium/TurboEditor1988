@@ -8,6 +8,7 @@
 #include "src/editor/StatusSelectors.h"
 #include "src/editor/EditorTabManager.h"
 #include "src/shell/FKeyStatusBar.h"
+#include "src/shell/BorlandMenu.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -403,6 +404,92 @@ private slots:
         s->setDocument(nullptr);
         s->setSpeller(nullptr);
         bar.setStatusSelectors(nullptr);
+        delete doc;
+    }
+
+    // Bug: the status-bar entries were clipped to a sliver. QStatusBar gives a
+    // stretch-0 widget its minimumSizeHint when space is tight; ours was only
+    // ~60px while the labels need ~293px, so every label was crushed. The bar
+    // must reserve the natural sizeHint (eliding the F-key text instead).
+    void selectors_get_their_natural_width_not_the_minimum()
+    {
+        KTextEditor::Document* doc =
+            KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        Sonnet::Speller speller;
+        FKeyStatusBar bar;
+        auto* s = new StatusSelectors(&bar);
+        s->setDocument(doc);
+        s->setSpeller(&speller);
+        s->setSpellLanguage(QStringLiteral("en_US"));
+        bar.setStatusSelectors(s);
+        s->show();
+        // A window comfortably wide enough for the F-key text + all four
+        // indicators (1280, the app's real width).
+        bar.resize(1280, 20);
+        bar.show();
+        QCoreApplication::processEvents();
+
+        const QSize natural = s->sizeHint();
+        const QSize minimum = s->minimumSizeHint();
+        // The invariant: minimumSizeHint must not be smaller than sizeHint -
+        // otherwise the status bar can legally squeeze the widget below its
+        // content and clip the labels (the reported bug).
+        QVERIFY2(minimum.width() >= natural.width(),
+                 qPrintable(QStringLiteral("minimumSizeHint width %1 < sizeHint width %2 "
+                                           "-> the bar may crush the indicators")
+                                .arg(minimum.width()).arg(natural.width())));
+        // And the widget must actually be laid out at (at least) that width.
+        const QRect sRect = s->geometry();
+        QVERIFY2(sRect.width() >= natural.width(),
+                 qPrintable(QStringLiteral("selectors laid out %1px wide, need %2px "
+                                           "(labels are clipped)")
+                                .arg(sRect.width()).arg(natural.width())));
+        // The rightmost label (INS/OVR) must fit inside the laid-out widget.
+        const QFontMetrics fm(s->font());
+        const int ovrW = fm.horizontalAdvance(s->overwriteText());
+        QVERIFY2(s->docTypeCenter().x() + ovrW <= sRect.width() + 1,
+                 qPrintable(QStringLiteral("INS/OVR clipped: right edge %1 > width %2")
+                                .arg(s->docTypeCenter().x() + ovrW).arg(sRect.width())));
+
+        s->setDocument(nullptr);
+        s->setSpeller(nullptr);
+        bar.setStatusSelectors(nullptr);
+        delete doc;
+    }
+
+    // User bug: the status-bar dropdowns rendered as plain Qt menus, not like
+    // the menu bar's Turbo Vision dropdowns. They must be BorlandMenu (the
+    // self-painted TV dropdown) so they match.
+    void dropdowns_are_borland_styled_like_the_menu_bar()
+    {
+        KTextEditor::Document* doc =
+            KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        StatusSelectors s;
+        s.setDocument(doc);
+
+        // Doc-type dropdown.
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.docTypeCenter());
+        QCoreApplication::processEvents();
+        QMenu* docMenu = s.openMenu();
+        QVERIFY2(docMenu, "doc-type dropdown did not open");
+        QVERIFY2(qobject_cast<BorlandMenu*>(docMenu),
+                 qPrintable(QStringLiteral("doc-type dropdown is a %1, want BorlandMenu")
+                                .arg(QString::fromLatin1(docMenu->metaObject()->className()))));
+        docMenu->hide();
+
+        // Encoding dropdown.
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.encodingCenter());
+        QCoreApplication::processEvents();
+        QMenu* encMenu = s.openMenu();
+        QVERIFY2(encMenu, "encoding dropdown did not open");
+        QVERIFY2(qobject_cast<BorlandMenu*>(encMenu),
+                 qPrintable(QStringLiteral("encoding dropdown is a %1, want BorlandMenu")
+                                .arg(QString::fromLatin1(encMenu->metaObject()->className()))));
+        encMenu->hide();
+
+        s.setDocument(nullptr);
         delete doc;
     }
 };
