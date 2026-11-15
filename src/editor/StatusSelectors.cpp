@@ -4,6 +4,7 @@
 #include <QMouseEvent>
 #include <QFontMetrics>
 #include <QMenu>
+#include <QStringConverter>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
 
@@ -170,7 +171,11 @@ void StatusSelectors::mousePressEvent(QMouseEvent* ev)
         openDocTypeMenu();
         return;
     }
-    // The other two open their dropdowns (wired in later tasks).
+    if (encodingRect().contains(ev->pos())) {
+        openEncodingMenu();
+        return;
+    }
+    // The spell indicator opens its dropdown (wired in a later task).
     QWidget::mousePressEvent(ev);
 }
 
@@ -197,6 +202,54 @@ void StatusSelectors::openDocTypeMenu()
     });
     // Anchor below the indicator, clamped inside the top-level window.
     const QPoint global = mapToGlobal(docTypeRect().topLeft());
+    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
+                                 : QRect(global, size());
+    QPoint pos = global;
+    const QSize ms = m_menu->sizeHint();
+    if (pos.x() + ms.width() > shell.right())
+        pos.setX(shell.right() - ms.width());
+    if (pos.x() < shell.left())
+        pos.setX(shell.left());
+    if (pos.y() + ms.height() > shell.bottom())
+        pos.setY(global.y() - ms.height());
+    m_menu->popup(pos);
+}
+
+// The encoding switcher: every encoding Qt can name, as a scrollable menu.
+// Pick RECORDS the encoding via Document::setEncoding() - Kate applies it on
+// the next save/reload. It deliberately does NOT re-decode the open buffer
+// (that would drop unsaved edits); see the spec's locked decisions.
+void StatusSelectors::openEncodingMenu()
+{
+    if (!m_doc)
+        return;
+    delete m_menu;
+    m_menu = new QMenu(this);
+    const QString current = m_doc->encoding();
+    // Qt6 exposes the encoding enum, not a "list all" - walk the named values.
+    static const struct { QStringConverter::Encoding e; const char* name; } kEncodings[] = {
+        { QStringConverter::Utf8, "UTF-8" },
+        { QStringConverter::Latin1, "ISO-8859-1" },
+        { QStringConverter::System, "System" },
+    };
+    // "Default" = the document uses the editor's own default (empty name).
+    QAction* def = m_menu->addAction(QStringLiteral("Default"));
+    def->setData(QString());
+    def->setCheckable(true);
+    def->setChecked(current.isEmpty());
+    for (const auto& enc : kEncodings) {
+        const QString name = QString::fromUtf8(enc.name);
+        QAction* a = m_menu->addAction(name);
+        a->setData(name);
+        a->setCheckable(true);
+        a->setChecked(current == name);
+    }
+    connect(m_menu, &QMenu::triggered, this, [this](QAction* a) {
+        // Record only: setEncoding() takes effect on save/reload, never here.
+        if (m_doc && a)
+            m_doc->setEncoding(a->data().toString());
+    });
+    const QPoint global = mapToGlobal(encodingRect().topLeft());
     const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
                                  : QRect(global, size());
     QPoint pos = global;

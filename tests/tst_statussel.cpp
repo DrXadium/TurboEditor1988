@@ -129,6 +129,66 @@ private slots:
         menu->hide();
         delete doc;
     }
+
+    // Task 4: the encoding label shows the document's encoding.
+    void encoding_label_shows_current_encoding()
+    {
+        KTextEditor::Document* doc = KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        doc->setText(QStringLiteral("hello"));
+        QVERIFY2(doc->setEncoding(QStringLiteral("UTF-8")), "could not set UTF-8");
+
+        StatusSelectors s;
+        s.setDocument(doc);
+        QCOMPARE(s.encodingText(), QStringLiteral("UTF-8"));
+        delete doc;
+    }
+
+    // Task 4 (data-loss guard): picking an encoding RECORDS it for the next
+    // save/reload but must NOT touch the open buffer. Kate's setEncoding only
+    // takes effect on reload; re-decoding here would drop unsaved edits.
+    void encoding_pick_records_without_touching_text()
+    {
+        KTextEditor::Document* doc = KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        const QString seeded = QStringLiteral("unsaved edits stay put");
+        doc->setText(seeded);
+        // Pin a known starting encoding so the pick is unambiguous (a fresh
+        // doc's encoding() is "" and Kate may normalize it after setText).
+        QVERIFY2(doc->setEncoding(QStringLiteral("UTF-8")), "could not set UTF-8");
+
+        StatusSelectors s;
+        s.setDocument(doc);
+
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.encodingCenter());
+        QCoreApplication::processEvents();
+        QMenu* menu = s.openMenu();
+        QVERIFY2(menu && menu->isVisible(), "clicking the encoding indicator opened no menu");
+
+        // Pick an encoding different from the current one.
+        const QString before = doc->encoding();
+        QString pick;
+        QAction* pickAction = nullptr;
+        for (QAction* a : menu->actions()) {
+            const QString t = a->text();
+            // Skip "Default" (its stored value is "", not its display text);
+            // pick a real encoding whose display text equals its stored value.
+            if (t != before && !t.isEmpty() && t != QStringLiteral("Default")) {
+                pick = t; pickAction = a; break;
+            }
+        }
+        QVERIFY2(!pick.isEmpty(), "no alternate encoding to pick");
+        pickAction->trigger();
+        QCoreApplication::processEvents();
+
+        // The encoding was recorded...
+        QCOMPARE(doc->encoding(), pick);
+        // ...and the buffer is byte-for-byte untouched (no reload, no re-decode).
+        QCOMPARE(doc->text(), seeded);
+
+        menu->hide();
+        delete doc;
+    }
 };
 
 QTEST_MAIN(TstStatusSel)

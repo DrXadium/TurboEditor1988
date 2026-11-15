@@ -70,6 +70,7 @@ private:
     QRect overwriteRect() const;
 
     void openDocTypeMenu();
+    void openEncodingMenu();
 
     bool m_ovr = false;
     KTextEditor::Document* m_doc = nullptr;
