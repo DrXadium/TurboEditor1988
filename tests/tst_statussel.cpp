@@ -189,6 +189,63 @@ private slots:
         menu->hide();
         delete doc;
     }
+
+    // Task 5: the spell label shows the current dictionary's human-readable
+    // description (e.g. "English (United States)"), not the raw code.
+    void spell_label_shows_current_dictionary()
+    {
+        Sonnet::Speller speller;
+        const auto dicts = speller.availableDictionaries();
+        QVERIFY2(!dicts.isEmpty(), "no dictionaries");
+        // availableDictionaries() is description -> code; use the first entry.
+        const QString desc = dicts.firstKey();
+        const QString code = dicts.value(desc);
+        speller.setLanguage(code);
+
+        StatusSelectors s;
+        s.setSpeller(&speller);   // the label maps code -> description via the speller
+        s.setSpellLanguage(code);
+        QCOMPARE(s.spellText(), desc);
+    }
+
+    // Task 5: the dropdown lists every dictionary description, and picking one
+    // sets the speller's language to that dictionary's code.
+    void spell_dropdown_lists_dictionaries_and_applies_pick()
+    {
+        Sonnet::Speller speller;
+        const auto dicts = speller.availableDictionaries();
+        QVERIFY2(dicts.size() > 1, "need at least two dictionaries to pick between");
+
+        StatusSelectors s;
+        s.setSpeller(&speller);
+
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.spellCenter());
+        QCoreApplication::processEvents();
+        QMenu* menu = s.openMenu();
+        QVERIFY2(menu && menu->isVisible(), "clicking the spell indicator opened no menu");
+
+        QStringList menuTexts;
+        for (QAction* a : menu->actions())
+            menuTexts << a->text();
+        for (const QString& desc : dicts.keys())
+            QVERIFY2(menuTexts.contains(desc),
+                     qPrintable(QStringLiteral("dictionary '%1' missing from the dropdown").arg(desc)));
+
+        // Pick a dictionary different from the current one.
+        const QString currentCode = speller.language();
+        QString pickDesc;
+        QAction* pickAction = nullptr;
+        for (QAction* a : menu->actions()) {
+            const QString desc = a->text();
+            if (dicts.value(desc) != currentCode) { pickDesc = desc; pickAction = a; break; }
+        }
+        QVERIFY2(pickAction, "no alternate dictionary to pick");
+        pickAction->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(speller.language(), dicts.value(pickDesc));
+
+        menu->hide();
+    }
 };
 
 QTEST_MAIN(TstStatusSel)

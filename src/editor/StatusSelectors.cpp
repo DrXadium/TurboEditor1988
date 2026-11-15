@@ -5,6 +5,7 @@
 #include <QFontMetrics>
 #include <QMenu>
 #include <QStringConverter>
+#include <sonnet/speller.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
 
@@ -57,6 +58,14 @@ void StatusSelectors::setSpellLanguage(const QString& code)
     update();
 }
 
+void StatusSelectors::setSpeller(Sonnet::Speller* speller)
+{
+    if (m_speller == speller)
+        return;
+    m_speller = speller;
+    update();
+}
+
 QString StatusSelectors::overwriteText() const
 {
     return m_ovr ? QStringLiteral("OVR") : QStringLiteral("INS");
@@ -80,7 +89,17 @@ QString StatusSelectors::encodingText() const
 
 QString StatusSelectors::spellText() const
 {
-    return m_spell.isEmpty() ? QStringLiteral("-") : m_spell;
+    if (m_spell.isEmpty())
+        return QStringLiteral("-");
+    // Show the human-readable description ("English (United States)"), not the
+    // raw code ("en_US"), when the speller can map it.
+    if (m_speller) {
+        const auto dicts = m_speller->availableDictionaries();
+        const QString desc = dicts.key(m_spell);
+        if (!desc.isEmpty())
+            return desc;
+    }
+    return m_spell;
 }
 
 QSize StatusSelectors::sizeHint() const
@@ -175,7 +194,10 @@ void StatusSelectors::mousePressEvent(QMouseEvent* ev)
         openEncodingMenu();
         return;
     }
-    // The spell indicator opens its dropdown (wired in a later task).
+    if (spellRect().contains(ev->pos())) {
+        openSpellMenu();
+        return;
+    }
     QWidget::mousePressEvent(ev);
 }
 
@@ -250,6 +272,42 @@ void StatusSelectors::openEncodingMenu()
             m_doc->setEncoding(a->data().toString());
     });
     const QPoint global = mapToGlobal(encodingRect().topLeft());
+    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
+                                 : QRect(global, size());
+    QPoint pos = global;
+    const QSize ms = m_menu->sizeHint();
+    if (pos.x() + ms.width() > shell.right())
+        pos.setX(shell.right() - ms.width());
+    if (pos.x() < shell.left())
+        pos.setX(shell.left());
+    if (pos.y() + ms.height() > shell.bottom())
+        pos.setY(global.y() - ms.height());
+    m_menu->popup(pos);
+}
+
+// The spellcheck-language dropdown: every dictionary Sonnet can find, by its
+// human-readable description. Picking one sets the speller's language code.
+void StatusSelectors::openSpellMenu()
+{
+    if (!m_speller)
+        return;
+    delete m_menu;
+    m_menu = new QMenu(this);
+    const auto dicts = m_speller->availableDictionaries();   // description -> code
+    const QString currentCode = m_speller->language();
+    for (auto it = dicts.constBegin(); it != dicts.constEnd(); ++it) {
+        QAction* a = m_menu->addAction(it.key());
+        a->setData(it.value());
+        a->setCheckable(true);
+        a->setChecked(it.value() == currentCode);
+    }
+    connect(m_menu, &QMenu::triggered, this, [this](QAction* a) {
+        if (m_speller && a) {
+            m_speller->setLanguage(a->data().toString());
+            emit spellLanguageChanged(a->data().toString());
+        }
+    });
+    const QPoint global = mapToGlobal(spellRect().topLeft());
     const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
                                  : QRect(global, size());
     QPoint pos = global;

@@ -4,6 +4,7 @@
 #include <QString>
 
 namespace KTextEditor { class Document; class View; }
+namespace Sonnet { class Speller; }
 class QMenu;
 
 // The four status-line indicators that live on the F-key row, right of the
@@ -35,6 +36,9 @@ public:
     // The spell dictionary code (e.g. "en_US"); empty = unset.
     void setSpellLanguage(const QString& code);
     QString spellLanguage() const { return m_spell; }
+    // The speller these indicators read the dictionary list from (not owned).
+    void setSpeller(Sonnet::Speller* speller);
+    Sonnet::Speller* speller() const { return m_speller; }
 
     // Label text accessors, exposed for tests.
     QString docTypeText() const;
@@ -57,6 +61,8 @@ public:
 signals:
     // Emitted when the user clicks the INS/OVR indicator (toggles overwrite).
     void overwriteToggled(bool ovr);
+    // Emitted when the user picks a spell dictionary (the language code).
+    void spellLanguageChanged(const QString& code);
 
 protected:
     void paintEvent(QPaintEvent* ev) override;
@@ -71,10 +77,12 @@ private:
 
     void openDocTypeMenu();
     void openEncodingMenu();
+    void openSpellMenu();
 
     bool m_ovr = false;
     KTextEditor::Document* m_doc = nullptr;
     KTextEditor::View* m_view = nullptr;
     QString m_spell;
+    Sonnet::Speller* m_speller = nullptr;   // not owned
     QMenu* m_menu = nullptr;   // owned by this widget (parented)
 };
