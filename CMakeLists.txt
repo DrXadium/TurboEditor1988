@@ -19,6 +19,10 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 6.10 REQUIRED COMPONENTS Gui Widgets Qml Quick OpenGL ShaderTools Test)
 # Task 5: Kate text editing (tabs, zoom, tools).
 find_package(KF6TextEditor REQUIRED)
+# Status-line selectors: the spellcheck-language indicator reads the dictionary
+# list from Sonnet (installed in the crt-kate distrobox as kf6-sonnet 6.30.0).
+# The package is KF6Sonnet; it provides the KF6::SonnetCore target.
+find_package(KF6Sonnet REQUIRED)
 
 enable_testing()
 
@@ -59,6 +63,7 @@ add_library(crt-shell STATIC
 )
 target_include_directories(crt-shell PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(crt-shell PUBLIC Qt6::Gui Qt6::Widgets)
+target_link_libraries(crt-shell PUBLIC KF6::SonnetCore)
 qt_add_resources(crt-shell "shell_qss"
     PREFIX "/"
     BASE src/shell
@@ -119,6 +124,12 @@ add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
 add_executable(tst_tveditor tests/tst_tveditor.cpp)
 target_link_libraries(tst_tveditor PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_tveditor COMMAND tst_tveditor)
+
+# Status-line selectors: F-row indicators + dropdowns (spell, encoding, doc
+# type, INS/OVR) and the blinking caret. ctest -R tst_statussel
+add_executable(tst_statussel tests/tst_statussel.cpp)
+target_link_libraries(tst_statussel PRIVATE crt-shell Qt6::Test Qt6::Widgets KF6::SonnetCore)
+add_test(NAME tst_statussel COMMAND tst_statussel)
 
 # Task 6: CRT settings (C++ model with QSettings persistence + dialog).
 add_library(crt-settings STATIC
