@@ -28,14 +28,17 @@
 #include "src/shell/RightScrollBar.h"
 #include "src/shell/Minimap.h"
 #include "src/shell/BottomBand.h"
+#include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
+#include "src/editor/StatusSelectors.h"
 #include "src/settings/CrtSettings.h"
 #include "src/settings/SettingsDialog.h"
 #include "src/session/SessionManager.h"
 #include "src/autosave/AutosaveService.h"
 #include <ktexteditor/view.h>
 #include <ktexteditor/document.h>
+#include <sonnet/speller.h>
 #include <cstdio>
 
 int main(int argc, char** argv)
@@ -181,6 +184,41 @@ int main(int argc, char** argv)
         }
         QObject::connect(&tabs, &EditorTabManager::activeCursorPositionChanged,
                          band, showCursor);
+    }
+    // Status-line selectors (spec 2026-11-14): the four F-row indicators -
+    // spell language, encoding, doc type, INS/OVR. Hosted on the right of the
+    // FKeyStatusBar. Re-pointed at the active view/document on every tab
+    // change (activeViewChanged) so none of them freeze on the first view (the
+    // L:C band bug class).
+    {
+        auto* selectors = new StatusSelectors(&shell);
+        static Sonnet::Speller speller;   // owns the dictionary list + current lang
+        selectors->setSpeller(&speller);
+        if (FKeyStatusBar* fkeys = shell.fkeyStatusBar())
+            fkeys->setStatusSelectors(selectors);
+        // Point the indicators at the active view/document now and on change.
+        auto repoint = [selectors](KTextEditor::View* v) {
+            selectors->setView(v);
+            selectors->setDocument(v ? v->document() : nullptr);
+            if (v && v->viewMode() == KTextEditor::View::NormalModeOverwrite)
+                selectors->setOverwrite(true);
+            else
+                selectors->setOverwrite(false);
+        };
+        if (KTextEditor::View* v0 = tabs.activeView())
+            repoint(v0);
+        QObject::connect(&tabs, &EditorTabManager::activeViewChanged,
+                         selectors, repoint);
+        // INS/OVR click toggles the view's overwrite mode (via Kate's Insert
+        // action, which the bridge already dispatches - KTextEditor::View has
+        // isOverwriteMode() but no setter; the toggle is Kate's Insert action).
+        QObject::connect(selectors, &StatusSelectors::overwriteToggled, &tabs,
+                         [&tabs](bool) {
+                             // Fire Kate's Insert toggle (shortcut Qt::Key_Insert),
+                             // which flips isOverwriteMode() on the active view.
+                             tabs.triggerActiveViewShortcut(
+                                 QKeySequence(Qt::Key_Insert));
+                         });
     }
     // Seed the strip with the initial tab (created by the manager ctor).
     if (TabStrip* strip0 = shell.tabStrip()) {

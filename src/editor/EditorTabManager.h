@@ -113,6 +113,10 @@ signals:
     // this; binding a listener to the FIRST view instead left the indicator
     // frozen at 1:1 as soon as a session restored more than one file.
     void activeCursorPositionChanged(int line, int column);
+    // Emitted whenever the active view changes (new tab, switch, close). The
+    // status-line indicators re-point at the new view/document on this, so
+    // none of them freeze on the first view (the L:C band bug class).
+    void activeViewChanged(KTextEditor::View* view);
     // Emitted whenever the active document's history changes, so the Edit menu
     // can enable/disable Undo and Redo.
     void historyChanged(bool canUndo, bool canRedo);

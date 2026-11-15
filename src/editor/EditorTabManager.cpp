@@ -289,6 +289,10 @@ void EditorTabManager::trackActiveCursor()
         });
     const KTextEditor::Cursor c = v->cursorPosition();
     emit activeCursorPositionChanged(c.line(), c.column());
+    // The active view changed - let listeners (the status-line indicators)
+    // re-point at the new view/document so none of them go stale (the L:C
+    // band bug class). Every tab-change path funnels through here.
+    emit activeViewChanged(v);
 }
 
 bool EditorTabManager::triggerActiveViewShortcut(const QKeySequence& seq)

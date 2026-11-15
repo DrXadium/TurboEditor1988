@@ -6,8 +6,10 @@
 #include <QImage>
 #include <QMenu>
 #include "src/editor/StatusSelectors.h"
+#include "src/editor/EditorTabManager.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
+#include <ktexteditor/view.h>
 
 namespace {
 const QColor kOvrRed(0xAA, 0x00, 0x00);
@@ -245,6 +247,53 @@ private slots:
         QCOMPARE(speller.language(), dicts.value(pickDesc));
 
         menu->hide();
+    }
+
+    // Task 7: switching the active tab must EMIT activeViewChanged so the
+    // composition root can re-point every indicator at the new view/document.
+    void active_view_changed_signal_fires_on_tab_switch()
+    {
+        EditorTabManager m;
+        QSignalSpy spy(&m, &EditorTabManager::activeViewChanged);
+        QVERIFY(m.activeView());
+        spy.clear();
+
+        m.newDocument();   // switches to a fresh tab
+        QCoreApplication::processEvents();
+        QVERIFY2(spy.count() >= 1,
+                 qPrintable(QStringLiteral("activeViewChanged fired %1 times on tab switch")
+                                .arg(spy.count())));
+        // The emitted view is the new active view.
+        QCOMPARE(spy.last().at(0).value<KTextEditor::View*>(), m.activeView());
+    }
+
+    // Task 7: re-pointing the indicators at a new document updates all four
+    // labels (doc type, encoding, and the INS/OVR + spell which follow their
+    // own sources). This is what the composition root does on activeViewChanged.
+    void indicators_follow_a_repointed_document()
+    {
+        KTextEditor::Document* docA = KTextEditor::Editor::instance()->createDocument(nullptr);
+        KTextEditor::Document* docB = KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(docA && docB);
+        docA->setText(QStringLiteral("aaa"));
+        docB->setText(QStringLiteral("bbb"));
+        QVERIFY(docA->setHighlightingMode(QStringLiteral("C++")));
+        QVERIFY(docB->setHighlightingMode(QStringLiteral("Python")));
+        QVERIFY(docA->setEncoding(QStringLiteral("UTF-8")));
+        QVERIFY(docB->setEncoding(QStringLiteral("ISO-8859-1")));
+
+        StatusSelectors s;
+        s.setDocument(docA);
+        QCOMPARE(s.docTypeText(), QStringLiteral("C++"));
+        QCOMPARE(s.encodingText(), QStringLiteral("UTF-8"));
+
+        // Re-point at B (what activeViewChanged triggers in main.cpp).
+        s.setDocument(docB);
+        QCOMPARE(s.docTypeText(), QStringLiteral("Python"));
+        QCOMPARE(s.encodingText(), QStringLiteral("ISO-8859-1"));
+
+        delete docA;
+        delete docB;
     }
 };
 
