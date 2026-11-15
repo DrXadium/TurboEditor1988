@@ -2,6 +2,7 @@
 #include <QGuiApplication>
 #include <QApplication>
 #include <QFocusEvent>
+#include <QKeyEvent>
 #include <QClipboard>
 #include "EditorTabManager.h"
 #include <ktexteditor/editor.h>
@@ -326,6 +327,51 @@ bool EditorTabManager::triggerActiveViewShortcut(const QKeySequence& seq)
     return false;
 }
 
+// User bug: Ctrl+Z does nothing while the QWidget editor has focus. The QML
+// Keys handler (which reaches ContentBridge::forwardKeyEvent, and through it
+// the menu's undo action) only runs while the QML item owns focus; once a click
+// lands in the embedded view, the keystroke goes to KTextEditor, which in this
+// build has no undo API and silently drops the chord. Route Ctrl+Z / Ctrl+Y
+// from the focused view straight to our own undo/redo.
+namespace {
+class UndoKeyRouter : public QObject
+{
+public:
+    UndoKeyRouter(KTextEditor::View* view, EditorTabManager* mgr)
+        : QObject(view), m_mgr(mgr)
+    {
+        view->installEventFilter(this);
+    }
+    bool eventFilter(QObject* watched, QEvent* ev) override
+    {
+        if (ev->type() == QEvent::KeyPress) {
+            auto* ke = static_cast<QKeyEvent*>(ev);
+            if (ke->modifiers() == Qt::ControlModifier) {
+                if (ke->key() == Qt::Key_Z) {
+                    m_mgr->undo();
+                    return true;
+                }
+                if (ke->key() == Qt::Key_Y) {
+                    m_mgr->redo();
+                    return true;
+                }
+            }
+        }
+        return QObject::eventFilter(watched, ev);
+    }
+
+private:
+    EditorTabManager* m_mgr;
+};
+} // namespace
+
+void EditorTabManager::installKeyRouting(KTextEditor::View* view)
+{
+    if (!view)
+        return;
+    new UndoKeyRouter(view, this);
+}
+
 void EditorTabManager::newDocument()
 {
     KTextEditor::Document* doc = createDoc();
@@ -343,6 +389,7 @@ void EditorTabManager::newDocument()
     m_container->setCurrentIndex(m_active);
     syncTabs();
     applyTvStyle(view);
+    installKeyRouting(view);
     trackActiveCursor();
 }
 
@@ -361,6 +408,7 @@ void EditorTabManager::openFile(const QUrl& url)
     m_container->setCurrentIndex(m_active);
     syncTabs();
     applyTvStyle(view);
+    installKeyRouting(view);
     trackActiveCursor();
 }
 

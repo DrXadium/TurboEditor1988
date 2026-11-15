@@ -639,6 +639,46 @@ private slots:
                                            "too heavy (needs more cyan showing)")
                                 .arg(plusBlue).arg(arrowBlue)));
     }
+
+    // User bug: the + sat slightly high and ran to the very edge of its cell.
+    // It must be SMALLER (not touching the block's top/bottom) and vertically
+    // CENTERED: the ink's bounding-box centre must match the block's centre.
+    void plus_is_smaller_and_vertically_centered() {
+        ShellWindow shell;   // bundled VGA typeface = the live cell metrics
+        Q_UNUSED(shell);
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        const QRect add = ts.newTabRect();
+        int minY = INT_MAX, maxY = INT_MIN;
+        for (int y = add.top(); y <= add.bottom(); ++y)
+            for (int x = add.left(); x <= add.right(); ++x)
+                if (isNear(img.pixelColor(x, y), kBlue, 8)) {
+                    minY = qMin(minY, y);
+                    maxY = qMax(maxY, y);
+                }
+        QVERIFY2(minY <= maxY, "+ has no blue ink");
+        const int inkMid = (minY + maxY) / 2;
+        const int blockMid = (add.top() + add.bottom()) / 2;
+        // Centered: the ink's midpoint must be the block's midpoint, exactly.
+        QVERIFY2(inkMid == blockMid,
+                 qPrintable(QStringLiteral("+ ink centre %1 vs block centre %2 "
+                                           "(not vertically centred)")
+                                .arg(inkMid).arg(blockMid)));
+        // Smaller: the cross must leave breathing room inside the block - at
+        // least one clear pixel above and below - not touch the top edge (the
+        // old cross spanned nearly the whole cell height).
+        const int topGap = minY - add.top();
+        const int botGap = add.bottom() - maxY;
+        QVERIFY2(topGap >= 1 && botGap >= 1,
+                 qPrintable(QStringLiteral("+ touches the block edge (top gap %1, "
+                                           "bottom gap %2) - should be smaller")
+                                .arg(topGap).arg(botGap)));
+    }
 };
 
 int main(int argc, char** argv)

@@ -95,17 +95,9 @@ QString StatusSelectors::encodingText() const
 
 QString StatusSelectors::spellText() const
 {
-    if (m_spell.isEmpty())
-        return QStringLiteral("-");
-    // Show the human-readable description ("English (United States)"), not the
-    // raw code ("en_US"), when the speller can map it.
-    if (m_speller) {
-        const auto dicts = m_speller->availableDictionaries();
-        const QString desc = dicts.key(m_spell);
-        if (!desc.isEmpty())
-            return desc;
-    }
-    return m_spell;
+    // The user wants the SHORT code (e.g. "en_GB"), not the long description -
+    // it fits the status row and reads like a language tag.
+    return m_spell.isEmpty() ? QStringLiteral("-") : m_spell;
 }
 
 QSize StatusSelectors::sizeHint() const
@@ -258,6 +250,9 @@ void StatusSelectors::openDocTypeMenu()
         if (m_doc && a)
             m_doc->setHighlightingMode(a->data().toString());
     });
+    // Keep the dropdown a narrow column (like the encoding menu). Kate's
+    // longest mode names otherwise stretch it to the viewport width.
+    m_menu->setMaximumWidth(360);
     // Anchor below the indicator, clamped inside the top-level window.
     const QPoint global = mapToGlobal(docTypeRect().topLeft());
     const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())

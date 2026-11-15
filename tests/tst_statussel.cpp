@@ -194,8 +194,9 @@ private slots:
         delete doc;
     }
 
-    // Task 5: the spell label shows the current dictionary's human-readable
-    // description (e.g. "English (United States)"), not the raw code.
+    // The spell label shows the current dictionary's SHORT code (e.g. "en_GB"),
+    // not the long human-readable description - the user wants the compact
+    // form that fits the status row.
     void spell_label_shows_current_dictionary()
     {
         Sonnet::Speller speller;
@@ -207,9 +208,9 @@ private slots:
         speller.setLanguage(code);
 
         StatusSelectors s;
-        s.setSpeller(&speller);   // the label maps code -> description via the speller
+        s.setSpeller(&speller);
         s.setSpellLanguage(code);
-        QCOMPARE(s.spellText(), desc);
+        QCOMPARE(s.spellText(), code);
     }
 
     // Task 5: the dropdown lists every dictionary description, and picking one
@@ -488,6 +489,49 @@ private slots:
                  qPrintable(QStringLiteral("encoding dropdown is a %1, want BorlandMenu")
                                 .arg(QString::fromLatin1(encMenu->metaObject()->className()))));
         encMenu->hide();
+
+        s.setDocument(nullptr);
+        delete doc;
+    }
+
+    // User bug: the doc-type dropdown sized to Kate's LONGEST highlighting mode
+    // name and filled the whole viewport. It must be a narrow column like the
+    // encoding dropdown, not a viewport-wide list.
+    void doc_type_dropdown_is_a_narrow_column_not_the_whole_viewport()
+    {
+        KTextEditor::Document* doc =
+            KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        StatusSelectors s;
+        s.setDocument(doc);
+
+        // Open the encoding dropdown first to get the reference "narrow" width.
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.encodingCenter());
+        QCoreApplication::processEvents();
+        QMenu* encMenu = s.openMenu();
+        QVERIFY(encMenu);
+        const int encW = encMenu->width();   // actual rendered width after popup
+        encMenu->hide();
+
+        // Open the doc-type dropdown.
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.docTypeCenter());
+        QCoreApplication::processEvents();
+        QMenu* docMenu = s.openMenu();
+        QVERIFY2(docMenu, "doc-type dropdown did not open");
+        const int docW = docMenu->width();   // actual rendered width after popup
+        docMenu->hide();
+
+        // The doc-type menu must not run away: keep it within a sane column
+        // and no wider than the shell window (it was filling the viewport).
+        const int viewportW = s.window() ? s.window()->width() : 1280;
+        QVERIFY2(docW <= viewportW,
+                 qPrintable(QStringLiteral("doc-type menu %1px wider than viewport %2px")
+                                .arg(docW).arg(viewportW)));
+        // It should sit in the same narrow band as the encoding menu (a couple
+        // of the encoding width is generous slack; the old bug was viewport-wide).
+        QVERIFY2(docW <= qMax(360, 3 * encW),
+                 qPrintable(QStringLiteral("doc-type menu %1px not narrow (encoding %2px)")
+                                .arg(docW).arg(encW)));
 
         s.setDocument(nullptr);
         delete doc;

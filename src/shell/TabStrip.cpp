@@ -68,29 +68,28 @@ static void drawPlus(QPainter& p, const QRect& r, const QColor& ink)
     p.save();
     p.setPen(Qt::NoPen);
     p.setBrush(ink);
-    const int cx = r.center().x(), cy = r.center().y();
+    const int cx = r.center().x();
     // Arm thickness: a FIFTH of the shorter side, at least 2px, so the cross
-    // never collapses to a hairline on a short row. A third made the cross
-    // cover ~40% of the cell against the arrows' ~29%, reading as a heavier
-    // glyph than its neighbours (user: "needs more cyan over it").
+    // never collapses to a hairline on a short row.
     const int arm = qMax(2, qMin(r.width(), r.height()) / 4);
-    // Reach: full cell minus a pixel, so the cross is as TALL as the flanking
-    // arrow triangles (they are the visual reference).
-    const int half = qMin(r.width(), r.height()) / 2 - 1;   // reach from centre
-    // The arm's half-extent from the centre line. Integer arm/2 truncates an
-    // odd arm (3 -> 1, a 2px bar), which under-inks the cross; derive the bar
-    // from the arm WIDTH so an odd arm keeps its full 3px stroke.
+    // The cross must be SMALLER than the block and vertically CENTERED. Build
+    // the vertical span explicitly so its ink midpoint equals the block's own
+    // pixel midpoint ((top+bottom)/2): centre the span on that row. One clear
+    // pixel of margin top and bottom keeps it inside a 16px cell.
+    const int inkH = qMax(3, qMin(r.width(), r.height()) - 2);
+    const int y0 = r.top() + (r.height() - inkH) / 2;   // top row of the cross
+    const int y1 = y0 + inkH - 1;                       // bottom row
+    const int cy = (y0 + y1) / 2;                       // centre row of the ink
+    // Horizontal reach: symmetric about cx, sized to the block so the + reads
+    // as a glyph and not a hairline.
+    const int hreach = qMax(2, qMin(r.width(), r.height()) / 4);
     const int lo = -(arm / 2);                 // inclusive low edge
     const int hi = lo + arm - 1;               // inclusive high edge (width = arm)
-    // Vertical bar + horizontal bar as one polygon: a plus (two rects unioned).
-    QPolygon cross;
-    cross << QPoint(cx + lo, cy - half) << QPoint(cx + hi, cy - half)
-          << QPoint(cx + hi, cy + lo)   << QPoint(cx + half, cy + lo)
-          << QPoint(cx + half, cy + hi) << QPoint(cx + hi, cy + hi)
-          << QPoint(cx + hi, cy + half) << QPoint(cx + lo, cy + half)
-          << QPoint(cx + lo, cy + hi)   << QPoint(cx - half, cy + hi)
-          << QPoint(cx - half, cy + lo) << QPoint(cx + lo, cy + lo);
-    p.drawPolygon(cross);
+    // Draw the plus as two filled rects (vertical bar + horizontal bar). A
+    // polygon dropped its bottom row to the fill rule; rects include every row
+    // and centre exactly.
+    p.drawRect(QRect(cx + lo, y0, arm, inkH));                       // vertical
+    p.drawRect(QRect(cx - hreach, cy + lo, 2 * hreach + 1, arm));     // horizontal
     p.restore();
 }
 

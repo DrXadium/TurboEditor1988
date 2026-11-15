@@ -4,6 +4,7 @@
 // band, and a lavender selection block (spec sections 1 + 4).
 #include <QtTest>
 #include <QApplication>
+#include <QKeyEvent>
 #include <QImage>
 #include <QClipboard>
 #include <QTemporaryDir>
@@ -271,6 +272,35 @@ private slots:
         QCOMPARE(m.canRedo(), false);
         m.redo();                        // must do nothing
         QCOMPARE(doc->text(), QStringLiteral("three\n"));
+    }
+
+    // User bug: Ctrl+Z does nothing when the QWidget editor has focus. The
+    // undo machinery works (round-trip above), and the bridge dispatches the
+    // menu shortcut when IT receives the key - but a real user's keypress lands
+    // on the focused QWidget editor, which KTextEditor does not route to our
+    // undo. Sending a Ctrl+Z QKeyEvent straight at the view must still revert
+    // the last edit: that is what the user's keystroke does.
+    void ctrl_z_reaches_undo_while_the_view_has_focus()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        KTextEditor::Document* doc = v->document();
+        QVERIFY(v);
+
+        doc->setText(QStringLiteral("alpha\n"));
+        doc->setText(QStringLiteral("alpha beta\n"));
+        QVERIFY(m.canUndo());
+
+        // Focus the widget the way a click does, then deliver the keystroke to
+        // it directly - not through ContentBridge (the QML Keys handler never
+        // runs once the QWidget owns focus).
+        v->setFocus(Qt::OtherFocusReason);
+        QKeyEvent ctrlZ(QEvent::KeyPress, Qt::Key_Z, Qt::ControlModifier,
+                        QStringLiteral("z"));
+        QApplication::sendEvent(v, &ctrlZ);
+
+        QCOMPARE(doc->text(), QStringLiteral("alpha\n"));
     }
 
     // Spec 1: editor area is ONE flat #0000AA — zero black anywhere (catches a

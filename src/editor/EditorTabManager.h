@@ -131,6 +131,10 @@ private:
     // Deliver a FocusIn to the view's KateViewInternal canvas so Kate starts
     // its caret-blink timer (never fires on its own on this unmapped shell).
     void startCaretBlink(KTextEditor::View* view);
+    // Route Ctrl+Z / Ctrl+Y from a focused view to undo()/redo(). The QML Keys
+    // handler never sees the chord once the embedded QWidget owns focus, and
+    // this KTextEditor build drops it, so the view needs its own path in.
+    void installKeyRouting(KTextEditor::View* view);
 
     // One undo step: the whole document text plus where the caret sat.
     struct HistoryEntry {
