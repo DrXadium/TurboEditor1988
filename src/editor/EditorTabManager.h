@@ -5,6 +5,7 @@
 #include <QList>
 #include <QPoint>
 #include <QHash>
+#include <QKeySequence>
 #include <QStackedWidget>
 // HistoryEntry holds a Cursor by value, so the definition is needed here.
 #include <ktexteditor/cursor.h>
@@ -96,9 +97,22 @@ public:
     // Installs zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0) and text-tool actions
     // (change case, sort) as children of \p host (typically the ShellWindow).
     void installActions(QWidget* host);
+    // Fires the ACTIVE view's QAction whose shortcut matches \p seq, if it is
+    // enabled. KTextEditor keeps its editing actions (cursor movement,
+    // Backspace, Delete, PageUp/PageDown) in a KActionCollection that is NOT
+    // parented into the widget tree, so Qt's shortcut map is the only thing
+    // that could reach them - and it never runs here (the shell is never the
+    // active window). Returns true when an action fired.
+    bool triggerActiveViewShortcut(const QKeySequence& seq);
 
 signals:
     void tabsChanged(const QStringList& titles, int active);
+    // The ACTIVE view's cursor in KTextEditor's 0-based coordinates: emitted
+    // when it moves, and re-emitted when the active tab changes so a listener
+    // can show the new tab's position at once. The bottom band's "L:C" reads
+    // this; binding a listener to the FIRST view instead left the indicator
+    // frozen at 1:1 as soon as a session restored more than one file.
+    void activeCursorPositionChanged(int line, int column);
     // Emitted whenever the active document's history changes, so the Edit menu
     // can enable/disable Undo and Redo.
     void historyChanged(bool canUndo, bool canRedo);
@@ -106,6 +120,10 @@ signals:
 private:
     KTextEditor::Document* createDoc();
     void syncTabs();
+    // Points the activeCursorPositionChanged signal at the CURRENT view: drops
+    // the previous view's connection, re-emits the new view's position, and
+    // follows it from then on.
+    void trackActiveCursor();
 
     // One undo step: the whole document text plus where the caret sat.
     struct HistoryEntry {
@@ -124,6 +142,7 @@ private:
     QList<KTextEditor::Document*> m_docs;
     QList<KTextEditor::View*> m_views;
     int m_active = -1;
+    QMetaObject::Connection m_cursorConn;
     int m_basePointSize = -1;   // font point size at first view (zoom baseline)
     int m_basePixelSize = -1;   // font pixel size at first zoom (pixel-based font)
     QStackedWidget* m_container = nullptr;

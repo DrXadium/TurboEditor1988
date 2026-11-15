@@ -94,7 +94,11 @@ add_test(NAME tst_bridge COMMAND tst_bridge)
 
 # Input-forwarding test: ctest -R tst_input
 add_executable(tst_input tests/tst_input.cpp)
-target_link_libraries(tst_input PRIVATE crt-bridge Qt6::Test Qt6::Widgets Qt6::Quick)
+# The arrow/backspace regression tests drive a REAL KTextEditor view through
+# the bridge (crt-editor), because the defect lives in how a Kate action is
+# reached, not in the event's arrival.
+target_link_libraries(tst_input PRIVATE crt-bridge crt-shell crt-editor
+                      Qt6::Test Qt6::Widgets Qt6::Quick KF6::TextEditor)
 add_test(NAME tst_input COMMAND tst_input)
 
 # Task 5: KTextEditor integration — tabs, zoom, and text tools (case/sort).

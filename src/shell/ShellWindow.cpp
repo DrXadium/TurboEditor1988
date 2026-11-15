@@ -363,7 +363,9 @@ void ShellWindow::setEditorWidget(QWidget* w)
     // HOLDS focus (QLineEdit in particular drops a press it was merely posted).
     // setFocus() follows the focus proxy, so the real view gets it, not the
     // stacked container that wraps it.
-    w->setFocus(Qt::OtherFocusReason);
+    // NOTE: focus is granted at the END of this method, after the widget is
+    // re-parented into the editor row - re-parenting clears focus, so calling
+    // setFocus() here left the app with NO focused widget at startup.
     // Remove the current placeholder/editor row (everything below the TabStrip)
     // and replace it with an editor+minimap row. Index 0 is always the TabStrip.
     while (m_editorLayout->count() > 0) {   // drain placeholder + stale rows alike
@@ -395,6 +397,10 @@ void ShellWindow::setEditorWidget(QWidget* w)
     mini->setVisible(false);
     m_minimap = mini;
     m_editorLayout->addWidget(row);
+    // Now that the editor lives in its final parent, give it focus: the shell
+    // has no other key target, and KTextEditor only enables its editing actions
+    // (cursor keys, Backspace, Delete) for a view that holds focus.
+    w->setFocus(Qt::OtherFocusReason);
 
     // TV-revision2 spec 1: Kate's own document vertical is HIDDEN (see
     // EditorTabManager::applyTvStyle); the window-border RightScrollBar and
@@ -574,7 +580,30 @@ QWidget* ShellWindow::keyFocusWidget() const
     // down to a child and the shell would silently swallow them.
     if (auto* f = focusWidget())
         return f;
-    if (m_editor)
-        return m_editor;
+    if (m_editor) {
+        // ...and follow the editor's focus-proxy chain: the tab container
+        // proxies to the live KTextEditor::View, which proxies to the canvas
+        // widget that actually handles keys. Stopping at the container was a
+        // dead end - it takes no focus and ignores keys, so nothing typed
+        // until the user clicked into the text.
+        QWidget* w = m_editor;
+        for (int depth = 0; depth < 8; ++depth) {
+            QWidget* proxy = w->focusProxy();
+            if (!proxy || proxy == w)
+                break;
+            w = proxy;
+        }
+        return w;
+    }
     return const_cast<ShellWindow*>(this);
+}
+
+void ShellWindow::setEditorShortcutHandler(std::function<bool(const QKeySequence&)> fn)
+{
+    m_editorShortcut = std::move(fn);
+}
+
+bool ShellWindow::triggerEditorShortcut(const QKeySequence& seq) const
+{
+    return m_editorShortcut && m_editorShortcut(seq);
 }

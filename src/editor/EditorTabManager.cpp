@@ -11,6 +11,7 @@
 #include <KSyntaxHighlighting/Theme>
 #include <QFileInfo>
 #include <QAction>
+#include <KActionCollection>
 #include <QWidget>
 #include <QInputDialog>
 #include <QScrollBar>
@@ -241,6 +242,61 @@ KTextEditor::View* EditorTabManager::activeView() const
     return m_views.at(m_active);
 }
 
+// The bottom band shows the cursor of the tab the user is LOOKING at. Keeping
+// the connection here (rather than in the composition root) means every path
+// that changes the active view - new tab, opened file, tab switch, closed tab -
+// re-binds, and none of them can forget to.
+void EditorTabManager::trackActiveCursor()
+{
+    QObject::disconnect(m_cursorConn);
+    KTextEditor::View* v = activeView();
+    if (!v)
+        return;
+    // A tab that just became active behaves like one the user clicked: it takes
+    // focus. That is also what enables Kate's edit actions (they are switched
+    // on in the input mode's gotFocus), without which arrows and deletion stay
+    // dead on every tab but the first.
+    v->setFocus(Qt::OtherFocusReason);
+    m_cursorConn = QObject::connect(
+        v, &KTextEditor::View::cursorPositionChanged, this,
+        [this](KTextEditor::View*, const KTextEditor::Cursor& c) {
+            emit activeCursorPositionChanged(c.line(), c.column());
+        });
+    const KTextEditor::Cursor c = v->cursorPosition();
+    emit activeCursorPositionChanged(c.line(), c.column());
+}
+
+bool EditorTabManager::triggerActiveViewShortcut(const QKeySequence& seq)
+{
+    KTextEditor::View* v = activeView();
+    if (!v)
+        return false;
+    KActionCollection* ac = v->actionCollection();
+    if (!ac)
+        return false;
+    const auto actions = ac->actions();
+    for (QAction* a : actions) {
+        if (!a || !a->shortcuts().contains(seq))
+            continue;
+        // Kate leaves its edit actions DISABLED until focusInEvent fires
+        // (slotGotFocus -> activateEditActions). On this unmapped
+        // WA_DontShowOnScreen shell Qt never delivers FocusIn (no active
+        // window), so they would stay off forever - and QAction::trigger()
+        // refuses to emit triggered for a disabled action (measured: the caret
+        // did not move until we enabled it first). The app hands the shell real
+        // focus at startup, so these actions are legitimately meant to be on;
+        // this dispatcher just corrects Kate's focus-fence so a pressed key can
+        // always do its job. Enable, fire, and LEAVE it on: re-running Kate's
+        // activateEditActions is idempotent, so focusIn (wherever it fires)
+        // won't fight us.
+        if (!a->isEnabled())
+            a->setEnabled(true);
+        a->trigger();
+        return true;
+    }
+    return false;
+}
+
 void EditorTabManager::newDocument()
 {
     KTextEditor::Document* doc = createDoc();
@@ -258,6 +314,7 @@ void EditorTabManager::newDocument()
     m_container->setCurrentIndex(m_active);
     syncTabs();
     applyTvStyle(view);
+    trackActiveCursor();
 }
 
 void EditorTabManager::openFile(const QUrl& url)
@@ -275,6 +332,7 @@ void EditorTabManager::openFile(const QUrl& url)
     m_container->setCurrentIndex(m_active);
     syncTabs();
     applyTvStyle(view);
+    trackActiveCursor();
 }
 
 void EditorTabManager::setActiveIndex(int index)
@@ -284,6 +342,7 @@ void EditorTabManager::setActiveIndex(int index)
     m_active = index;
     m_container->setCurrentIndex(index);
     syncTabs();
+    trackActiveCursor();
 }
 
 // Task 21: the tab chip's green square closes that tab. Indices shift with the
@@ -323,6 +382,7 @@ void EditorTabManager::closeTab(int index)
     if (KTextEditor::View* v = m_views.value(m_active))
         m_container->setFocusProxy(v);   // the proxy may have been the closed view
     syncTabs();
+    trackActiveCursor();
 }
 
 QUrl EditorTabManager::viewFileUrl(int index) const

@@ -9,6 +9,7 @@
 #include <QAction>
 #include <QKeySequence>
 #include <QEvent>
+#include <QKeyEvent>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QLineEdit>
@@ -35,6 +36,7 @@
 #include "src/autosave/AutosaveService.h"
 #include <ktexteditor/view.h>
 #include <ktexteditor/document.h>
+#include <cstdio>
 
 int main(int argc, char** argv)
 {
@@ -68,6 +70,13 @@ int main(int argc, char** argv)
     EditorTabManager tabs;
     shell.setEditorWidget(tabs.containerWidget());
     tabs.installActions(&shell);
+    // Editor key commands (arrows, Backspace, Delete, PageUp/PageDown...) are
+    // QActions in KTextEditor's action collection, which is NOT parented into
+    // the widget tree and so is unreachable from the bridge's widget walk.
+    // Hand the bridge a way in (crt-shell does not link KTextEditor).
+    shell.setEditorShortcutHandler([&tabs](const QKeySequence& seq) {
+        return tabs.triggerActiveViewShortcut(seq);
+    });
     // Bind the painted right/bottom scrollbars to the CURRENT view's real
     // scrollbars. The original bug: the document scrollbar was identified by
     // scanning children for the first vertical one, which latched an empty
@@ -157,16 +166,21 @@ int main(int argc, char** argv)
     // a tab switch.
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [wireScrollbars](const QStringList&, int) { wireScrollbars(); });
-    // Bottom band cursor position "L:C" (spec 6): mirror the active view's
-    // cursor, 1-based. Seed from the initial view, then track changes.
-    if (KTextEditor::View* v0 = tabs.activeView()) {
-        const KTextEditor::Cursor c0 = v0->cursorPosition();
-        shell.bottomBand()->setCursorPos(c0.line() + 1, c0.column() + 1);
-        QObject::connect(v0, &KTextEditor::View::cursorPositionChanged, &shell,
-                         [&shell](KTextEditor::View*, const KTextEditor::Cursor& np) {
-                             if (BottomBand* band = shell.bottomBand())
-                                 band->setCursorPos(np.line() + 1, np.column() + 1);
-                         });
+    // Bottom band cursor position "L:C" (spec 6): the ACTIVE view's cursor,
+    // 1-based. The manager owns which view is active and re-binds on every tab
+    // change; connecting the FIRST view here left the indicator frozen at 1:1
+    // as soon as a restored session opened more than one file. The manager
+    // emits its first position before this connection exists, hence the seed.
+    if (BottomBand* band = shell.bottomBand()) {
+        auto showCursor = [band](int line, int column) {
+            band->setCursorPos(line + 1, column + 1);
+        };
+        if (KTextEditor::View* v = tabs.activeView()) {
+            const KTextEditor::Cursor c = v->cursorPosition();
+            showCursor(c.line(), c.column());
+        }
+        QObject::connect(&tabs, &EditorTabManager::activeCursorPositionChanged,
+                         band, showCursor);
     }
     // Seed the strip with the initial tab (created by the manager ctor).
     if (TabStrip* strip0 = shell.tabStrip()) {
@@ -724,6 +738,98 @@ int main(int argc, char** argv)
                     QCoreApplication::exit(0);
                 });
             });
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_KEYPROBE=1 drives the SAME
+    // bridge call QML makes for each key and reports what it did to the buffer,
+    // the cursor and the bottom band. Synthetic XTEST keys cannot reach the
+    // app's surface from the relay shell, so this is the only way to reproduce
+    // "arrow keys / backspace do nothing" on this host.
+    if (qEnvironmentVariableIsSet("CRT_KATE_KEYPROBE")) {
+        QTimer::singleShot(1200, &app, [&app, &shell, &bridge, &tabs]() {
+            auto* view = tabs.activeView();
+            auto* doc = tabs.activeDocument();
+            if (doc)
+                doc->setText(QStringLiteral("alpha beta\ngamma delta"));
+            if (view)
+                view->setCursorPosition(KTextEditor::Cursor(0, 0));
+            // Count the cursor moves so the report can show whether each key
+            // actually moved the caret (and the band followed).
+            auto* moved = new int(0);
+            if (view)
+                QObject::connect(view, &KTextEditor::View::cursorPositionChanged,
+                                 &app, [moved](KTextEditor::View*, const KTextEditor::Cursor&) {
+                                     ++*moved;
+                                 });
+            auto* seen = new int(0);
+            if (view) {
+                class KeyCounter : public QObject
+                {
+                public:
+                    int* n;
+                    bool eventFilter(QObject*, QEvent* ev) override
+                    {
+                        if (ev->type() == QEvent::KeyPress)
+                            ++*n;
+                        return false;
+                    }
+                };
+                auto* kc = new KeyCounter;
+                kc->n = seen;
+                view->installEventFilter(kc);
+            }
+            auto report = [&tabs, &shell, seen, moved](const char* label) {
+                auto* v = tabs.activeView();
+                const KTextEditor::Cursor c =
+                    v ? v->cursorPosition() : KTextEditor::Cursor(-1, -1);
+                QString text = tabs.activeDocument() ? tabs.activeDocument()->text()
+                                                     : QString();
+                text.replace(QLatin1Char('\n'), QLatin1String("\\n"));
+                auto* band = shell.bottomBand();
+                std::fprintf(stderr,
+                             "DIAG keyprobe %-10s cursor=%d:%d band=%s seen=%d moved=%d views=%d active=%d doc=[%s]\n",
+                             label, c.line(), c.column(),
+                             band ? band->cursorPosText().toUtf8().constData() : "<none>",
+                             *seen, *moved, tabs.viewCount(), tabs.activeIndex(),
+                             text.toUtf8().constData());
+                std::fflush(stderr);
+            };
+            report("initial");
+            // A real user clicks into the editor before typing. The bridge
+            // moves focus on a synthesized press, so reproduce that too: the
+            // startup state (nothing focused) is not the state the user is in.
+            if (view && view->width() > 0 && view->height() > 0) {
+                const QPoint p = view->mapTo(&shell, view->rect().center());
+                bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                         Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+                bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::NoButton,
+                                         Qt::NoButton, Qt::NoModifier, p.x(), p.y());
+                report("click");
+            }
+            struct KeyStep {
+                int key;
+                const char* label;
+                const char* text;
+            };
+            const KeyStep steps[] = {
+                { Qt::Key_Right, "Right", "" },
+                { Qt::Key_Right, "Right2", "" },
+                { Qt::Key_Down, "Down", "" },
+                { Qt::Key_End, "End", "" },
+                { Qt::Key_Backspace, "Backspace", "\b" },
+                { Qt::Key_Delete, "Delete", "" },
+                { Qt::Key_Left, "Left", "" },
+                { Qt::Key_A, "A", "A" },
+            };
+            for (const KeyStep& k : steps) {
+                bridge.forwardKeyEvent(QEvent::KeyPress, k.key, Qt::NoModifier,
+                                       QString::fromUtf8(k.text));
+                bridge.forwardKeyEvent(QEvent::KeyRelease, k.key, Qt::NoModifier,
+                                       QString::fromUtf8(k.text));
+                report(k.label);
+            }
+            QTimer::singleShot(300, &app, [&app]() { QCoreApplication::exit(0); });
         });
     }
 

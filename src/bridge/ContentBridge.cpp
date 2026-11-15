@@ -11,6 +11,7 @@
 #include "../shell/MenuBar.h"
 #include <QKeyEvent>
 #include <QApplication>
+#include <QAction>
 
 ContentBridge::ContentBridge(QObject* parent) : QObject(parent) {}
 
@@ -263,14 +264,20 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
     delete ev;
 
     // With no active window Qt's shortcut map never runs, so dispatch the
-    // matching menu action directly (Ctrl+X/C/V, F5...). The editor still gets
-    // the key for ordinary typing.
-    // With no active window Qt's shortcut map never runs, so dispatch the
-    // matching menu action directly (Ctrl+X/C/V, F5...). The editor still gets
-    // the key for ordinary typing; modifier chords carry an empty `text`, so
-    // this must not be gated on non-empty text.
-    if (evType == QEvent::KeyPress)
-        dispatchShortcut(key, modifiers);
+    // matching action directly. The menu's own actions win (Ctrl+X/C/V, F5...);
+    // otherwise the focused widget's actions get their turn. That second step
+    // is what makes arrow keys, Backspace and Delete work at all: KTextEditor
+    // binds them to bare-key QAction shortcuts, and its key handler only types
+    // text. Modifier chords carry an empty `text`, so this must not be gated on
+    // non-empty text.
+    if (evType == QEvent::KeyPress) {
+        const QKeySequence seq(static_cast<Qt::Key>(key)
+                               | static_cast<Qt::KeyboardModifiers>(modifiers));
+        const bool menuFired = dispatchShortcut(key, modifiers);
+        const bool editorFired = m_shell->triggerEditorShortcut(seq);
+        if (!menuFired && !editorFired)
+            dispatchFocusedShortcut(target, key, modifiers);
+    }
     update();
 }
 
@@ -278,13 +285,13 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
 // holds focus. Neither is true here: the shell is never mapped, so during a
 // real keypress QApplication::activeWindow() is null and no QAction shortcut
 // ever matches. Fall back to finding the action ourselves.
-void ContentBridge::dispatchShortcut(int key, int modifiers)
+bool ContentBridge::dispatchShortcut(int key, int modifiers)
 {
     if (!m_shell)
-        return;
+        return false;
     MenuBar* mb = qobject_cast<MenuBar*>(m_shell->menuBar());
     if (!mb)
-        return;
+        return false;
     const QKeySequence seq(static_cast<Qt::Key>(key)
                            | static_cast<Qt::KeyboardModifiers>(modifiers));
     for (QAction* a : mb->findChildren<QAction*>()) {
@@ -293,9 +300,39 @@ void ContentBridge::dispatchShortcut(int key, int modifiers)
         if (a->shortcut() == seq) {
             a->trigger();
             update();
-            return;
+            return true;
         }
     }
+    return false;
+}
+
+// Qt resolves a key to an action by walking the widget hierarchy from the focus
+// widget upward, and only while the window is ACTIVE. The shell never is, so
+// this is the same walk done by hand. Widget-level actions (addAction()) and
+// actions owned by a child object (KTextEditor keeps its set in a
+// KActionCollection, a child of the view) both count.
+bool ContentBridge::dispatchFocusedShortcut(QWidget* target, int key, int modifiers)
+{
+    if (!target || !m_shell)
+        return false;
+    const QKeySequence seq(static_cast<Qt::Key>(key)
+                           | static_cast<Qt::KeyboardModifiers>(modifiers));
+    // Stop BELOW the shell: its actions belong to the menu, which
+    // dispatchShortcut() has already had its say on, and scanning the whole
+    // window here would also reach the other tabs' views.
+    for (QWidget* w = target; w && w != m_shell; w = w->parentWidget()) {
+        QList<QAction*> candidates = w->actions();
+        candidates += w->findChildren<QAction*>();
+        for (QAction* a : std::as_const(candidates)) {
+            if (!a || !a->isEnabled())
+                continue;
+            if (a->shortcuts().contains(seq)) {
+                a->trigger();
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void ContentBridge::setSourceItem(QQuickItem* item)

@@ -7,6 +7,7 @@
 #include <QQuickItem>   // full type required for the sourceItem property's moc meta-type
 
 class ShellWindow;
+class QWidget;
 
 // Renders the ShellWindow widget tree into a frame the QML CRT scene samples.
 // Mechanism (spec's approved fallback path): QWidget::render() -> QImage at
@@ -47,8 +48,14 @@ public:
                                      const QString& text);
     // Trigger the QAction whose shortcut matches this key combo. Needed because
     // the unmapped shell has no active window, so Qt's own shortcut map is
-    // bypassed entirely.
-    void dispatchShortcut(int key, int modifiers);
+    // bypassed entirely. Returns true when an action fired.
+    bool dispatchShortcut(int key, int modifiers);
+    // Same problem one level down: KTextEditor binds cursor movement and
+    // deletion to QActions with BARE-key shortcuts (Left/Right/Up/Down,
+    // Backspace, Delete, PageUp/PageDown), so with no shortcut map those keys
+    // reach the view and do nothing. Walks from the focused widget up to the
+    // shell and triggers the first enabled action whose shortcut matches.
+    bool dispatchFocusedShortcut(QWidget* target, int key, int modifiers);
 
     // Popup bridging (Task 9): an open QMenu/QWidget popup is captured into the
     // same composited frame so CRT effects cover it (instead of leaving it a

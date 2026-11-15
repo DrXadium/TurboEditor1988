@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include <QMainWindow>
+#include <QKeySequence>
+#include <functional>
 #include <QVBoxLayout>
 #include <QPointer>
 #include <QScrollBar>
@@ -43,6 +45,12 @@ public:
     bool isEditorArea(QWidget* w) const;
     // Focus target for forwarded keys: the editor if one is set, else the shell.
     QWidget* keyFocusWidget() const;
+    // Editor shortcut fallback. The bridge cannot reach KTextEditor's editing
+    // actions: crt-shell does not link KTextEditor, and Kate keeps those
+    // actions in a KActionCollection that is NOT parented into the widget tree.
+    // The composition root installs the handler that fires the matching one.
+    void setEditorShortcutHandler(std::function<bool(const QKeySequence&)> fn);
+    bool triggerEditorShortcut(const QKeySequence& seq) const;
     TabStrip* tabStrip() const;
     FKeyStatusBar* fkeyStatusBar() const;
     // Bottom border band (cursor position + horizontal scrollbar), spec 5h/6.
@@ -59,6 +67,7 @@ private:
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     QWidget* m_editor = nullptr;             // current editor widget (focus default)
+    std::function<bool(const QKeySequence&)> m_editorShortcut;
     Minimap* m_minimap = nullptr;
     class BottomBand* m_bottomBand = nullptr;
     // TV-revision2 spec 1: 1-cell right-border scrollbar + the (hidden) Kate

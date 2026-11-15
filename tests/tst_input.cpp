@@ -9,10 +9,14 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QLineEdit>
+#include <QAction>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/TabStrip.h"
 #include "src/bridge/ContentBridge.h"
+#include "src/editor/EditorTabManager.h"
+#include <ktexteditor/view.h>
+#include <ktexteditor/document.h>
 
 namespace {
 // Counts QMouseEvent/QKeyEvent deliveries to a widget.
@@ -207,6 +211,129 @@ private slots:
         QCoreApplication::processEvents();
 
         QCOMPARE(edit->text(), QStringLiteral("a"));
+    }
+
+    // Cursor movement and deletion inside the embedded editor are QActions
+    // with BARE-key shortcuts: KTextEditor binds Left/Right/Up/Down, Backspace,
+    // Delete, Insert and PageUp/PageDown that way. Qt fires those through its
+    // shortcut map, which only runs for an ACTIVE window - and the shell is
+    // never mapped, so every one of them was dead while ordinary typing (which
+    // goes through keyPressEvent, not the shortcut map) still worked. The
+    // bridge must dispatch the focused widget's own actions, exactly as it
+    // already dispatches the menu's.
+    void forwarded_bare_key_fires_the_focused_widgets_action() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        auto* canvas = new QWidget(&w);
+        canvas->resize(200, 120);
+        w.setEditorWidget(canvas);
+        canvas->show();
+
+        auto* moveLeft = new QAction(canvas);
+        moveLeft->setShortcut(QKeySequence(Qt::Key_Left));
+        canvas->addAction(moveLeft);
+        int fired = 0;
+        QObject::connect(moveLeft, &QAction::triggered, &w,
+                         [&fired](bool) { ++fired; });
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier, QString());
+        QCOMPARE(fired, 1);
+
+        // A key that matches nothing must not fire it.
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier, QString());
+        QCOMPARE(fired, 1);
+    }
+
+    // A disabled action must not be dispatched: with no history there is
+    // nothing to undo, and firing a disabled edit action would be a lie.
+    void forwarded_bare_key_skips_a_disabled_action() {
+        ShellWindow w;
+        w.resize(640, 480);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        auto* canvas = new QWidget(&w);
+        canvas->resize(200, 120);
+        w.setEditorWidget(canvas);
+        canvas->show();
+
+        auto* moveLeft = new QAction(canvas);
+        moveLeft->setShortcut(QKeySequence(Qt::Key_Left));
+        moveLeft->setEnabled(false);
+        canvas->addAction(moveLeft);
+        int fired = 0;
+        QObject::connect(moveLeft, &QAction::triggered, &w,
+                         [&fired](bool) { ++fired; });
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier, QString());
+        QCOMPARE(fired, 0);
+    }
+
+    // The real thing, through the production path: a forwarded arrow key moves
+    // the KTextEditor cursor. Before the fix the view received the key and
+    // ignored it (its handler only types text), so the caret never moved.
+    void forwarded_arrows_move_the_editor_cursor() {
+        ShellWindow w;
+        w.resize(900, 600);
+        EditorTabManager tabs;                 // creates one view + document
+        w.setEditorWidget(tabs.containerWidget());
+        // Mirrors the composition root: KTextEditor's editing actions live in a
+        // collection outside the widget tree, so the shell is handed the way in.
+        w.setEditorShortcutHandler([&tabs](const QKeySequence& seq) {
+            return tabs.triggerActiveViewShortcut(seq);
+        });
+        ContentBridge b;
+        b.setShellWindow(&w);
+        w.show();
+        tabs.containerWidget()->grab();        // geometry without a real screen
+
+        KTextEditor::View* v = tabs.activeView();
+        QVERIFY2(v, "no active view");
+        tabs.activeDocument()->setText(QStringLiteral("alpha\nbeta"));
+        v->setCursorPosition(KTextEditor::Cursor(0, 2));
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier, QString());
+        QCOMPARE(v->cursorPosition().column(), 3);
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier, QString());
+        QCOMPARE(v->cursorPosition().column(), 2);
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier, QString());
+        QCOMPARE(v->cursorPosition().line(), 1);
+    }
+
+    // Backspace and Delete are actions too, and Kate's canvas widget ACCEPTS a
+    // Backspace press without doing anything (the action does the work), so a
+    // "was the key accepted?" gate would leave deletion dead as well.
+    void forwarded_backspace_and_delete_edit_the_document() {
+        ShellWindow w;
+        w.resize(900, 600);
+        EditorTabManager tabs;
+        w.setEditorWidget(tabs.containerWidget());
+        w.setEditorShortcutHandler([&tabs](const QKeySequence& seq) {
+            return tabs.triggerActiveViewShortcut(seq);
+        });
+        ContentBridge b;
+        b.setShellWindow(&w);
+        w.show();
+        tabs.containerWidget()->grab();
+
+        KTextEditor::View* v = tabs.activeView();
+        QVERIFY2(v, "no active view");
+        KTextEditor::Document* doc = tabs.activeDocument();
+        doc->setText(QStringLiteral("alpha\nbeta"));
+        v->setCursorPosition(KTextEditor::Cursor(0, 2));
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier,
+                          QStringLiteral("\b"));
+        QCOMPARE(doc->text(), QStringLiteral("apha\nbeta"));
+        QCOMPARE(v->cursorPosition().column(), 1);
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier, QString());
+        QCOMPARE(doc->text(), QStringLiteral("aha\nbeta"));
     }
 
     // Ctrl+V must trigger the Edit>Paste ACTION, not just reach the editor.

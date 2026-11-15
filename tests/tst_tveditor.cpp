@@ -361,6 +361,45 @@ private slots:
         QVERIFY2(n > 100,
                  qPrintable(QStringLiteral("only %1 lavender selection px (expected a #C8C8D8 selection block)").arg(n)));
     }
+    // The bottom band's "L:C" must follow the ACTIVE view. main.cpp connected
+    // it to the FIRST view only, so with a restored session (two files opened
+    // on top of the initial untitled document) the indicator sat at 1:1
+    // forever while the user edited a different document.
+    void active_cursor_signal_follows_the_active_view()
+    {
+        EditorTabManager m;
+        QSignalSpy spy(&m, &EditorTabManager::activeCursorPositionChanged);
+        KTextEditor::View* first = m.activeView();
+        QVERIFY2(first, "no initial view");
+
+        // A fresh document is EMPTY: setCursorPosition clamps the column to the
+        // line length and refuses a line past doc()->lines(), so with no text
+        // the caret does not move and cursorPositionChanged never fires. Seed
+        // real content first (a fresh untitled tab has at least the user's first
+        // line before the indicator means anything).
+        first->document()->setText(QStringLiteral("first line\nsecond line\nthird line"));
+        first->setCursorPosition(KTextEditor::Cursor(0, 3));
+        QVERIFY2(spy.count() >= 1, "moving the cursor emitted nothing");
+        QCOMPARE(spy.last().at(0).toInt(), 0);
+        QCOMPARE(spy.last().at(1).toInt(), 3);
+
+        // A new tab becomes the active view: the signal must follow it.
+        m.newDocument();
+        KTextEditor::View* second = m.activeView();
+        QVERIFY2(second && second != first, "newDocument did not switch views");
+        spy.clear();
+        second->document()->setText(QStringLiteral("one\ntwo\nthree\nfour\nfive"));
+        second->setCursorPosition(KTextEditor::Cursor(2, 3));
+        QVERIFY2(spy.count() >= 1, "the new active view's cursor emitted nothing");
+        QCOMPARE(spy.last().at(0).toInt(), 2);
+        QCOMPARE(spy.last().at(1).toInt(), 3);
+
+        // The tab that is no longer active must not drive the indicator.
+        spy.clear();
+        first->setCursorPosition(KTextEditor::Cursor(2, 7));   // "third line", col 7 < 10
+        QCOMPARE(spy.count(), 0);
+    }
+
     // Spec 6 addendum: KTextEditor's status chip strip is hidden entirely.
     void chips_status_bar_hidden()
     {
