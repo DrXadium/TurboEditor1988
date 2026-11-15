@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QMouseEvent>
+#include <climits>
 #include "src/shell/TabStrip.h"
 #include "src/shell/ShellWindow.h"
 
@@ -502,6 +503,92 @@ private slots:
         ts.setTabs(QStringList() << "one" << "two" << "three", 2);
         QTest::mouseClick(&ts, Qt::LeftButton, Qt::NoModifier, rects[2].center());
         QCOMPARE(spy.count(), 1);
+    }
+
+    // The green close square must be a SQUARE. It is drawn as
+    // closeRect(idx).adjusted(2, 3, -2, -3); on a one-cell-tall row that is
+    // (cellW-4) wide by (cellH-6) tall - e.g. 6x10 at an 8x16 cell, a tall
+    // rectangle. The green INK bounding box must be square (width == height).
+    void close_square_is_square() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "active" << "idle", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+        const QVector<QRect> rects = ts.tabRects();
+        QCOMPARE(rects.size(), 2);
+
+        for (int i = 0; i < 2; ++i) {
+            const QRect sq = ts.closeRect(i);
+            int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
+            for (int y = qMax(0, sq.top()); y <= qMin(img.height() - 1, sq.bottom()); ++y)
+                for (int x = qMax(0, sq.left()); x <= qMin(img.width() - 1, sq.right()); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (isNear(c, kGreen, 8)) {
+                        minX = qMin(minX, x); maxX = qMax(maxX, x);
+                        minY = qMin(minY, y); maxY = qMax(maxY, y);
+                    }
+                }
+            QVERIFY2(minX <= maxX, qPrintable(QStringLiteral("chip %1 has no green ink").arg(i)));
+            const int inkW = maxX - minX + 1, inkH = maxY - minY + 1;
+            QVERIFY2(inkW == inkH,
+                     qPrintable(QStringLiteral("chip %1 close square is %2x%3 (want square)")
+                                    .arg(i).arg(inkW).arg(inkH)));
+        }
+    }
+
+    // The + (new-tab) glyph must be as prominent as the arrows flanking it.
+    // It is currently drawn with TvFrame::glyph(), which renders the font's own
+    // small '+' - a few pixels of blue in a two-cell control, dwarfed by the
+    // hand-built arrow polygons. The blue INK must fill a substantial fraction
+    // of the control cell (>= 30% of its area).
+    void new_tab_plus_glyph_is_large() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        const QRect add = ts.newTabRect();
+        int blue = 0;
+        for (int y = add.top(); y <= add.bottom(); ++y)
+            for (int x = add.left(); x <= add.right(); ++x)
+                if (isNear(img.pixelColor(x, y), kBlue, 8))
+                    ++blue;
+        const double frac = double(blue) / double(add.width() * add.height());
+        QVERIFY2(frac >= 0.30,
+                 qPrintable(QStringLiteral("+ glyph covers %1% of the control (want >=30%)")
+                                .arg(frac * 100.0, 0, 'f', 1)));
+    }
+
+    // The arrows flanking + are the reference for "large": the + must be at
+    // least as tall as the arrow ink it sits beside, so it does not read as a
+    // tiny mark wedged between two solid triangles.
+    void plus_is_as_tall_as_the_arrows() {
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        auto inkHeight = [&](const QRect& r) {
+            int minY = INT_MAX, maxY = INT_MIN;
+            for (int y = r.top(); y <= r.bottom(); ++y)
+                for (int x = r.left(); x <= r.right(); ++x)
+                    if (isNear(img.pixelColor(x, y), kBlue, 8)) {
+                        minY = qMin(minY, y); maxY = qMax(maxY, y);
+                    }
+            return (minY <= maxY) ? maxY - minY + 1 : 0;
+        };
+        const int addInk = inkHeight(ts.newTabRect());
+        const int nextInk = inkHeight(ts.nextTabRect());
+        QVERIFY2(nextInk > 0 && addInk > 0, "arrow or + has no blue ink");
+        QVERIFY2(addInk >= nextInk,
+                 qPrintable(QStringLiteral("+ ink height %1 < arrow height %2")
+                                .arg(addInk).arg(nextInk)));
     }
 };
 

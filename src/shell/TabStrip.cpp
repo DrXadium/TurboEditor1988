@@ -55,6 +55,37 @@ static void drawArrow(QPainter& p, const QRect& r, Qt::ArrowType dir, const QCol
     p.restore();
 }
 
+// Solid '+' cross, drawn as a hand-built polygon the same way drawArrow draws
+// its triangles. The font's own '+' (TvFrame::glyph) renders only a few pixels
+// inside a two-cell control and reads as a tiny mark wedged between the two
+// arrow triangles. This cross is sized to the control rect: an arm thickness
+// proportional to the rect so it stays a chunky, deliberate glyph at any cell
+// size, and a span that fills most of the cell.
+static void drawPlus(QPainter& p, const QRect& r, const QColor& ink)
+{
+    if (r.width() <= 0 || r.height() <= 0)
+        return;
+    p.save();
+    p.setPen(Qt::NoPen);
+    p.setBrush(ink);
+    const int cx = r.center().x(), cy = r.center().y();
+    // Arm thickness: a third of the shorter side, at least 2px, so the cross
+    // never collapses to a hairline on a short row.
+    const int arm = qMax(2, qMin(r.width(), r.height()) / 3);
+    const int half = qMin(r.width(), r.height()) / 2 - 1;   // reach from centre
+    const int h = arm / 2;
+    // Vertical bar + horizontal bar as one polygon: a plus (two rects unioned).
+    QPolygon cross;
+    cross << QPoint(cx - h, cy - half) << QPoint(cx + h, cy - half)
+          << QPoint(cx + h, cy - h)   << QPoint(cx + half, cy - h)
+          << QPoint(cx + half, cy + h) << QPoint(cx + h, cy + h)
+          << QPoint(cx + h, cy + half) << QPoint(cx - h, cy + half)
+          << QPoint(cx - h, cy + h)   << QPoint(cx - half, cy + h)
+          << QPoint(cx - half, cy - h) << QPoint(cx - h, cy - h);
+    p.drawPolygon(cross);
+    p.restore();
+}
+
 // Crisp 1-bit text: subpixel/LCD antialiasing tints the strokes, which both
 // looks wrong through the CRT pass and breaks an exact-ink assertion.
 static void inkText(QPainter& p, const QRect& r, const QString& s, const QColor& ink,
@@ -262,7 +293,7 @@ void TabStrip::paintEvent(QPaintEvent*)
     drawArrow(p, prevTabRect(), Qt::LeftArrow, kBlue);
     drawArrow(p, nextTabRect(), Qt::RightArrow, kBlue);
     drawArrow(p, tabListRect(), Qt::DownArrow, kBlue);
-    TvFrame::glyph(p, newTabRect(), QLatin1Char('+'), kBlue);
+    drawPlus(p, newTabRect(), kBlue);
 
     // Chips: [ name ■ ] - bracketed, on the EDITOR's background (user, Task 23).
     // The chip is a window onto the document: everything from `[` to `]` is
@@ -288,7 +319,16 @@ void TabStrip::paintEvent(QPaintEvent*)
         const int n = nameCells(m_titles.at(idx));
         inkText(p, QRect(r.left() + 2 * cw, 0, n * cw, r.height()), m_titles.at(idx), ink);
         // The square: inset inside its cell so the brackets keep their daylight.
-        p.fillRect(closeRect(idx).adjusted(2, 3, -2, -3), kGreen);
+        // It must be a SQUARE, not a rectangle: on a one-cell-tall row a fixed
+        // inset (2,3,-2,-3) yields (cellW-4) wide by (cellH-6) tall - e.g.
+        // 6x10 at an 8x16 cell. Inset each axis by half the excess over the
+        // SHORTER side, so the ink bounding box is square while staying centred
+        // and clear of the brackets (which sit outside this cell).
+        const QRect sq = closeRect(idx);
+        const int side = qMin(sq.width(), sq.height());
+        const int insetX = (sq.width() - side) / 2;
+        const int insetY = (sq.height() - side) / 2;
+        p.fillRect(sq.adjusted(insetX, insetY, -insetX, -insetY), kGreen);
     }
 }
 
