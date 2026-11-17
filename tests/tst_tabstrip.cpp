@@ -569,10 +569,10 @@ private slots:
                                 .arg(frac * 100.0, 0, 'f', 1)));
     }
 
-    // The arrows flanking + are the reference for "large": the + must be at
-    // least as tall as the arrow ink it sits beside, so it does not read as a
-    // tiny mark wedged between two solid triangles.
-    void plus_is_as_tall_as_the_arrows() {
+    // The arrows flanking + are the reference for LEGIBILITY: the + must not
+    // be a tiny mark between them. The opposite limit (filling the cell, as tall
+    // as an arrow) is covered by plus_cross_is_square_and_shorter_than_the_arrows.
+    void plus_is_at_least_legible_next_to_the_arrows() {
         TabStrip ts;
         ts.setTabs(QStringList() << "alpha", 0);
         const int cellH = qMax(8, ts.fontMetrics().height());
@@ -592,8 +592,10 @@ private slots:
         const int addInk = inkHeight(ts.newTabRect());
         const int nextInk = inkHeight(ts.nextTabRect());
         QVERIFY2(nextInk > 0 && addInk > 0, "arrow or + has no blue ink");
-        QVERIFY2(addInk >= nextInk,
-                 qPrintable(QStringLiteral("+ ink height %1 < arrow height %2")
+        // Legible: at least half the arrow's height, so it never reads as a dot.
+        QVERIFY2(addInk * 2 >= nextInk,
+                 qPrintable(QStringLiteral("+ ink height %1 is too small next to "
+                                           "arrow height %2")
                                 .arg(addInk).arg(nextInk)));
     }
 
@@ -678,6 +680,47 @@ private slots:
                  qPrintable(QStringLiteral("+ touches the block edge (top gap %1, "
                                            "bottom gap %2) - should be smaller")
                                 .arg(topGap).arg(botGap)));
+    }
+
+    // User bug: "the cross is too tall vertically" (reference: the + is a compact
+    // SQUARE, noticeably shorter than the arrow triangles beside it). The old
+    // cross spanned nearly the whole cell height; it must be square and shorter
+    // than the arrow.
+    void plus_cross_is_square_and_shorter_than_the_arrows() {
+        ShellWindow shell;   // bundled VGA typeface = the live cell metrics
+        Q_UNUSED(shell);
+        TabStrip ts;
+        ts.setTabs(QStringList() << "alpha", 0);
+        const int cellH = qMax(8, ts.fontMetrics().height());
+        ts.resize(600, cellH);
+        const QImage img = ts.grab().toImage();
+        QVERIFY(!img.isNull());
+
+        auto bbox = [&](const QRect& r, int* ox, int* oy) {
+            int minx = INT_MAX, maxx = INT_MIN, miny = INT_MAX, maxY = INT_MIN;
+            for (int y = r.top(); y <= r.bottom(); ++y)
+                for (int x = r.left(); x <= r.right(); ++x)
+                    if (isNear(img.pixelColor(x, y), kBlue, 8)) {
+                        minx = qMin(minx, x); maxx = qMax(maxx, x);
+                        miny = qMin(miny, y); maxY = qMax(maxY, y);
+                    }
+            if (oy) *oy = (miny <= maxY) ? maxY - miny + 1 : 0;
+            if (ox) *ox = (minx <= maxx) ? maxx - minx + 1 : 0;
+        };
+
+        int plusW = 0, plusH = 0, arrowW = 0, arrowH = 0;
+        bbox(ts.newTabRect(), &plusW, &plusH);
+        bbox(ts.nextTabRect(), &arrowW, &arrowH);
+        QVERIFY2(plusH > 0 && arrowH > 0, "no ink in + or arrow cell");
+        // Square: width and height match.
+        QVERIFY2(qAbs(plusW - plusH) <= 1,
+                 qPrintable(QStringLiteral("+ is %1x%2 - not square")
+                                .arg(plusW).arg(plusH)));
+        // Shorter than the arrow triangle beside it (it was filling the cell).
+        QVERIFY2(plusH < arrowH,
+                 qPrintable(QStringLiteral("+ height %1 is not shorter than the "
+                                           "arrow height %2")
+                                .arg(plusH).arg(arrowH)));
     }
 };
 

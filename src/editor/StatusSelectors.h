@@ -55,6 +55,11 @@ public:
 
     // The menu most recently opened by a click, for tests to inspect.
     QMenu* openMenu() const { return m_menu; }
+    // The top-left the last dropdown was ASKED to open at (window-global, in
+    // the same space as mapToGlobal). Exposed for tests: under Wayland the
+    // compositor owns popup placement, so menu->pos() cannot be asserted, but
+    // our own anchor math (where the far-left bug lived) can.
+    QPoint lastPopupPos() const { return m_lastPopupPos; }
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -80,6 +85,13 @@ private:
     QRect encodingRect() const;
     QRect docTypeRect() const;
     QRect overwriteRect() const;
+
+public:
+    // Public, read-only geometry: tests assert that a dropdown hangs off the
+    // indicator it was opened from.
+    QRect docTypeCellRect() const { return docTypeRect(); }
+
+private:
     // The four cell widths (natural text width, shrunk proportionally when the
     // widget is narrower than the content) so no label ever overflows the row.
     std::array<int, 4> cellWidths() const;
@@ -89,6 +101,13 @@ private:
     void openSpellMenu();
     // Wire a freshly-built menu's show/hide to the context-hint swap signals.
     void attachHint(QMenu* menu, const QString& hint);
+    // Size + place a dropdown so it hangs off its indicator cell (right edge on
+    // the cell's right edge, opening upward from the status row) and is CLAMPED
+    // fully inside the window. Also caps the height so a long list scrolls
+    // instead of running off the screen. Uses the EFFECTIVE size (sizeHint
+    // bounded by the max-width/height caps) - the natural sizeHint is what made
+    // the old clamp shove the popup to the window's left edge.
+    void popupAnchored(QMenu* menu, const QRect& cell);
 
     bool m_ovr = false;
     KTextEditor::Document* m_doc = nullptr;
@@ -96,4 +115,5 @@ private:
     QString m_spell;
     Sonnet::Speller* m_speller = nullptr;   // not owned
     QMenu* m_menu = nullptr;   // owned by this widget (parented)
+    QPoint m_lastPopupPos;     // where the last dropdown was asked to open
 };

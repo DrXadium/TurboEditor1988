@@ -536,6 +536,159 @@ private slots:
         s.setDocument(nullptr);
         delete doc;
     }
+
+    // User bug: the doc-type dropdown opened at the window's EXTREME LEFT
+    // instead of under the indicator that was clicked, because the clamp used
+    // QMenu::sizeHint() (natural, 1600px+) instead of the capped size. The
+    // popup must hang off the cell: its right edge at the cell's right edge,
+    // fully inside the window.
+    void doc_type_dropdown_opens_under_the_indicator_not_at_the_left_edge()
+    {
+        KTextEditor::Document* doc =
+            KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        QWidget host;
+        // Sized so the anchored popup lands inside BOTH the window and the test
+        // screen (Qt's popup() clamps to the screen too, which would hide a
+        // formula bug behind its own clamp).
+        host.resize(600, 400);
+        // NOT shown: a real window manager repositions the test window (it put
+        // it at 1580,888 - off the 1280x800 screen), which makes mapToGlobal
+        // and menu->pos() disagree. A hidden widget keeps the requested geometry
+        // and mapToGlobal still resolves through the parent chain.
+        auto* s = new StatusSelectors(&host);
+        // Plant the indicator row on the RIGHT of the window, like the real bar.
+        s->setGeometry(340, 376, 260, 20);
+        s->setDocument(doc);
+
+        QTest::mouseClick(s, Qt::LeftButton, Qt::NoModifier, s->docTypeCenter());
+        QCoreApplication::processEvents();
+        QMenu* menu = s->openMenu();
+        QVERIFY2(menu, "doc-type dropdown did not open");
+        const QRect hostR = QRect(host.mapToGlobal(QPoint(0, 0)), host.size());
+        // Assert OUR anchor math, not menu->pos(): the test runs under Wayland,
+        // where the compositor owns popup placement. The far-left bug lived in
+        // this math (a natural-sizeHint clamp), so this is the honest unit.
+        const QPoint mpos = s->lastPopupPos();
+        // The indicator's own click target, in global coordinates.
+        const QRect cellLocal = s->docTypeCellRect();
+        const QRect cell(cellLocal.topLeft() + s->mapToGlobal(QPoint(0, 0)),
+                         cellLocal.size());
+        const int menuW = qMin(menu->sizeHint().width(), 360);
+
+        // Right edge of the menu sits at the cell's right edge, so the list
+        // reads as hanging off the control that was clicked.
+        QVERIFY2(qAbs((mpos.x() + menuW) - (cell.right() + 1)) <= 1,
+                 qPrintable(QStringLiteral("menu right edge %1 vs cell right %2 "
+                                           "(not anchored to the indicator)")
+                                .arg(mpos.x() + menuW).arg(cell.right() + 1)));
+        // NOT pinned to the window's left edge - that was the reported bug (the
+        // natural-sizeHint clamp pushed a 1600px list to x=shell.left()).
+        QVERIFY2(mpos.x() > hostR.left(),
+                 qPrintable(QStringLiteral("menu x=%1 is pinned to the window's "
+                                           "left edge %2")
+                                .arg(mpos.x()).arg(hostR.left())));
+        // Fully inside the window.
+        QVERIFY2(mpos.x() >= hostR.left() && mpos.x() + menuW <= hostR.right() + 1,
+                 qPrintable(QStringLiteral("menu %1..%2 outside window %3..%4")
+                                .arg(mpos.x()).arg(mpos.x() + menuW)
+                                .arg(hostR.left()).arg(hostR.right())));
+        menu->hide();
+
+        s->setDocument(nullptr);
+        delete doc;
+    }
+
+    // User bug: "scrolling down the doc-type popup doesn't work". QMenu wraps a
+    // too-tall list into columns with no scrollers, so BorlandMenu lays out its
+    // own single column when the content overflows and scrolls it.
+    void overflowing_menu_scrolls_with_the_wheel()
+    {
+        BorlandMenu m;
+        for (int i = 0; i < 120; ++i)
+            m.addAction(QStringLiteral("Mode %1").arg(i));
+        m.setMaximumWidth(360);
+        // Production caps the height (StatusSelectors::popupAnchored calls
+        // setMaximumHeight); an uncapped menu keeps QMenu's own layout.
+        m.setMaximumHeight(300);
+        m.resize(360, 300);
+        m.show();
+        QCoreApplication::processEvents();
+        QVERIFY(m.scrolls());
+        QCOMPARE(m.scrollOffset(), 0);
+
+        // Wheel down scrolls forward.
+        QWheelEvent down(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
+                         Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+        QApplication::sendEvent(&m, &down);
+        QVERIFY2(m.scrollOffset() > 0,
+                 qPrintable(QStringLiteral("wheel down left scroll at %1")
+                                .arg(m.scrollOffset())));
+
+        const int scrolled = m.scrollOffset();
+        QWheelEvent up(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, 120),
+                       Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+        QApplication::sendEvent(&m, &up);
+        QVERIFY2(m.scrollOffset() < scrolled,
+                 qPrintable(QStringLiteral("wheel up left scroll at %1 (was %2)")
+                                .arg(m.scrollOffset()).arg(scrolled)));
+        QCOMPARE(m.scrollOffset(), 0);
+        m.hide();
+    }
+
+    // User bug: "the spell label tag isn't showing at all". Nothing ever seeded
+    // StatusSelectors' language code, so the indicator stayed on its placeholder
+    // forever. Setting the speller must adopt the speller's language.
+    void spell_label_is_seeded_from_the_speller()
+    {
+        Sonnet::Speller speller;
+        StatusSelectors s;
+        // Before: no language, placeholder only.
+        s.setSpeller(&speller);
+        const QString seeded = s.spellText();
+        QVERIFY2(!seeded.isEmpty() && seeded != QStringLiteral("-"),
+                 qPrintable(QStringLiteral("spell label still a placeholder: '%1'")
+                                .arg(seeded)));
+        QCOMPARE(seeded, speller.language());
+
+        // Picking from the dropdown updates the label too.
+        const auto dicts = speller.availableDictionaries();
+        QVERIFY(!dicts.isEmpty());
+        const QString other = dicts.constBegin().value() == speller.language()
+                                  ? std::next(dicts.constBegin()).value()
+                                  : dicts.constBegin().value();
+        s.setSpellLanguage(other);
+        QCOMPARE(s.spellText(), other);
+    }
+
+    // User bug: "INS/OVR status doesn't change in the footer (cursor responds
+    // tho)". Kate's Insert action flips the view's mode, but nothing re-pointed
+    // the indicator then. The selector must follow the view's own
+    // viewModeChanged signal.
+    void ovr_indicator_follows_the_views_insert_key()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        StatusSelectors s;
+        s.setView(v);
+        QCOMPARE(v->viewMode(), KTextEditor::View::NormalModeInsert);
+        QCOMPARE(s.overwrite(), false);
+        QCOMPARE(s.overwriteText(), QStringLiteral("INS"));
+
+        // The Insert key (Kate's own toggle), exactly as the editor gets it.
+        QVERIFY(m.triggerActiveViewShortcut(QKeySequence(Qt::Key_Insert)));
+        QCOMPARE(v->viewMode(), KTextEditor::View::NormalModeOverwrite);
+        QVERIFY2(s.overwrite(), "selector did not follow the view into OVR");
+        QCOMPARE(s.overwriteText(), QStringLiteral("OVR"));
+
+        QVERIFY(m.triggerActiveViewShortcut(QKeySequence(Qt::Key_Insert)));
+        QCOMPARE(v->viewMode(), KTextEditor::View::NormalModeInsert);
+        QVERIFY(!s.overwrite());
+        QCOMPARE(s.overwriteText(), QStringLiteral("INS"));
+    }
+
 };
 
 QTEST_MAIN(TstStatusSel)

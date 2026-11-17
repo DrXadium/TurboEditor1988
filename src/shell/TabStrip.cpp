@@ -72,24 +72,25 @@ static void drawPlus(QPainter& p, const QRect& r, const QColor& ink)
     // Arm thickness: a FIFTH of the shorter side, at least 2px, so the cross
     // never collapses to a hairline on a short row.
     const int arm = qMax(2, qMin(r.width(), r.height()) / 4);
-    // The cross must be SMALLER than the block and vertically CENTERED. Build
-    // the vertical span explicitly so its ink midpoint equals the block's own
-    // pixel midpoint ((top+bottom)/2): centre the span on that row. One clear
-    // pixel of margin top and bottom keeps it inside a 16px cell.
-    const int inkH = qMax(3, qMin(r.width(), r.height()) - 2);
+    // The cross is SQUARE and compact (reference: the + is the same size as it
+    // is tall, noticeably shorter than the arrow triangles beside it). Its height
+    // is therefore its width, not the cell height - an earlier version spanned
+    // the full cell vertically and read as "too tall".
+    const int hreach = qMax(2, qMin(r.width(), r.height()) / 3);
+    const int inkW = 2 * hreach + 1;
+    const int inkH = inkW;
+    // Center the square in the block: its ink midpoint must equal the block's
+    // own pixel midpoint ((top+bottom)/2), with an equal margin either side.
     const int y0 = r.top() + (r.height() - inkH) / 2;   // top row of the cross
     const int y1 = y0 + inkH - 1;                       // bottom row
     const int cy = (y0 + y1) / 2;                       // centre row of the ink
-    // Horizontal reach: symmetric about cx, sized to the block so the + reads
-    // as a glyph and not a hairline.
-    const int hreach = qMax(2, qMin(r.width(), r.height()) / 4);
     const int lo = -(arm / 2);                 // inclusive low edge
     const int hi = lo + arm - 1;               // inclusive high edge (width = arm)
     // Draw the plus as two filled rects (vertical bar + horizontal bar). A
     // polygon dropped its bottom row to the fill rule; rects include every row
     // and centre exactly.
     p.drawRect(QRect(cx + lo, y0, arm, inkH));                       // vertical
-    p.drawRect(QRect(cx - hreach, cy + lo, 2 * hreach + 1, arm));     // horizontal
+    p.drawRect(QRect(cx - hreach, cy + lo, inkW, arm));               // horizontal
     p.restore();
 }
 

@@ -50,7 +50,20 @@ void StatusSelectors::setView(KTextEditor::View* view)
 {
     if (m_view == view)
         return;
+    if (m_view)
+        disconnect(m_view, nullptr, this, nullptr);
     m_view = view;
+    if (m_view) {
+        // Follow the view's OWN mode changes. Pressing Insert in the editor
+        // flips Kate's overwrite mode and emits viewModeChanged, but nothing
+        // re-points the indicators at that moment - the footer used to stay on
+        // INS forever even though the caret switched to overwrite.
+        connect(m_view, &KTextEditor::View::viewModeChanged, this,
+                [this](KTextEditor::View* v, KTextEditor::View::ViewMode) {
+                    setOverwrite(v->viewMode() == KTextEditor::View::NormalModeOverwrite);
+                });
+        setOverwrite(m_view->viewMode() == KTextEditor::View::NormalModeOverwrite);
+    }
     update();
 }
 
@@ -68,6 +81,22 @@ void StatusSelectors::setSpeller(Sonnet::Speller* speller)
     if (m_speller == speller)
         return;
     m_speller = speller;
+    if (m_speller) {
+        // Adopt the speller's current language as the label. If it has none
+        // set yet, fall back to the first available dictionary so the indicator
+        // is never blank (it used to show nothing because nothing ever seeded
+        // the code).
+        QString code = m_speller->language();
+        if (code.isEmpty()) {
+            const auto dicts = m_speller->availableDictionaries();
+            if (!dicts.isEmpty()) {
+                code = dicts.constBegin().value();
+                m_speller->setLanguage(code);
+            }
+        }
+        if (!code.isEmpty())
+            m_spell = code;
+    }
     update();
     updateGeometry();   // dictionary description changes the label - re-measure
 }
@@ -253,20 +282,8 @@ void StatusSelectors::openDocTypeMenu()
     // Keep the dropdown a narrow column (like the encoding menu). Kate's
     // longest mode names otherwise stretch it to the viewport width.
     m_menu->setMaximumWidth(360);
-    // Anchor below the indicator, clamped inside the top-level window.
-    const QPoint global = mapToGlobal(docTypeRect().topLeft());
-    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
-                                 : QRect(global, size());
-    QPoint pos = global;
-    const QSize ms = m_menu->sizeHint();
-    if (pos.x() + ms.width() > shell.right())
-        pos.setX(shell.right() - ms.width());
-    if (pos.x() < shell.left())
-        pos.setX(shell.left());
-    if (pos.y() + ms.height() > shell.bottom())
-        pos.setY(global.y() - ms.height());
     attachHint(m_menu, QStringLiteral("Select document type"));
-    m_menu->popup(pos);
+    popupAnchored(m_menu, docTypeRect());
 }
 
 // Spec 7: while a dropdown is open the F-key row shows a context hint and the
@@ -279,6 +296,42 @@ void StatusSelectors::attachHint(QMenu* menu, const QString& hint)
         return;
     connect(menu, &QMenu::aboutToShow, this, [this, hint]() { emit dropdownOpened(hint); });
     connect(menu, &QMenu::aboutToHide, this, [this]() { emit dropdownClosed(); });
+}
+
+// Size + place a dropdown so it hangs off its indicator cell. The cell sits on
+// the status row at the BOTTOM of the window, so the popup opens upward; its
+// right edge lines up with the cell's right edge (it reads as attached to the
+// control that was clicked) and then everything is clamped inside the window.
+//
+// The clamp MUST use the EFFECTIVE size: QMenu::sizeHint() reports the natural
+// size and ignores setMaximumWidth/setMaximumHeight, so the old code clamped a
+// 1600px-wide doc-type list to the window's left edge ("the popup shows in the
+// extreme left of the screen").
+void StatusSelectors::popupAnchored(QMenu* menu, const QRect& cell)
+{
+    if (!menu)
+        return;
+    const QPoint global = mapToGlobal(cell.topLeft());
+    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
+                                 : QRect(global, size());
+    // Cap the height so a long list fits the window and scrolls inside it.
+    const int chrome = 2 * (BorlandMenu::borderInset() + BorlandMenu::borderWidth());
+    const int maxH = qMax(120, shell.height() - chrome - 8);
+    menu->setMaximumHeight(maxH);
+
+    QSize ms = menu->sizeHint();
+    if (menu->maximumWidth() < QWIDGETSIZE_MAX)
+        ms.setWidth(qMin(ms.width(), menu->maximumWidth()));
+    ms.setHeight(qMin(ms.height(), maxH));
+
+    // Right edge on the cell's right edge, opening upward from the row.
+    int x = global.x() + cell.width() - ms.width();
+    int y = global.y() - ms.height();            // above the status row
+    // Clamp fully inside the window.
+    x = qBound(shell.left(), x, qMax(shell.left(), shell.right() + 1 - ms.width()));
+    y = qBound(shell.top(), y, qMax(shell.top(), shell.bottom() + 1 - ms.height()));
+    m_lastPopupPos = QPoint(x, y);
+    menu->popup(m_lastPopupPos);
 }
 
 // The encoding switcher: every encoding Qt can name, as a scrollable menu.
@@ -315,19 +368,8 @@ void StatusSelectors::openEncodingMenu()
         if (m_doc && a)
             m_doc->setEncoding(a->data().toString());
     });
-    const QPoint global = mapToGlobal(encodingRect().topLeft());
-    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
-                                 : QRect(global, size());
-    QPoint pos = global;
-    const QSize ms = m_menu->sizeHint();
-    if (pos.x() + ms.width() > shell.right())
-        pos.setX(shell.right() - ms.width());
-    if (pos.x() < shell.left())
-        pos.setX(shell.left());
-    if (pos.y() + ms.height() > shell.bottom())
-        pos.setY(global.y() - ms.height());
     attachHint(m_menu, QStringLiteral("Select character encoding"));
-    m_menu->popup(pos);
+    popupAnchored(m_menu, encodingRect());
 }
 
 // The spellcheck-language dropdown: every dictionary Sonnet can find, by its
@@ -348,21 +390,12 @@ void StatusSelectors::openSpellMenu()
     }
     connect(m_menu, &QMenu::triggered, this, [this](QAction* a) {
         if (m_speller && a) {
-            m_speller->setLanguage(a->data().toString());
-            emit spellLanguageChanged(a->data().toString());
+            const QString code = a->data().toString();
+            m_speller->setLanguage(code);
+            setSpellLanguage(code);   // the label follows the pick
+            emit spellLanguageChanged(code);
         }
     });
-    const QPoint global = mapToGlobal(spellRect().topLeft());
-    const QRect shell = window() ? QRect(window()->mapToGlobal(QPoint(0, 0)), window()->size())
-                                 : QRect(global, size());
-    QPoint pos = global;
-    const QSize ms = m_menu->sizeHint();
-    if (pos.x() + ms.width() > shell.right())
-        pos.setX(shell.right() - ms.width());
-    if (pos.x() < shell.left())
-        pos.setX(shell.left());
-    if (pos.y() + ms.height() > shell.bottom())
-        pos.setY(global.y() - ms.height());
     attachHint(m_menu, QStringLiteral("Select spellcheck language"));
-    m_menu->popup(pos);
+    popupAnchored(m_menu, spellRect());
 }
