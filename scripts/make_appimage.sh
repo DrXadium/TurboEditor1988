@@ -82,9 +82,9 @@ export NO_STRIP=true
 cd "$ROOT"
 # Phase A: bundle Qt/KF6 deps into AppDir (no output step yet).
 "$LINUXDEPLOY" --appdir AppDir \
-  --executable AppDir/usr/bin/crt-kate \
-  --desktop-file AppDir/usr/share/applications/crt-kate.desktop \
-  --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/crt-kate.png \
+  --executable AppDir/usr/bin/turbo-kate \
+  --desktop-file AppDir/usr/share/applications/turbo-kate.desktop \
+  --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/turbo-kate.png \
   --plugin qt
 
 # linuxdeploy only ships libqxcb.so as a QPA platform plugin; wayland and
@@ -108,7 +108,7 @@ cp -a /usr/lib64/qt6/qml/. AppDir/usr/qml/
 # linuxdeploy also prefers a plain AppRun SYMLINK, which exports nothing:
 # no QML/data paths, no LD_LIBRARY_PATH for pristine plugins. Replace it with
 # a standard shell AppRun. (rm first: cat > SYMLINK would follow it and
-# clobber usr/bin/crt-kate itself.)
+# clobber usr/bin/turbo-kate itself.)
 rm -f AppDir/AppRun
 cat > AppDir/AppRun <<'APPRUN'
 #!/bin/sh
@@ -121,7 +121,7 @@ export XDG_DATA_DIRS="$HERE/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 # Bundled TV face lives in $HERE/usr/share/fonts/TTF (see CMake install rule);
 # XDG_DATA_DIRS above already exposes it to fontconfig, so the family resolves
 # without a custom FONTCONFIG_* override.
-exec "$HERE/usr/bin/crt-kate" "$@"
+exec "$HERE/usr/bin/turbo-kate" "$@"
 APPRUN
 chmod +x AppDir/AppRun
 
@@ -133,7 +133,7 @@ chmod +x AppDir/AppRun
 echo "   enforcing library closure (self-contained AppDir)"
 mkdir -p AppDir/usr/lib
 declare -A seen=()
-queue=("AppDir/usr/bin/crt-kate")
+queue=("AppDir/usr/bin/turbo-kate")
 # Seed with every Qt plugin .so (dlopened - not reachable from the binary's
 # NEEDED edges) so the closure walk also pulls their dependencies.
 while IFS= read -r plug; do queue+=("$plug"); done < <(find "$PLUGINROOT" -name "*.so" -type f)
@@ -177,7 +177,7 @@ restore_pristine() {
 while IFS= read -r f; do restore_pristine "$f"; done \
   < <(find AppDir/usr -type f \( -name "*.so" -o -name "*.so.*" \))
 # crt-kate itself: pristine staging copy (no rpath; AppRun provides lib path).
-cp -f "$ROOT/staging/usr/bin/crt-kate" AppDir/usr/bin/crt-kate
+cp -f "$ROOT/staging/usr/bin/turbo-kate" AppDir/usr/bin/turbo-kate
 
 # Stage 4: pack with appimagetool DIRECTLY. Spawning it without
 # APPIMAGE_EXTRACT_AND_RUN is the bisected-good shape (FUSE works in this

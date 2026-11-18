@@ -21,6 +21,7 @@
 #include <QtQuick/qquickitemgrabresult.h>
 #include <QTimer>
 #include "src/shell/ShellWindow.h"
+#include "src/AppIdentity.h"
 #include "src/shell/TabStrip.h"
 #include "src/shell/TabListMenu.h"
 #include "src/shell/MenuBar.h"
@@ -45,7 +46,11 @@
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("CRT-Kate"));
+    // User-facing identity. The on-disk identity is deliberately different
+    // (AppIdentity::storageDirName) so saved sessions/settings are not orphaned
+    // by the rename - see SessionManager and CrtSettings.
+    app.setApplicationName(AppIdentity::displayName());
+    app.setApplicationDisplayName(AppIdentity::displayName());
 
     // The Borland chrome, rendered offscreen (never mapped to a real window).
     ShellWindow shell;
@@ -521,11 +526,13 @@ int main(int argc, char** argv)
         // Help
         on(act("actionHelpAbout"), [&shell] {
             QMessageBox::about(
-                &shell, QObject::tr("About CRT-Kate"),
-                QObject::tr("<b>CRT-Kate</b> - Kate-class editing in a "
+                &shell,
+                QObject::tr("About %1").arg(AppIdentity::displayName()),
+                QObject::tr("<b>%1</b> - Kate-class editing in a "
                             "Borland-style shell with cool-retro-term CRT "
                             "effects.<br>Built on KTextEditor (KDE "
-                            "Frameworks) and Qt."));
+                            "Frameworks) and Qt.")
+                    .arg(AppIdentity::displayName()));
         });
 
         // Turbo Vision function keys (Task 12): the status line claims these,

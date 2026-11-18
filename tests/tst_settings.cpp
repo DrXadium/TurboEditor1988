@@ -11,6 +11,7 @@
 #include <QDoubleSpinBox>
 #include <QApplication>
 #include "src/settings/CrtSettings.h"
+#include "src/AppIdentity.h"
 #include <QLabel>
 #include <QSpinBox>
 #include "src/settings/SettingsDialog.h"
@@ -19,6 +20,15 @@ class TstSettings : public QObject
 {
     Q_OBJECT
 private slots:
+    // Rename guard: settings must keep living at ~/.config/CRT-Kate/crt.ini.
+    // If the default store path follows the new display name, the user's
+    // saved preferences are silently lost on next launch.
+    void default_store_path_stays_under_legacy_storage() {
+        CrtSettings s;
+        QVERIFY2(s.storePath().endsWith(QStringLiteral("/CRT-Kate/crt.ini")),
+                 qPrintable(QStringLiteral("settings store moved to '%1'").arg(s.storePath())));
+    }
+
     void initTestCase() {
         // A default-constructed instance must expose cool-retro-term defaults
         // (guards against a broken default-initializer before other slots run).
@@ -198,6 +208,19 @@ private slots:
         // And the wired control is actually present.
         QVERIFY2(dlg.findChild<QSpinBox*>(QStringLiteral("fontSizeSpin")),
                  "fontSizeSpin missing from the Appearance tab");
+    }
+
+    // Rename: the Settings dialog is user-facing and must name the app
+    // TURBO Kate, not the old CRT-Kate.
+    void settings_dialog_title_names_turbo_kate() {
+        CrtSettings s;
+        SettingsDialog dlg(&s);
+        QVERIFY2(dlg.windowTitle().contains(QStringLiteral("TURBO Kate")),
+                 qPrintable(QStringLiteral("Settings title still says '%1'")
+                                .arg(dlg.windowTitle())));
+        QVERIFY2(!dlg.windowTitle().contains(QStringLiteral("CRT-Kate")),
+                 qPrintable(QStringLiteral("Settings title still mentions the old name: '%1'")
+                                .arg(dlg.windowTitle())));
     }
 
     // --- SettingsDialog (widget contract) --------------------------------

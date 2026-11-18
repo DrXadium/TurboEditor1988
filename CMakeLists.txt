@@ -9,7 +9,7 @@
 #   between them; the spec-approved fallback is the FBO/QQuickRenderTarget
 #   path.
 cmake_minimum_required(VERSION 3.31)
-project(crt-kate LANGUAGES CXX)
+project(turbo-kate LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -232,11 +232,13 @@ target_link_libraries(tst_syntax PRIVATE crt-editor Qt6::Test Qt6::Widgets
 add_test(NAME tst_syntax COMMAND tst_syntax)
 
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
-add_executable(crt-kate src/main.cpp)
-target_link_libraries(crt-kate PRIVATE
+# Renamed crt-kate -> turbo-kate (user-facing name is TURBO Kate). The installed
+# QML layout stays share/crt-kate so the runtime lookup is untouched.
+add_executable(turbo-kate src/main.cpp)
+target_link_libraries(turbo-kate PRIVATE
   crt-bridge crt-editor crt-settings crt-session crt-autosave Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
 )
-target_compile_definitions(crt-kate PRIVATE
+target_compile_definitions(turbo-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
@@ -256,21 +258,21 @@ add_custom_command(
   COMMENT "qsb: compiling crt_effect.frag"
 )
 add_custom_target(crt_shaders DEPENDS ${CRT_QSB_OUT})
-add_dependencies(crt-kate crt_shaders)
-qt_add_resources(crt-kate "crt_qsb_res"
+add_dependencies(turbo-kate crt_shaders)
+qt_add_resources(turbo-kate "crt_qsb_res"
   PREFIX "/crt-kate"
   BASE ${CMAKE_CURRENT_BINARY_DIR}/qml
   FILES ${CRT_QSB_OUT}
 )
 
 # Task 11: install targets (DESTDIR=staging cmake --install build).
-install(TARGETS crt-kate RUNTIME DESTINATION bin)
+install(TARGETS turbo-kate RUNTIME DESTINATION bin)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/
         DESTINATION share/crt-kate/src
         FILES_MATCHING PATTERN "*.qml" PATTERN "qmldir")
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.desktop
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/turbo-kate.desktop
         DESTINATION share/applications)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/crt-kate.png
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/turbo-kate.png
         DESTINATION share/icons/hicolor/256x256/apps)
 # AppImage: bundle the TV typeface where fontconfig scans (AppRun points
 # XDG_DATA_DIRS at $APPDIR/usr/share), so "PxPlus IBM VGA8" resolves as a

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=CRT-Kate
+Name=TURBO Kate
 GenericName=Text Editor
 Comment=Kate-class editing in a Borland-style shell with CRT effects
-Exec=crt-kate
-Icon=crt-kate
+Exec=turbo-kate
+Icon=turbo-kate
 Terminal=false
 Categories=Development;TextEditor;Qt;
-StartupWMClass=crt-kate
+StartupWMClass=turbo-kate

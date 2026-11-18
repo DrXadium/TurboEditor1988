@@ -8,11 +8,24 @@
 #include <QTemporaryDir>
 #include <QUrl>
 #include "src/session/SessionManager.h"
+#include "src/AppIdentity.h"
 
 class TstSession : public QObject
 {
     Q_OBJECT
 private slots:
+    // Rename guard: the app is now TURBO Kate, but saved sessions must stay
+    // where they already are (~/.config/CRT-Kate/sessions). If the default dir
+    // follows the new display name, every existing session is orphaned.
+    void default_sessions_dir_stays_under_legacy_storage() {
+        SessionManager m;
+        QVERIFY2(m.sessionsDir().endsWith(QStringLiteral("/CRT-Kate/sessions")),
+                 qPrintable(QStringLiteral("sessions dir moved to '%1'").arg(m.sessionsDir())));
+        QVERIFY2(m.sessionsDir().contains(AppIdentity::storageDirName()),
+                 qPrintable(QStringLiteral("sessions dir '%1' does not use the storage id '%2'")
+                                .arg(m.sessionsDir(), AppIdentity::storageDirName())));
+    }
+
     void save_restore_roundtrip_two_files_cursor() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

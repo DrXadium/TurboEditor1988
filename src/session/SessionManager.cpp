@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
+#include "src/AppIdentity.h"
 
 namespace {
 const char kLastFile[] = "last-session";
@@ -15,8 +16,14 @@ const char kLastFile[] = "last-session";
 SessionManager::SessionManager(QObject* parent)
     : QObject(parent)
 {
-    // Default store: <AppConfigLocation>/sessions/<name>.json
-    m_dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+    // Default store: <ConfigLocation>/<storageDirName>/sessions/<name>.json
+    //
+    // Pinned to the LEGACY storage id rather than AppConfigLocation: the app is
+    // displayed as "TURBO Kate", but its sessions already live under
+    // ~/.config/CRT-Kate and there is no migration. Using AppConfigLocation
+    // here would follow the display name and orphan every saved session.
+    m_dir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+            + QLatin1Char('/') + AppIdentity::storageDirName()
             + QStringLiteral("/sessions");
 
     // Auto-save on quit: re-snapshot whatever the last restore/save named.

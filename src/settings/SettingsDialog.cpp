@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "SettingsDialog.h"
 #include "CrtSettings.h"
+#include "src/AppIdentity.h"
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -31,7 +32,7 @@ QDoubleSpinBox* makeSpin(double value, double min, double max, double step)
 SettingsDialog::SettingsDialog(CrtSettings* settings, QWidget* parent)
     : QDialog(parent), m_settings(settings)
 {
-    setWindowTitle(tr("Settings — CRT-Kate"));
+    setWindowTitle(tr("Settings — %1").arg(AppIdentity::displayName()));
     setObjectName(QStringLiteral("settingsDialog"));
 
     auto* outer = new QVBoxLayout(this);

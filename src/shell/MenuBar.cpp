@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "MenuBar.h"
 #include "BorlandMenu.h"
+#include "src/AppIdentity.h"
 #include <QPalette>
 #include <QColor>
 #include <QPainter>
@@ -114,11 +115,13 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(session, QStringLiteral("Restore &Last Session"), QStringLiteral("actionSessionRestore"));
 
     QMenu* settings = addMenu(QStringLiteral("Se&ttings"));
-    added(settings, QStringLiteral("&Configure CRT-Kate..."),
+    added(settings, QStringLiteral("&Configure ") + AppIdentity::displayName()
+                    + QStringLiteral("..."),
           QStringLiteral("actionSettingsConfigure"));
 
     QMenu* help = addMenu(QStringLiteral("&Help"));
-    added(help, QStringLiteral("&About CRT-Kate"), QStringLiteral("actionHelpAbout"));
+    added(help, QStringLiteral("&About ") + AppIdentity::displayName(),
+          QStringLiteral("actionHelpAbout"));
 }
 
 QMenu* MenuBar::addMenu(const QString& title)

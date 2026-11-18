@@ -3,6 +3,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
+#include "src/AppIdentity.h"
 
 namespace {
 // cool-retro-term ApplicationSettings.qml defaults.
@@ -125,8 +126,12 @@ QString CrtSettings::storePath() const
 {
     if (!m_storePath.isEmpty())
         return m_storePath;
+    // Pinned to the LEGACY storage id (not AppConfigLocation): preferences
+    // already live at ~/.config/CRT-Kate/crt.ini and are not migrated, so
+    // following the "TURBO Kate" display name would silently lose them.
     const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+        + QLatin1Char('/') + AppIdentity::storageDirName();
     QDir().mkpath(dir);
     return dir + QStringLiteral("/crt.ini");
 }

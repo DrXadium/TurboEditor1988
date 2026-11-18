@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Task 3: Borland chrome shell contract test.
 // Asserts ShellWindow exists, has MenuBar / TabStrip / FKeyStatusBar chrome,
-// uses BorlandStyle, and the window title is "CRT-Kate".
+// uses BorlandStyle, and the window title is "TURBO Kate".
 #include <QtTest>
 #include <QApplication>
 #include <QMenuBar>
@@ -14,6 +14,7 @@
 #include "src/shell/FKeyStatusBar.h"
 #include "src/shell/BottomBand.h"
 #include "src/shell/TextScrollBar.h"
+#include "src/AppIdentity.h"
 
 class TstChrome : public QObject
 {
@@ -38,9 +39,30 @@ private slots:
         QCOMPARE(QApplication::font().family(), QStringLiteral("PxPlus IBM VGA8"));
     }
 
-    void windowTitle_is_crt_kate() {
+    // Rename: the app is TURBO Kate to the user, but its on-disk identity is
+    // still CRT-Kate (sessions/settings live under ~/.config/CRT-Kate and are
+    // NOT migrated), so the two names must be deliberately separate.
+    void app_identity_separates_display_name_from_storage_dir() {
+        QCOMPARE(AppIdentity::displayName(), QStringLiteral("TURBO Kate"));
+        QCOMPARE(AppIdentity::storageDirName(), QStringLiteral("CRT-Kate"));
+    }
+
+    void windowTitle_is_turbo_kate() {
         ShellWindow w;
-        QCOMPARE(w.windowTitle(), QStringLiteral("CRT-Kate"));
+        QCOMPARE(w.windowTitle(), QStringLiteral("TURBO Kate"));
+    }
+
+    // The Help menu is user-facing text: it must name the app TURBO Kate.
+    void help_menu_names_turbo_kate() {
+        ShellWindow w;
+        QAction* about = w.findChild<QAction*>(QStringLiteral("actionHelpAbout"));
+        QVERIFY2(about, "no actionHelpAbout");
+        QVERIFY2(about->text().contains(QStringLiteral("TURBO Kate")),
+                 qPrintable(QStringLiteral("About action still says '%1'").arg(about->text())));
+        QAction* configure = w.findChild<QAction*>(QStringLiteral("actionSettingsConfigure"));
+        QVERIFY2(configure, "no actionSettingsConfigure");
+        QVERIFY2(configure->text().contains(QStringLiteral("TURBO Kate")),
+                 qPrintable(QStringLiteral("Configure action still says '%1'").arg(configure->text())));
     }
 
     void has_chrome_children() {

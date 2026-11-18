@@ -11,6 +11,7 @@
 #include "FKeyStatusBar.h"
 #include "BottomBand.h"
 #include "TvFrame.h"
+#include "src/AppIdentity.h"
 #include <QApplication>
 #include <QCoreApplication>
 #include <QFile>
@@ -230,7 +231,7 @@ private:
 
 ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("CRT-Kate"));
+    setWindowTitle(AppIdentity::displayName());
     setObjectName("shellWindow");
     resize(900, 600);
 
