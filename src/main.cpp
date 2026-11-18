@@ -842,6 +842,29 @@ int main(int argc, char** argv)
         });
     }
 
+    // Dev aid (unset in normal runs): CRT_KATE_SYNTAX=<mode> seeds a small
+    // code sample and switches the active document to that highlighting mode,
+    // so CRT_KATE_SHOT captures the Borland syntax palette rendering real
+    // tokens (keywords cyan, strings green, comments muted, numbers magenta).
+    if (const QByteArray mode = qgetenv("CRT_KATE_SYNTAX"); !mode.isEmpty()) {
+        QTimer::singleShot(700, &app, [&app, &tabs, mode]() {
+            if (KTextEditor::View* v = tabs.activeView()) {
+                KTextEditor::Document* d = v->document();
+                d->setText(QStringLiteral(
+                    "#include <stdio.h>\n"
+                    "// a muted comment\n"
+                    "int main(void) {\n"
+                    "    const char* s = \"green string\";\n"
+                    "    int n = 42;\n"
+                    "    if (n > 0) printf(\"%s %d\\n\", s, n);\n"
+                    "    return 0;\n"
+                    "}\n"));
+                d->setHighlightingMode(QString::fromUtf8(mode));
+            }
+            Q_UNUSED(app);
+        });
+    }
+
     // Dev aid (unset in normal runs): CRT_KATE_FILEDLG=open|save opens the TV
     // file dock at launch so CRT_KATE_SHOT can capture it composited INSIDE the
     // CRT frame - the proof that the dialog is drawn on the app's own surface

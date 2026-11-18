@@ -224,6 +224,13 @@ target_link_libraries(tst_spellmenu PRIVATE crt-shell crt-bridge crt-editor
                       KF6::SonnetCore KF6::TextEditor)
 add_test(NAME tst_spellmenu COMMAND tst_spellmenu)
 
+# GUI pass 2026-11-17, Task 4: syntax highlighting palette for the supported
+# token types, adapted to the Borland color scheme. ctest -R tst_syntax
+add_executable(tst_syntax tests/tst_syntax.cpp)
+target_link_libraries(tst_syntax PRIVATE crt-editor Qt6::Test Qt6::Widgets
+                      KF6::TextEditor KF6::SyntaxHighlighting)
+add_test(NAME tst_syntax COMMAND tst_syntax)
+
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
 target_link_libraries(crt-kate PRIVATE
