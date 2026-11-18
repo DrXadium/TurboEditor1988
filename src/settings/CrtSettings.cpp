@@ -3,6 +3,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
+#include <algorithm>
 #include "src/AppIdentity.h"
 
 namespace {
@@ -27,6 +28,8 @@ constexpr double kRasterIntensity = 0.22;
 const auto kFontColor = QColor(QStringLiteral("#ff8100"));
 // TV default editor font (spec: 16px DOS-cell proportions).
 const int kFontSize = 16;
+// Autosave round: default cadence 120 s, bounded by the Settings spin box.
+const int kAutosaveIntervalSeconds = 120;
 const auto kBackgroundColor = QColor(QStringLiteral("#000000"));
 
 // Non-zero values used when re-enabling an effect toggle.
@@ -59,6 +62,7 @@ void CrtSettings::resetToDefaults()
     m_rasterizationIntensity = kRasterIntensity;
     m_fontColor = kFontColor;
     m_fontSize = kFontSize;
+    m_autosaveIntervalSeconds = kAutosaveIntervalSeconds;
     m_backgroundColor = kBackgroundColor;
 }
 
@@ -95,6 +99,15 @@ CRT_SET(double, RasterizationIntensity, m_rasterizationIntensity, rasterizationI
 CRT_SET(QColor, FontColor, m_fontColor, fontColorChanged)
 CRT_SET(int, FontSize, m_fontSize, fontSizeChanged)
 CRT_SET(QColor, BackgroundColor, m_backgroundColor, backgroundColorChanged)
+// Clamped to the spin box range: 0/negative would mean "never" or a hot loop.
+void CrtSettings::setAutosaveIntervalSeconds(int v)
+{
+    v = std::clamp(v, 1, 3600);
+    if (m_autosaveIntervalSeconds == v)
+        return;
+    m_autosaveIntervalSeconds = v;
+    emit autosaveIntervalSecondsChanged();
+}
 #undef CRT_SET
 
 void CrtSettings::setScanlinesEnabled(bool on)
@@ -166,6 +179,10 @@ bool CrtSettings::load()
     m_rasterizationIntensity = s.value(QStringLiteral("rasterizationIntensity"), kRasterIntensity).toDouble();
     m_fontColor = s.value(QStringLiteral("fontColor"), kFontColor).value<QColor>();
     m_fontSize = s.value(QStringLiteral("fontSize"), kFontSize).toInt();
+    m_autosaveIntervalSeconds = std::clamp(
+        s.value(QStringLiteral("autosaveIntervalSeconds"),
+                kAutosaveIntervalSeconds).toInt(),
+        1, 3600);
     m_backgroundColor = s.value(QStringLiteral("backgroundColor"), kBackgroundColor).value<QColor>();
     s.endGroup();
 
@@ -188,6 +205,7 @@ bool CrtSettings::load()
     emit rasterizationIntensityChanged();
     emit fontColorChanged();
     emit fontSizeChanged();
+    emit autosaveIntervalSecondsChanged();
     emit backgroundColorChanged();
     emit scanlinesEnabledChanged();
     return true;
@@ -230,6 +248,7 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("rasterizationIntensity"), m_rasterizationIntensity);
     s.setValue(QStringLiteral("fontColor"), m_fontColor);
     s.setValue(QStringLiteral("fontSize"), m_fontSize);
+    s.setValue(QStringLiteral("autosaveIntervalSeconds"), m_autosaveIntervalSeconds);
     s.setValue(QStringLiteral("backgroundColor"), m_backgroundColor);
     s.endGroup();
     s.sync();

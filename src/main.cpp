@@ -601,7 +601,24 @@ int main(int argc, char** argv)
     // to restore"): Restore reopens each snapshot's content in a new tab,
     // Discard drops the snapshots.
     AutosaveService autosave;
-    autosave.start(120000);
+    // Autosave round (approach A): BOTH halves - the modified-buffer snapshots
+    // (recovery) and a timestamped session snapshot (keep-last-10, enforced by
+    // SessionManager::takeSnapshot) - at the user's configured cadence. The
+    // sink keeps crt-autosave free of a SessionManager dependency.
+    autosave.setSessionSink([&sessions]() {
+        if (!sessions.entries().isEmpty())
+            sessions.takeSnapshot();
+    });
+    autosave.setIntervalSeconds(crtSettings.autosaveIntervalSeconds());
+    autosave.start();
+    // Live settings: the Settings dialog writes through crtSettings, and the
+    // service follows without a restart (setIntervalSeconds applies to a
+    // running timer).
+    QObject::connect(&crtSettings, &CrtSettings::autosaveIntervalSecondsChanged,
+                     &autosave, [&autosave, &crtSettings]() {
+                         autosave.setIntervalSeconds(
+                             crtSettings.autosaveIntervalSeconds());
+                     });
     if (const auto pending = autosave.pendingRecovery(); !pending.isEmpty()) {
         QStringList names;
         for (const auto& p : pending)

@@ -176,6 +176,17 @@ QWidget* SettingsDialog::buildAppearanceTab()
     connect(sizeSpin, &QSpinBox::valueChanged, m_settings, &CrtSettings::setFontSize);
     form->addRow(tr("Editor font size (px):"), sizeSpin);
 
+    // Autosave round (approach A): interval in seconds, clamped to the
+    // same 1..3600 range the setting enforces.
+    auto* intervalSpin = new QSpinBox;
+    intervalSpin->setObjectName(QStringLiteral("autosaveIntervalSpin"));
+    intervalSpin->setRange(1, 3600);
+    intervalSpin->setSuffix(tr(" s"));
+    intervalSpin->setValue(m_settings->autosaveIntervalSeconds());
+    connect(intervalSpin, &QSpinBox::valueChanged, m_settings,
+            &CrtSettings::setAutosaveIntervalSeconds);
+    form->addRow(tr("Autosave interval:"), intervalSpin);
+
     form->addRow(new QLabel(
         tr("Editor scheme, chrome theme and minimap options are configured "
            "by the theme and editor settings.")));

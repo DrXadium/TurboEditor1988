@@ -173,7 +173,7 @@ add_test(NAME tst_session COMMAND tst_session)
 
 # Task 8 test: ctest -R tst_autosave
 add_executable(tst_autosave tests/tst_autosave.cpp)
-target_link_libraries(tst_autosave PRIVATE crt-autosave Qt6::Test)
+target_link_libraries(tst_autosave PRIVATE crt-autosave crt-session Qt6::Test)
 add_test(NAME tst_autosave COMMAND tst_autosave)
 
 # Task 9A test: ctest -R tst_minimap

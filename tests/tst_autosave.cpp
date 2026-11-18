@@ -6,16 +6,55 @@
 // away) — both clear the pending list.
 #include <QtTest>
 #include <QTemporaryDir>
+#include <QSignalSpy>
 #include <QUrl>
 #include <QFile>
 #include <QDir>
 #include <QSignalSpy>
 #include "src/autosave/AutosaveService.h"
+#include "src/session/SessionManager.h"
 
 class TstAutosave : public QObject
 {
     Q_OBJECT
 private slots:
+    // GUI pass: autosave interval is user-configurable in SECONDS (the Settings
+    // spin box shows seconds), so the service must expose the value in seconds
+    // and start() must honour it - not a hardcoded 120000 ms.
+    void interval_is_configurable_in_seconds() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        AutosaveService s(dir.path());
+
+        QCOMPARE(s.intervalSeconds(), 120);              // current default
+        s.setIntervalSeconds(7);
+        QCOMPARE(s.intervalSeconds(), 7);
+
+        s.start();
+        // The timer's own interval is the contract: runOneTick must fire after
+        // the configured number of seconds, not the 120 s default.
+        QCOMPARE(s.timerIntervalMs(), 7 * 1000);
+        QVERIFY(s.isRunning());
+        s.stop();
+        QVERIFY(!s.isRunning());
+    }
+
+    // Changing the interval while the timer runs must apply immediately (the
+    // settings dialog is live: the user expects the next save to follow the
+    // new value without restarting the app).
+    void setting_interval_live_updates_a_running_timer() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        AutosaveService s(dir.path());
+        s.start();
+        QCOMPARE(s.timerIntervalMs(), 120 * 1000);
+
+        s.setIntervalSeconds(15);
+        QCOMPARE(s.timerIntervalMs(), 15 * 1000);
+        QVERIFY(s.isRunning());     // still running after the change
+        s.stop();
+    }
+
     void tick_writes_recovery_file_and_lists_it() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -127,6 +166,62 @@ private slots:
         // NOT marked modified -> one tick should snapshot nothing.
         svc.runOneTick();
         QVERIFY(svc.pendingRecovery().isEmpty());
+    }
+
+    // Autosave round (approach A): ONE tick must drive BOTH halves - the
+    // modified-buffer snapshot AND a timestamped session snapshot - so a crash
+    // loses at most one interval of work either way. The session half is
+    // injected as a sink (crt-autosave stays free of a session dependency).
+    void one_tick_snapshots_buffers_and_session() {
+        QTemporaryDir bufDir, sessDir;
+        QVERIFY(bufDir.isValid());
+        QVERIFY(sessDir.isValid());
+
+        AutosaveService svc(bufDir.path());
+        SessionManager sessions;
+        sessions.setSessionsDir(sessDir.path());
+        sessions.setEntries({ { QUrl::fromLocalFile("/tmp/a.txt"), 4, 1, 0 } });
+
+        int sessionSnapshots = 0;
+        svc.setSessionSink([&sessionSnapshots, &sessions]() {
+            sessions.takeSnapshot();
+            ++sessionSnapshots;
+        });
+
+        // Half 1: a modified buffer still produces a recovery file.
+        const QUrl orig = QUrl::fromLocalFile("/etc/hostname");
+        svc.registerDocument(orig, QStringLiteral("buffer contents"));
+        svc.markModified(orig);
+
+        svc.runOneTick();
+
+        QCOMPARE(sessionSnapshots, 1);
+        QVERIFY2(!svc.pendingRecovery().isEmpty(),
+                 "buffer half missing from the tick");
+
+        // Half 2: a real timestamped snapshot exists on disk.
+        const auto autos = QStringList(sessions.sessionNames())
+                               .filter(QRegularExpression(QStringLiteral("^auto-")));
+        QCOMPARE(autos.size(), 1);
+        QVERIFY(QFile::exists(sessDir.filePath(autos.first()
+                                                   + QStringLiteral(".json"))));
+    }
+
+    // Without a sink installed, a tick must not touch the session store at all
+    // (apps that only want buffer autosave keep today's behaviour).
+    void tick_without_session_sink_writes_no_session() {
+        QTemporaryDir sessDir;
+        QVERIFY(sessDir.isValid());
+        AutosaveService svc;
+        SessionManager sessions;
+        sessions.setSessionsDir(sessDir.path());
+        sessions.setEntries({ { QUrl::fromLocalFile("/tmp/a.txt"), 4, 1, 0 } });
+        svc.setSessionSink([&sessions]() { sessions.takeSnapshot(); });
+
+        svc.clearSessionSink();
+        svc.runOneTick();
+
+        QCOMPARE(sessions.sessionNames().size(), 0);
     }
 };
 

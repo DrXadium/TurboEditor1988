@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QUrl>
 #include <QVector>
+#include <QDateTime>
 
 // Named session manager: snapshots "which files were open, where the cursor
 // was, which tab was active" into ~/.config/<app>/sessions/<name>.json so a
@@ -30,12 +31,19 @@ public:
 
     void saveSession(const QString& name);
     bool restoreSession(const QString& name);
+    // Autosave round: write a timestamped snapshot "auto-YYYYMMDD-HHMMSS.json"
+    // through the normal session path (so it restores like a named session).
+    // The clock is injectable for tests; defaults to now. Returns the snapshot
+    // name (without ".json"), or an empty string if the write failed.
+    QString takeSnapshot(const QDateTime& when = QDateTime());
     QString lastSession() const;
     QStringList sessionNames() const;
 
 private:
     QString filePathFor(const QString& name) const;
     void setLastSession(const QString& name);
+    // Autosave round: enforce keep-last-10 on auto- snapshots only.
+    void pruneAutoSnapshots();
 
     QString m_dir;
     QVector<Entry> m_entries;

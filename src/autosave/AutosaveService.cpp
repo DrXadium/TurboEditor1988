@@ -46,14 +46,56 @@ void AutosaveService::markSaved(const QUrl& url) { m_modified.remove(url); }
 
 void AutosaveService::start(int intervalMs)
 {
-    m_timer.setInterval(intervalMs);
+    // Default (no argument) honours the configured cadence; an explicit value
+    // (legacy callers/tests) still overrides for that start.
+    m_timer.setInterval(intervalMs < 0 ? m_intervalSeconds * 1000 : intervalMs);
     m_timer.start();
+}
+
+void AutosaveService::setIntervalSeconds(int seconds)
+{
+    if (seconds < 1)
+        seconds = 1;
+    if (m_intervalSeconds == seconds)
+        return;
+    m_intervalSeconds = seconds;
+    // Live setting: the running timer follows immediately, so the next save
+    // uses the new cadence without an app restart.
+    if (m_timer.isActive())
+        m_timer.setInterval(seconds * 1000);
+}
+
+int AutosaveService::intervalSeconds() const
+{
+    return m_intervalSeconds;
+}
+
+int AutosaveService::timerIntervalMs() const
+{
+    return m_timer.interval();
+}
+
+bool AutosaveService::isRunning() const
+{
+    return m_timer.isActive();
 }
 
 void AutosaveService::stop() { m_timer.stop(); }
 
+void AutosaveService::setSessionSink(std::function<void()> sink)
+{
+    m_sessionSink = std::move(sink);
+}
+
+void AutosaveService::clearSessionSink() { m_sessionSink = {}; }
+
 void AutosaveService::runOneTick()
 {
+    // Session half: one timestamped snapshot per tick (keep-last-10 is the
+    // sink's job), regardless of whether any buffer changed.
+    if (m_sessionSink)
+        m_sessionSink();
+
     QDir().mkpath(m_dir);
     for (const QUrl& url : std::as_const(m_modified)) {
         const QString text = m_buffers.value(url);

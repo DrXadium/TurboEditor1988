@@ -7,6 +7,7 @@
 #include <QString>
 #include <QUrl>
 #include <QTimer>
+#include <functional>
 
 // Periodic autosave + crash recovery.
 // Registered documents that are marked modified get snapshotted to
@@ -42,8 +43,22 @@ public:
     void markModified(const QUrl& url);
     void markSaved(const QUrl& url);
 
-    void start(int intervalMs = 120000);
+    // intervalMs < 0 (or no argument) = use the configured seconds.
+    void start(int intervalMs = -1);
     void stop();
+    // Autosave cadence in SECONDS (the Settings spin box's unit). start()
+    // applies it; changing it while the timer runs takes effect immediately.
+    void setIntervalSeconds(int seconds);
+    int intervalSeconds() const;
+    // Autosave round: the session half of the tick, injected by the
+    // composition root (keeps crt-autosave free of a SessionManager
+    // dependency - same pattern as ShellWindow's hooks). Called once per tick.
+    void setSessionSink(std::function<void()> sink);
+    void clearSessionSink();
+    // Observability for the timer contract (tests assert the real value that
+    // would drive runOneTick, rather than only the setting's own storage).
+    int timerIntervalMs() const;
+    bool isRunning() const;
     // Deterministic single pass (used by tests); the timer calls this.
     void runOneTick();
 
@@ -67,4 +82,6 @@ private:
     QHash<int, RecoveryFile> m_pending;
     int m_nextId = 1;
     QTimer m_timer;
+    int m_intervalSeconds = 120;   // default 120 s (unchanged from 120000 ms)
+    std::function<void()> m_sessionSink;
 };

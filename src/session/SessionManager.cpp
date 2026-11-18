@@ -7,10 +7,14 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
+#include <QRegularExpression>
+#include <algorithm>
 #include "src/AppIdentity.h"
 
 namespace {
 const char kLastFile[] = "last-session";
+// Autosave round: keep-last-10 timestamped snapshots (named sessions exempt).
+constexpr int kMaxAutoSnapshots = 10;
 }
 
 SessionManager::SessionManager(QObject* parent)
@@ -51,6 +55,30 @@ void SessionManager::setLastSession(const QString& name)
     QFile f(m_dir + QLatin1Char('/') + QLatin1String(kLastFile));
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
         f.write(name.toUtf8());
+}
+
+QString SessionManager::takeSnapshot(const QDateTime& when)
+{
+    const QDateTime at = when.isValid() ? when : QDateTime::currentDateTime();
+    const QString name = QStringLiteral("auto-%1-%2")
+                             .arg(at.date().toString(QStringLiteral("yyyyMMdd")),
+                                  at.time().toString(QStringLiteral("HHmmss")));
+    saveSession(name);
+    pruneAutoSnapshots();
+    return name;
+}
+
+void SessionManager::pruneAutoSnapshots()
+{
+    // Keep the newest kMaxAutoSnapshots only; the timestamped names sort
+    // chronologically, so an ascending name listing plus a forward delete gives
+    // exactly that. Named sessions never match the auto- prefix.
+    auto autos = QStringList(sessionNames())
+                     .filter(QRegularExpression(QStringLiteral("^auto-")));
+    std::sort(autos.begin(), autos.end());          // oldest first
+    while (autos.size() > kMaxAutoSnapshots) {
+        QFile::remove(filePathFor(autos.takeFirst()));
+    }
 }
 
 QString SessionManager::lastSession() const

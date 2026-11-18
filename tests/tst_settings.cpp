@@ -271,6 +271,61 @@ private slots:
         QCOMPARE(s.screenCurvature(), 0.0);   // disabled => flat
         QVERIFY(!curvSpin->isEnabled());
     }
+
+    // Autosave round (approach A): a user-configurable autosave interval in
+    // SECONDS, defaulting to 120, persisted with the rest of the settings.
+    void autosave_interval_seconds_defaults_to_120_and_roundtrips() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        {
+            CrtSettings s;
+            QCOMPARE(s.autosaveIntervalSeconds(), 120);
+            s.setStorePath(store);
+            s.setAutosaveIntervalSeconds(45);
+            QCOMPARE(s.autosaveIntervalSeconds(), 45);
+            QVERIFY2(s.save(), "save() returned false");
+        }
+
+        CrtSettings loaded;
+        loaded.setStorePath(store);
+        QVERIFY(loaded.load());
+        QCOMPARE(loaded.autosaveIntervalSeconds(), 45);
+    }
+
+    // The interval must stay inside the spin box's range: 0 would mean "never"
+    // or a hot loop, and an unbounded value could never be typed anyway.
+    void autosave_interval_seconds_is_bounded() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        CrtSettings s;
+        s.setStorePath(dir.filePath("crt-kate.ini"));
+
+        s.setAutosaveIntervalSeconds(1);
+        QCOMPARE(s.autosaveIntervalSeconds(), 1);
+        s.setAutosaveIntervalSeconds(0);        // below minimum -> clamped
+        QVERIFY(s.autosaveIntervalSeconds() >= 1);
+        s.setAutosaveIntervalSeconds(999999);   // above maximum -> clamped
+        QVERIFY(s.autosaveIntervalSeconds() <= 3600);
+    }
+
+    // The dialog exposes the setting as a spin box seeded from the settings
+    // value and wired back into it (the live path main.cpp reads).
+    void settings_dialog_offers_an_autosave_interval_spin() {
+        CrtSettings s;
+        s.setAutosaveIntervalSeconds(77);
+        SettingsDialog dlg(&s);
+        auto* spin = dlg.findChild<QSpinBox*>(
+            QStringLiteral("autosaveIntervalSpin"));
+        QVERIFY2(spin, "no autosaveIntervalSpin in the Settings dialog");
+        QCOMPARE(spin->value(), 77);
+        QCOMPARE(spin->minimum(), 1);
+        QCOMPARE(spin->maximum(), 3600);
+
+        spin->setValue(30);
+        QCOMPARE(s.autosaveIntervalSeconds(), 30);
+    }
 };
 
 int main(int argc, char** argv)

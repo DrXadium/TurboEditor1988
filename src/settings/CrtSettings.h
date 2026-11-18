@@ -43,6 +43,8 @@ public:
 
     Q_PROPERTY(QColor fontColor READ fontColor WRITE setFontColor NOTIFY fontColorChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontSizeChanged)
+    Q_PROPERTY(int autosaveIntervalSeconds READ autosaveIntervalSeconds
+                   WRITE setAutosaveIntervalSeconds NOTIFY autosaveIntervalSecondsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
 
     // --- Per-effect on/off accessors (map to the float model) ---
@@ -71,6 +73,7 @@ public:
     double rasterizationIntensity() const { return m_rasterizationIntensity; }
     QColor fontColor() const { return m_fontColor; }
     int fontSize() const { return m_fontSize; }
+    int autosaveIntervalSeconds() const { return m_autosaveIntervalSeconds; }
     QColor backgroundColor() const { return m_backgroundColor; }
 
     bool scanlinesEnabled() const;
@@ -99,6 +102,7 @@ public slots:
     void setRasterizationIntensity(double v);
     void setFontColor(QColor v);
     void setFontSize(int v);
+    void setAutosaveIntervalSeconds(int v);
     void setBackgroundColor(QColor v);
 
     // Per-effect toggles: off sets the driver float (or rasterization) to its
@@ -137,6 +141,7 @@ signals:
     void rasterizationIntensityChanged();
     void fontColorChanged();
     void fontSizeChanged();
+    void autosaveIntervalSecondsChanged();
     void backgroundColorChanged();
     void scanlinesEnabledChanged();
 
@@ -161,6 +166,7 @@ private:
     double m_rasterizationIntensity;
     QColor m_fontColor;
     int m_fontSize;
+    int m_autosaveIntervalSeconds;
     QColor m_backgroundColor;
     QString m_storePath;   // empty => default QSettings location
     double m_savedBrightness = -1.0;   // brightness before applyDevBrightness (>=0 when active)
