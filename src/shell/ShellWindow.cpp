@@ -23,6 +23,7 @@
 #include <QLayout>
 #include <QPainter>
 #include <QPaintEvent>
+#include <sonnet/speller.h>
 
 namespace {
 const QColor kFrameGray(0xAA, 0xAA, 0xAA);
@@ -524,7 +525,27 @@ void ShellWindow::wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* vi
 //
 // The spellcheck toggle is NOT here: it lives in the Edit menu bar only (user,
 // 2026-11-17 - "that's in the menu bar"), so the menu ends after Paste.
+// Sonnet's own default dictionary, used only when the composition root has not
+// named one yet. The root (main.cpp) owns the speller the status selector uses
+// and pushes its language down through setSpellLanguage(), so the popout and
+// the status tag never disagree about what is misspelled.
+namespace {
+QString sonnetDefaultLanguage()
+{
+    static const QString lang = [] {
+        Sonnet::Speller s;
+        return s.language();
+    }();
+    return lang;
+}
+} // namespace
+
 void ShellWindow::showEditorContextMenu(const QPoint& shellLocal)
+{
+    showEditorContextMenu(shellLocal, SpellWord());
+}
+
+void ShellWindow::showEditorContextMenu(const QPoint& shellLocal, const SpellWord& word)
 {
     BorlandMenu* menu = findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
     if (!menu) {
@@ -543,10 +564,181 @@ void ShellWindow::showEditorContextMenu(const QPoint& shellLocal)
         add("actionEditCopy");
         add("actionEditPaste");
     }
+
+    // Rebuild the spell section on EVERY right-click so it always describes the
+    // word actually under the pointer. Remove anything a previous click left,
+    // then add the section only if the word is genuinely misspelled (a correct
+    // word leaves the menu exactly as Task 2 left it).
+    for (QAction* stale : menu->actions())
+        if (stale->objectName() == QLatin1String("spellWord")
+            || stale->objectName() == QLatin1String("spellDivider")) {
+            menu->removeAction(stale);
+            stale->deleteLater();
+        }
+    delete m_spellPopout;
+    m_spellPopout = nullptr;
+    m_spellWord = SpellWord();
+
+    Sonnet::Speller speller(m_spellLang.isEmpty() ? sonnetDefaultLanguage() : m_spellLang);
+    if (word.valid() && !word.text.isEmpty() && speller.isMisspelled(word.text)) {
+        m_spellWord = word;
+        buildSpellSection(menu, word, speller);
+    }
+
     // popup(), never exec(): the shell is never mapped, so exec()'s nested
     // event loop and the native context-menu path do not behave here. The
     // bridge drives the open menu with synthesized events, like the menu bar.
     menu->popup(mapToGlobal(shellLocal));
+}
+
+// The spell section (GUI pass, Task 3): the misspelled WORD as a bold headline
+// row, a divider under it, and a hover popout of suggestions / add / ignore.
+void ShellWindow::buildSpellSection(BorlandMenu* menu, const SpellWord& word,
+                                    const Sonnet::Speller& speller)
+{
+    QFont head = menu->font();
+    head.setBold(true);
+
+    auto* headline = new QAction(menu);
+    headline->setObjectName(QStringLiteral("spellWord"));
+    headline->setText(word.text);
+    // A word is not a command: no red hotkey, no underline, no mnemonic, and
+    // bold by double-strike (the TV face is fixed-pitch bitmap - setBold()'s
+    // advance is a no-op there).
+    BorlandMenu::setRowFont(headline, head);
+    BorlandMenu::setRowNoMnemonic(headline, true);
+    BorlandMenu::setRowBold(headline, true);
+    if (!menu->actions().isEmpty())
+        menu->insertAction(menu->actions().first(), headline);
+    else
+        menu->addAction(headline);
+
+    // Divider directly under the headline, ABOVE the edit commands. addSeparator()
+    // appends, so move it; reading actions().value(1) blindly would rename a
+    // real command (that clobbered actionEditUndo in an earlier draft).
+    QAction* divider = menu->addSeparator();
+    menu->insertAction(menu->actions().at(1), divider);
+    divider->setObjectName(QStringLiteral("spellDivider"));
+
+    buildSpellPopout(speller.suggest(word.text), speller);
+    // HOVERING the headline opens the popout (the user asked for it on hover).
+    connect(headline, &QAction::hovered, this, &ShellWindow::showSpellPopout);
+}
+
+// The hover popout: a BorlandMenu, so literally the same widget the right-click
+// menu is made of. Layout: divider, suggestions, divider, add-to-dictionary,
+// ignore.
+void ShellWindow::buildSpellPopout(const QStringList& suggestions,
+                                   const Sonnet::Speller& speller)
+{
+    Q_UNUSED(speller);
+    auto* popout = new BorlandMenu(this);
+    popout->setObjectName(QStringLiteral("spellPopout"));
+    m_spellPopout = popout;
+
+    QAction* topSep = popout->addSeparator();
+    topSep->setObjectName(QStringLiteral("spellPopoutTopDivider"));
+
+    for (int i = 0; i < suggestions.size(); ++i) {
+        auto* s = new QAction(popout);
+        s->setObjectName(QStringLiteral("spellSuggest%1").arg(i));
+        s->setText(suggestions.at(i));
+        popout->addAction(s);
+        connect(s, &QAction::triggered, this, [this, s] {
+            applySpellReplacement(s->text());
+        });
+    }
+
+    QAction* sep = popout->addSeparator();
+    sep->setObjectName(QStringLiteral("spellPopoutDivider"));
+
+    auto* add = new QAction(popout);
+    add->setObjectName(QStringLiteral("spellAddToDictionary"));
+    add->setText(tr("Add to dictionary"));
+    popout->addAction(add);
+    connect(add, &QAction::triggered, this, [this] {
+        if (!m_spellWord.valid())
+            return;
+        Sonnet::Speller sp(m_spellLang.isEmpty() ? sonnetDefaultLanguage() : m_spellLang);
+        sp.addToPersonal(m_spellWord.text);
+    });
+
+    auto* ignore = new QAction(popout);
+    ignore->setObjectName(QStringLiteral("spellIgnoreWord"));
+    ignore->setText(tr("Ignore word"));
+    popout->addAction(ignore);
+    connect(ignore, &QAction::triggered, this, &ShellWindow::ignoreSpellWord);
+}
+
+// crt-shell does NOT link KTextEditor (a boundary this file keeps), so the edit
+// is emitted as data for the composition root to perform.
+void ShellWindow::applySpellReplacement(const QString& replacement)
+{
+    if (!m_spellWord.valid())
+        return;
+    emit spellReplacementRequested(m_spellWord.line, m_spellWord.startCol,
+                                   m_spellWord.endCol, replacement);
+    if (m_spellPopout)
+        m_spellPopout->hide();
+    if (BorlandMenu* menu = findChild<BorlandMenu*>(QStringLiteral("editorContextMenu")))
+        menu->hide();
+}
+
+void ShellWindow::ignoreSpellWord()
+{
+    if (!m_spellWord.valid())
+        return;
+    emit spellIgnoreRequested(m_spellWord.line, m_spellWord.startCol, m_spellWord.text);
+    if (m_spellPopout)
+        m_spellPopout->hide();
+    if (BorlandMenu* menu = findChild<BorlandMenu*>(QStringLiteral("editorContextMenu")))
+        menu->hide();
+}
+
+bool ShellWindow::spellPopoutVisible() const
+{
+    return m_spellPopout && m_spellPopout->isVisible();
+}
+
+// Popout hangs off the RIGHT edge of the context menu, clamped inside the shell
+// so it stays in the composited area.
+void ShellWindow::showSpellPopout()
+{
+    if (!m_spellPopout)
+        return;
+    BorlandMenu* menu = findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
+    if (!menu)
+        return;
+    const QSize size = m_spellPopout->sizeHint();
+    const QPoint shellTopLeft = mapToGlobal(QPoint(0, 0));
+    const QRect shellRect(shellTopLeft, this->size());
+    int x = menu->geometry().right() + 1;
+    int y = menu->geometry().top();
+    x = qBound(shellRect.left(), x,
+               qMax(shellRect.left(), shellRect.right() + 1 - size.width()));
+    y = qBound(shellRect.top(), y,
+               qMax(shellRect.top(), shellRect.bottom() + 1 - size.height()));
+    m_spellPopout->popup(QPoint(x, y));
+}
+
+void ShellWindow::setSpellPopupHost(ContentBridge* bridge)
+{
+    m_spellBridge = bridge;
+}
+
+void ShellWindow::setSpellLanguage(const QString& lang)
+{
+    m_spellLang = lang;
+}
+
+void ShellWindow::setSpellWordResolver(std::function<SpellWord(const QPoint&)> fn)
+{
+    m_spellResolver = std::move(fn);
+}
+
+SpellWord ShellWindow::spellWordAt(const QPoint& shellLocal) const
+{
+    return m_spellResolver ? m_spellResolver(shellLocal) : SpellWord();
 }
 
 bool ShellWindow::isEditorArea(QWidget* w) const

@@ -29,6 +29,7 @@
 #include "src/shell/BottomBand.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/shell/TvFileDock.h"
+#include "src/shell/BorlandMenu.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
 #include "src/editor/StatusSelectors.h"
@@ -80,6 +81,54 @@ int main(int argc, char** argv)
     shell.setEditorShortcutHandler([&tabs](const QKeySequence& seq) {
         return tabs.triggerActiveViewShortcut(seq);
     });
+    // Spell section (GUI pass, Task 3). crt-shell never links KTextEditor, so
+    // the two document-touching jobs live HERE, in the composition root:
+    //   1. resolve the word under a right-click (for the bold headline);
+    //   2. perform the replace / ignore the popout asks for.
+    //
+    // Resolve: map the shell-local click into the view's text position, then
+    // grow left/right over letters/apostrophes - the same run Kate's own
+    // spellchecker marks.
+    shell.setSpellWordResolver([&tabs, &shell](const QPoint& shellLocal) -> SpellWord {
+        KTextEditor::View* v = tabs.activeView();
+        KTextEditor::Document* d = v ? v->document() : nullptr;
+        if (!v || !d)
+            return SpellWord();
+        const QPoint inView = v->mapFromGlobal(shell.mapToGlobal(shellLocal));
+        const KTextEditor::Cursor cur = v->coordinatesToCursor(inView);
+        if (!cur.isValid())
+            return SpellWord();
+        const QString line = d->line(cur.line());
+        auto isWordChar = [](QChar c) {
+            return c.isLetterOrNumber() || c == QLatin1Char('\'');
+        };
+        int start = cur.column();
+        int end = cur.column();
+        while (start > 0 && isWordChar(line.at(start - 1)))
+            --start;
+        while (end < line.size() && isWordChar(line.at(end)))
+            ++end;
+        if (start >= end)
+            return SpellWord();
+        return SpellWord{ line.mid(start, end - start), cur.line(), start, end };
+    });
+    // A picked suggestion replaces the right-clicked range.
+    QObject::connect(&shell, &ShellWindow::spellReplacementRequested, &shell,
+                     [&tabs](int line, int startCol, int endCol,
+                             const QString& repl) {
+                         if (KTextEditor::Document* d = tabs.activeDocument())
+                             d->replaceText(KTextEditor::Range(line, startCol,
+                                                               line, endCol),
+                                            repl);
+                     });
+    // "Ignore word": Sonnet's own session-only ignore - the word is accepted
+    // for THIS run without being written to the user's personal dictionary, so
+    // a typo the user waved off does not silently become "correct" later.
+    QObject::connect(&shell, &ShellWindow::spellIgnoreRequested, &shell,
+                     [](int, int, const QString& word) {
+                         Sonnet::Speller sp;
+                         sp.addToSession(word);
+                     });
     // Bind the painted right/bottom scrollbars to the CURRENT view's real
     // scrollbars. The original bug: the document scrollbar was identified by
     // scanning children for the first vertical one, which latched an empty
@@ -194,6 +243,9 @@ int main(int argc, char** argv)
         auto* selectors = new StatusSelectors(&shell);
         static Sonnet::Speller speller;   // owns the dictionary list + current lang
         selectors->setSpeller(&speller);
+        // The spell popout must speak the SAME dictionary as the status tag,
+        // so a word is never correct in one place and misspelled in another.
+        shell.setSpellLanguage(speller.language());
         // Point the indicators at the active view/document now and on change.
         auto repoint = [selectors](KTextEditor::View* v) {
             selectors->setView(v);
@@ -272,6 +324,9 @@ int main(int argc, char** argv)
 
     ContentBridge bridge;
     bridge.setShellWindow(&shell);
+    // The spell popout registers itself with the bridge when the section is
+    // built (so it composites into the CRT frame like every other menu).
+    shell.setSpellPopupHost(&bridge);
 
     // CRT'd popup menus (Task 9): a QMenu opens as its own native top-level
     // window, which would sit ABOVE the CRT scene. Register it with the bridge
@@ -735,6 +790,55 @@ int main(int argc, char** argv)
             const QPoint p = ed->mapTo(&shell, ed->rect().center());
             bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
                                      Qt::RightButton, Qt::NoModifier, p.x(), p.y());
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_SPELLHOVER=1 right-clicks a
+    // KNOWN misspelled word in the editor, then hovers the headline row, so
+    // the spell popout (suggestions / add / ignore) can be captured with
+    // CRT_KATE_SHOT. This host has no pointer tool; the bridge IS the input.
+    // Without this the context menu opens over an empty line and no section
+    // builds (the word must be under the click).
+    if (qEnvironmentVariableIsSet("CRT_KATE_SPELLHOVER")) {
+        QTimer::singleShot(700, &app, [&app, &shell, &bridge, &tabs]() {
+            // Put a misspelled word at the top of the buffer and aim at it.
+            if (KTextEditor::View* v = tabs.activeView()) {
+                v->document()->setText(QStringLiteral("reibot second line\n"));
+                if (KTextEditor::Document* d = v->document())
+                    d->setHighlightingMode(QStringLiteral("Plain Text"));
+            }
+            QTimer::singleShot(300, &app, [&app, &shell, &bridge, &tabs]() {
+                // Use the ACTIVE view, not findChild(): findChild can reach a
+                // hidden stacked-child view whose cursorToCoordinate is stale.
+                KTextEditor::View* v = tabs.activeView();
+                if (!v)
+                    return;
+                // Word is at line 0, column 3 - aim there, not the view centre
+                // (the centre maps to an empty line where no spell section builds).
+                const QPoint wordView = v->cursorToCoordinate(KTextEditor::Cursor(0, 3));
+                if (wordView.x() < 0)
+                    return;
+                const QPoint p = v->mapTo(&shell, wordView);
+                bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
+                                         Qt::RightButton, Qt::NoModifier, p.x(), p.y());
+                // Hover the headline (the menu's first action) to open the popout.
+                QTimer::singleShot(300, &app, [&shell, &bridge]() {
+                    auto* menu = shell.findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
+                    if (!menu || !menu->isVisible())
+                        return;
+                    bridge.registerPopup(menu);
+                    QAction* head = nullptr;
+                    for (QAction* a : menu->actions())
+                        if (a->objectName() == QLatin1String("spellWord"))
+                            head = a;
+                    if (!head)
+                        return;
+                    const QPoint hp = menu->pos() - shell.pos()
+                                      + menu->actionGeometry(head).center();
+                    bridge.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton,
+                                             Qt::NoButton, Qt::NoModifier, hp.x(), hp.y());
+                });
+            });
         });
     }
 

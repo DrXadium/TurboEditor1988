@@ -2,6 +2,7 @@
 #pragma once
 #include <QMainWindow>
 #include <QKeySequence>
+#include <QString>
 #include <functional>
 #include <QVBoxLayout>
 #include <QPointer>
@@ -10,6 +11,19 @@ class MenuBar;
 class TabStrip;
 class FKeyStatusBar;
 class BorlandStyle;
+class BorlandMenu;
+class ContentBridge;
+namespace Sonnet { class Speller; }
+
+// The word the user right-clicked on, resolved for the spell section.
+// line/column are KTextEditor coordinates (line, column).
+struct SpellWord {
+    QString text;
+    int line = -1;
+    int startCol = -1;
+    int endCol = -1;      // exclusive
+    bool valid() const { return line >= 0 && startCol >= 0 && endCol > startCol; }
+};
 
 // Top-level Borland chrome window: MenuBar (top), TabStrip, central editor
 // placeholder, FKeyStatusBar (bottom). Uses BorlandStyle. CRT effects are
@@ -34,12 +48,49 @@ public:
     // previous pair first, so it reconnects cleanly when the active tab
     // (and therefore the view) changes.
     void wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* view = nullptr);
-    // Editor right-click menu (edit + spellcheck commands). Built as a
-    // BorlandMenu so it paints like the dropdowns, and shown at a
-    // shell-local point. The shell is never mapped, so this must NOT go
-    // through QMenu::exec(): the menu is popup()'d and driven by synthesized
-    // events from ContentBridge, like the menu bar.
+    // Editor right-click menu (edit commands +, when the word under the click
+    // is misspelled, the spell section). Built as a BorlandMenu so it paints
+    // like the dropdowns, and shown at a shell-local point. The shell is never
+    // mapped, so this must NOT go through QMenu::exec(): the menu is popup()'d
+    // and driven by synthesized events from ContentBridge, like the menu bar.
+    //
+    // \p word is optional: the bridge passes the word under the pointer so the
+    // spell section can be built. Passing a correct word (or nothing) leaves
+    // the menu exactly as Task 2 left it.
     void showEditorContextMenu(const QPoint& shellLocal);
+    void showEditorContextMenu(const QPoint& shellLocal, const SpellWord& word);
+    // The popout for the misspelled word (suggestions / add / ignore), or
+    // nullptr when the section was not built. Exposed for tests: no pointer
+    // exists on the capture host, so the popout is reached through this.
+    BorlandMenu* spellPopout() const { return m_spellPopout; }
+    bool spellPopoutVisible() const;
+    // The bridge that owns popup registration, so the popout gets composited
+    // and receives synthesized hover like every other menu. NOT a QPointer:
+    // crt-shell only forward-declares ContentBridge (QPointer needs the full
+    // type, which would drag QQuickImageProvider into this header). The bridge
+    // is owned by the composition root and outlives the shell's spell state.
+    void setSpellPopupHost(ContentBridge* bridge);
+    // Show the popout hanging off the right of the context menu's headline
+    // row, so hovering it is what the bridge sees next.
+    void showSpellPopout();
+    // What the spell section decided, as data (crt-shell never links
+    // KTextEditor, so the composition root performs the edit).
+    const SpellWord& spellWord() const { return m_spellWord; }
+    // Resolver the BRIDGE uses to find the word under a right-click. Like
+    // setEditorShortcutHandler, it is installed by the composition root (which
+    // owns the KTextEditor document); crt-shell only calls it. Given a
+    // shell-local point it returns the word and its range, or an invalid
+    // SpellWord when the click is not on a word.
+    void setSpellWordResolver(std::function<SpellWord(const QPoint&)> fn);
+    // Ask the resolver for the word at \p shellLocal (invalid when unset).
+    SpellWord spellWordAt(const QPoint& shellLocal) const;
+    // Dictionary the spell section speaks. The composition root sets it from
+    // the speller the status selector owns, so the popout's suggestions and the
+    // status-bar language tag are ALWAYS the same dictionary - a word could not
+    // be "misspelled" in one place and correct in another. Unset = Sonnet's own
+    // default.
+    void setSpellLanguage(const QString& lang);
+    QString spellLanguage() const { return m_spellLang; }
     // True when \p w is the editor widget or inside it (used by the bridge to
     // decide that a right-click belongs to the editor's context menu).
     bool isEditorArea(QWidget* w) const;
@@ -63,17 +114,40 @@ public:
     BorlandStyle* borlandStyle() const { return m_borland; }
 protected:
     void paintEvent(QPaintEvent*) override;
+signals:
+    // Picked a suggestion for the right-clicked word: replace [line, startCol)
+    // .. endCol) with \p replacement.
+    void spellReplacementRequested(int line, int startCol, int endCol,
+                                   const QString& replacement);
+    // "Ignore word": suppress \p word starting at (line, startCol) in this
+    // document only.
+    void spellIgnoreRequested(int line, int startCol, const QString& word);
 private:
+    // Helpers behind showEditorContextMenu's spell section (GUI pass, Task 3).
+    void buildSpellSection(BorlandMenu* menu, const SpellWord& word,
+                           const Sonnet::Speller& speller);
+    void buildSpellPopout(const QStringList& suggestions,
+                          const Sonnet::Speller& speller);
+    void applySpellReplacement(const QString& replacement);
+    void ignoreSpellWord();
+
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     QWidget* m_editor = nullptr;             // current editor widget (focus default)
     std::function<bool(const QKeySequence&)> m_editorShortcut;
+    std::function<SpellWord(const QPoint&)> m_spellResolver;
+    QString m_spellLang;
     Minimap* m_minimap = nullptr;
     class BottomBand* m_bottomBand = nullptr;
     // TV-revision2 spec 1: 1-cell right-border scrollbar + the (hidden) Kate
     // document vertical it mirrors. QPointer: the view can die on tab close.
     class RightScrollBar* m_rightBar = nullptr;
     QPointer<QScrollBar> m_docV;
+    // Spell section state (GUI pass, Task 3). The popout is created per right
+    // click so its rows always describe the word actually under the pointer.
+    BorlandMenu* m_spellPopout = nullptr;
+    SpellWord m_spellWord;
+    ContentBridge* m_spellBridge = nullptr;
     // The view's own horizontal scrollbar, mirrored into the bottom band. The
     // old code only ever bound the VERTICAL one (and bound it to the wrong
     // child). QPointer: a tab close destroys the view and its scrollbars.

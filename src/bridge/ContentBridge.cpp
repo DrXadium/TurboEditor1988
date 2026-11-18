@@ -206,7 +206,9 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
         && static_cast<Qt::MouseButton>(button) == Qt::RightButton
         && !target
         && m_shell->isEditorArea(hit)) {
-        m_shell->showEditorContextMenu(shellLocal);
+        // Ask the shell for the word under the pointer so the spell section
+        // can be built (the resolver is installed by the composition root).
+        m_shell->showEditorContextMenu(shellLocal, m_shell->spellWordAt(shellLocal));
         update();
         return;
     }

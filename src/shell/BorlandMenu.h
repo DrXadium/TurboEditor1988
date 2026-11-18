@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include <QMenu>
+#include <QFont>
 
 // TV-revision2 spec 6 dropdown: a solid light-gray box with NO line-drawing
 // border; black item text with a RED hotkey letter; the highlighted row is a
@@ -17,6 +18,24 @@ class BorlandMenu : public QMenu
     Q_OBJECT
 public:
     explicit BorlandMenu(QWidget* parent = nullptr);
+
+    // Per-row overrides the spell section needs (GUI pass, Task 3): a row can
+    // render in a DIFFERENT font (the misspelled word is bold) and can opt out
+    // of the menu's red-underlined hotkey treatment (a word is not a command).
+    // BorlandMenu paints row by row, so these are the only sane hooks.
+    static void setRowFont(QAction* a, const QFont& font);
+    static QFont rowFont(QAction* a, const QFont& fallback);
+    // True when the row is a plain word rather than a command: no red first
+    // letter, no underline, no mnemonic parsing ('&' drawn literally).
+    static void setRowNoMnemonic(QAction* a, bool on);
+    static bool rowNoMnemonic(QAction* a);
+    // True when the row is drawn as BOLD. The TV face is a fixed-pitch
+    // bitmap (PxPlus IBM VGA8) - setBold() can NOT widen its advance, and a
+    // bitmap face has no separate bold glyph - so "bold" is drawn by
+    // DOUBLE-STRIKING the text: once at the pen position, once 1px right.
+    // A fixed-pitch bold word is visibly fatter, never wider.
+    static void setRowBold(QAction* a, bool on);
+    static bool rowBold(QAction* a);
 
     // How far the black border sits inside the panel edge (the gray panel shows
     // outside it on all four sides, per the reference screenshot), and how thick

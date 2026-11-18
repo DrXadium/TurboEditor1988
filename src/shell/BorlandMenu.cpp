@@ -11,7 +11,54 @@ const QColor kMenuGray(0xAA, 0xAA, 0xAA);
 const QColor kSelectGreen(0x00, 0xAA, 0x00);   // spec 6 highlight
 const QColor kBlack(0x00, 0x00, 0x00);
 const QColor kHotRed(0xAA, 0x00, 0x00);
+const QColor kWhite(0xFF, 0xFF, 0xFF);
+
+// QAction carries no font and no "plain row" flag, and the spell section must
+// not invent a subclass of QMenu just to hold them. Action PROPERTIES hold
+// both values on the action itself, so every BorlandMenu sees them - the
+// context menu and its popout alike. (Qt6 QAction has no role-based setData.)
+constexpr const char* kRowFontProp = "borlandRowFont";
+constexpr const char* kRowNoMnemonicProp = "borlandRowNoMnemonic";
+constexpr const char* kRowBoldProp = "borlandRowBold";
 } // namespace
+
+void BorlandMenu::setRowFont(QAction* a, const QFont& font)
+{
+    if (a)
+        a->setProperty(kRowFontProp, font);
+}
+
+QFont BorlandMenu::rowFont(QAction* a, const QFont& fallback)
+{
+    if (a) {
+        const QVariant v = a->property(kRowFontProp);
+        if (v.isValid() && v.canConvert<QFont>())
+            return v.value<QFont>();
+    }
+    return fallback;
+}
+
+void BorlandMenu::setRowNoMnemonic(QAction* a, bool on)
+{
+    if (a)
+        a->setProperty(kRowNoMnemonicProp, on);
+}
+
+bool BorlandMenu::rowNoMnemonic(QAction* a)
+{
+    return a && a->property(kRowNoMnemonicProp).toBool();
+}
+
+void BorlandMenu::setRowBold(QAction* a, bool on)
+{
+    if (a)
+        a->setProperty(kRowBoldProp, on);
+}
+
+bool BorlandMenu::rowBold(QAction* a)
+{
+    return a && a->property(kRowBoldProp).toBool();
+}
 
 BorlandMenu::BorlandMenu(QWidget* parent) : QMenu(parent)
 {
@@ -400,7 +447,15 @@ void BorlandMenu::paintEvent(QPaintEvent*)
                          contentRight - contentLeft + 1 - 2 * hi, r.height()),
                    selected ? kSelectGreen : kMenuGray);
 
-        const int baseline = r.y() + (r.height() - fm.height()) / 2 + fm.ascent();
+        // A row may carry its OWN font (the misspelled word is bold). Metrics
+        // for text and its underline must come from THAT face, or the bold row
+        // would be positioned with the regular face's ascent.
+        const QFont rowF = rowFont(a, font());
+        const bool plainRow = rowNoMnemonic(a);
+        const bool boldRow = rowBold(a);
+        const QFontMetrics rowFm(rowF);
+        p.setFont(rowF);
+        const int baseline = r.y() + (r.height() - rowFm.height()) / 2 + rowFm.ascent();
 
         // Task 26 (user): the \u2713 goes at the RIGHT end of the item, one cell in
         // from the content edge. Drawn at the panel's left edge it collided with
@@ -433,31 +488,47 @@ void BorlandMenu::paintEvent(QPaintEvent*)
         int x = contentLeft + cell;
         bool firstVisible = true;
         const QColor textColor = selected || a->isEnabled() ? kBlack : kBlack;
+        if (plainRow) {
+            // A word, not a command: draw it literally in black (or white on
+            // the green bar) with no hotkey colour, no underline, and '&' left
+            // as the letter it is.
+            p.setPen(selected ? kWhite : textColor);
+            p.drawText(QPoint(x, baseline), label);
+            // Double-strike: the fixed-pitch TV face has no wider bold, so
+            // bold is fatter - draw the same glyphs 1px right and the two
+            // strokes fuse into a heavy word.
+            if (boldRow)
+                p.drawText(QPoint(x + 1, baseline), label);
+            firstVisible = false;
+        }
         for (int ci = 0; ci < label.size(); ++ci) {
+            if (plainRow)
+                break;
             const QChar c = label.at(ci);
             if (c == QLatin1Char('&')) {
                 if (ci + 1 < label.size() && label.at(ci + 1) == QLatin1Char('&')) {
-                    p.setPen(firstVisible ? kHotRed : textColor);
+                    p.setPen(firstVisible ? kHotRed : (selected ? kWhite : textColor));
                     p.drawText(QPoint(x, baseline), QStringLiteral("&"));
-                    x += fm.horizontalAdvance(QLatin1Char('&'));
+                    x += rowFm.horizontalAdvance(QLatin1Char('&'));
                     firstVisible = false;
                     ++ci;
                 }
                 continue;   // mnemonic marker
             }
             // Spec 6: the hotkey letter stays RED on the green bar too.
-            p.setPen(firstVisible ? kHotRed : textColor);
+            p.setPen(firstVisible ? kHotRed : (selected ? kWhite : textColor));
             p.drawText(QPoint(x, baseline), QString(c));
             // Screenshot styling: the hotkey letter is underlined.
             if (firstVisible) {
-                const int w = fm.horizontalAdvance(c);
+                const int w = rowFm.horizontalAdvance(c);
                 p.drawLine(x, baseline + 2, x + w - 1, baseline + 2);
             }
-            x += fm.horizontalAdvance(c);
+            x += rowFm.horizontalAdvance(c);
             firstVisible = false;
         }
 
-        if (!shortcut.isEmpty()) {
+        p.setFont(font());   // restore: shortcuts use the menu's own face
+        if (!shortcut.isEmpty() && !plainRow) {
             p.setPen(kBlack);
             const int sw = fm.horizontalAdvance(shortcut);
             p.drawText(QPoint(shortcutRight - sw, baseline), shortcut);

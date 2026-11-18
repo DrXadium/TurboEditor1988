@@ -216,6 +216,14 @@ add_executable(tst_filedlg tests/tst_filedlg.cpp)
 target_link_libraries(tst_filedlg PRIVATE crt-shell Qt6::Test Qt6::Widgets)
 add_test(NAME tst_filedlg COMMAND tst_filedlg)
 
+# GUI pass 2026-11-17, Task 3: the spell section of the editor right-click
+# menu (bold headline, hover popout, suggestions / add / ignore). ctest -R tst_spellmenu
+add_executable(tst_spellmenu tests/tst_spellmenu.cpp)
+target_link_libraries(tst_spellmenu PRIVATE crt-shell crt-bridge crt-editor
+                      Qt6::Test Qt6::Widgets Qt6::Quick
+                      KF6::SonnetCore KF6::TextEditor)
+add_test(NAME tst_spellmenu COMMAND tst_spellmenu)
+
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)
 target_link_libraries(crt-kate PRIVATE
