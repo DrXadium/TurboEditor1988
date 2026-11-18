@@ -250,6 +250,45 @@ private slots:
         dock->reject();
         QCoreApplication::processEvents();
     }
+
+    // The reference modal casts a hard black block shadow under every green
+    // plate (image 2 of the user's report). The buttons are child widgets and
+    // paint over the parent's pass, so the shadow is drawn by the dock and only
+    // the offset L survives.
+    void buttons_cast_the_reference_block_shadow()
+    {
+        TvFileDock dock;
+        dock.setMode(TvFileDock::Save);
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+
+        for (const QRect& r : {dock.okRect(), dock.cancelRect(), dock.helpRect()}) {
+            QVERIFY2(r.isValid(), "button rect is empty");
+
+            const QColor right = img.pixelColor(r.right() + 2, r.center().y());
+            QVERIFY2(right.red() < 12 && right.green() < 12 && right.blue() < 12,
+                     qPrintable(QStringLiteral("no black shadow right of %1..%2: %3,%4,%5")
+                                    .arg(r.left()).arg(r.right())
+                                    .arg(right.red()).arg(right.green()).arg(right.blue())));
+
+            const QColor below = img.pixelColor(r.center().x(), r.bottom() + 2);
+            QVERIFY2(below.red() < 12 && below.green() < 12 && below.blue() < 12,
+                     qPrintable(QStringLiteral("no black shadow under %1..%2: %3,%4,%5")
+                                    .arg(r.top()).arg(r.bottom())
+                                    .arg(below.red()).arg(below.green()).arg(below.blue())));
+
+            // ...and the plate itself is still green, not swallowed by the shadow.
+            const QColor inside = img.pixelColor(r.left() + 6, r.center().y());
+            QVERIFY2(qAbs(inside.green() - 0xAA) < 12 && inside.red() < 12,
+                     qPrintable(QStringLiteral("plate is not green: %1,%2,%3")
+                                    .arg(inside.red()).arg(inside.green()).arg(inside.blue())));
+        }
+        dock.reject();
+    }
 };
 
 int main(int argc, char** argv)

@@ -28,6 +28,7 @@ const QColor kBlue(0x00, 0x00, 0xAA);
 const int kScrollStrip = 7;      // height of the teal scroll strip under the list
 const int kShadowRight = 10;     // black drop shadow gutter (right/bottom)
 const int kShadowBottom = 8;
+const int kButtonShadow = 4;     // black block shadow behind each green plate
 const int kPad = 6;
 } // namespace
 
@@ -389,6 +390,14 @@ void TvFileDock::paintEvent(QPaintEvent*)
 
     // Panel + hard black drop shadow (offset right/bottom), as on every TV modal.
     p.fillRect(rect(), kPanelGray);
+
+    // Hard black block shadow behind each green plate, as on the reference
+    // modal. The buttons are child widgets and paint AFTER this pass, so their
+    // plate covers the overlap and only the offset L survives.
+    for (const QRect& plate : {m_okRect, m_cancelRect, m_helpRect})
+        if (!plate.isNull())
+            p.fillRect(plate.translated(kButtonShadow, kButtonShadow), kBlack);
+
     p.fillRect(QRect(width() - kShadowRight, m_frameRect.top() + 4, kShadowRight - 2,
                      height() - kShadowBottom - 4), kBlack);
     p.fillRect(QRect(m_frameRect.left() + 4, height() - kShadowBottom, width() - kShadowRight - 4,
