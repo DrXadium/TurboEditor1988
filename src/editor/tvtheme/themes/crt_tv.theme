@@ -6,42 +6,104 @@
     "license": "GPL-3.0-or-later"
   },
   "text-styles": {
-    "Normal": { "text-color": "#ffff55" },
-    "Keyword": { "text-color": "#00aaaa" },
-    "Function": { "text-color": "#55ffff" },
-    "Variable": { "text-color": "#ffff55" },
-    "ControlFlow": { "text-color": "#00aaaa" },
-    "Operator": { "text-color": "#ffff55" },
-    "BuiltIn": { "text-color": "#55ffff" },
-    "Extension": { "text-color": "#55ffff" },
-    "Preprocessor": { "text-color": "#ffffff" },
-    "Attribute": { "text-color": "#ffffff" },
-    "Char": { "text-color": "#55ff55" },
-    "SpecialChar": { "text-color": "#55ff55" },
-    "String": { "text-color": "#55ff55" },
-    "VerbatimString": { "text-color": "#55ff55" },
-    "SpecialString": { "text-color": "#55ff55" },
-    "Import": { "text-color": "#00aaaa" },
-    "DataType": { "text-color": "#ffffff" },
-    "DecVal": { "text-color": "#ff55ff" },
-    "BaseN": { "text-color": "#ff55ff" },
-    "Float": { "text-color": "#ff55ff" },
-    "Constant": { "text-color": "#ff55ff" },
-    "Comment": { "text-color": "#55aa55" },
-    "Documentation": { "text-color": "#55aa55" },
-    "Annotation": { "text-color": "#ffffff" },
-    "CommentVar": { "text-color": "#55aa55" },
-    "RegionMarker": { "text-color": "#55aa55" },
-    "Information": { "text-color": "#ff5555" },
-    "Warning": { "text-color": "#ff5555" },
-    "Alert": { "text-color": "#ff5555" },
-    "Error": { "text-color": "#aa0000" },
-    "Others": { "text-color": "#ffff55" }
+    "Normal": {
+      "text-color": "#ffff55"
+    },
+    "Keyword": {
+      "text-color": "#00aaaa"
+    },
+    "Function": {
+      "text-color": "#55ffff"
+    },
+    "Variable": {
+      "text-color": "#ffff55"
+    },
+    "ControlFlow": {
+      "text-color": "#00aaaa"
+    },
+    "Operator": {
+      "text-color": "#ffff55"
+    },
+    "BuiltIn": {
+      "text-color": "#55ffff"
+    },
+    "Extension": {
+      "text-color": "#55ffff"
+    },
+    "Preprocessor": {
+      "text-color": "#ffffff"
+    },
+    "Attribute": {
+      "text-color": "#ffffff"
+    },
+    "Char": {
+      "text-color": "#55ff55"
+    },
+    "SpecialChar": {
+      "text-color": "#55ff55"
+    },
+    "String": {
+      "text-color": "#55ff55"
+    },
+    "VerbatimString": {
+      "text-color": "#55ff55"
+    },
+    "SpecialString": {
+      "text-color": "#55ff55"
+    },
+    "Import": {
+      "text-color": "#00aaaa"
+    },
+    "DataType": {
+      "text-color": "#ffffff"
+    },
+    "DecVal": {
+      "text-color": "#ff55ff"
+    },
+    "BaseN": {
+      "text-color": "#ff55ff"
+    },
+    "Float": {
+      "text-color": "#ff55ff"
+    },
+    "Constant": {
+      "text-color": "#ff55ff"
+    },
+    "Comment": {
+      "text-color": "#55aa55"
+    },
+    "Documentation": {
+      "text-color": "#55aa55"
+    },
+    "Annotation": {
+      "text-color": "#ffffff"
+    },
+    "CommentVar": {
+      "text-color": "#55aa55"
+    },
+    "RegionMarker": {
+      "text-color": "#55aa55"
+    },
+    "Information": {
+      "text-color": "#ff5555"
+    },
+    "Warning": {
+      "text-color": "#ff5555"
+    },
+    "Alert": {
+      "text-color": "#ff5555"
+    },
+    "Error": {
+      "text-color": "#aa0000"
+    },
+    "Others": {
+      "text-color": "#ffff55"
+    }
   },
   "editor-colors": {
     "BackgroundColor": "#0000AA",
     "TextSelection": "#c8c8d8",
-    "CurrentLine": "#0000AA",
+    "CurrentLine": "#0000D4",
     "SearchHighlight": "#ffff55",
     "ReplaceHighlight": "#00AA00",
     "BracketMatching": "#00AAAA",

@@ -347,6 +347,51 @@ private slots:
                  qPrintable(QStringLiteral("only %1 yellow text pixels (expected yellow editor text, text is probably still gray)").arg(n)));
     }
 
+    // GUI pass Task 5 (user): "the active line in the editor should be
+    // highlighted". The bundled theme used to set CurrentLine to the SAME
+    // #0000AA as the field, so Kate painted the band invisibly - the cursor
+    // line was indistinguishable from every other line. The theme now sets a
+    // visible CurrentLine (a subtly lighter TV blue) that is neither pure
+    // black nor the plain field, so the cursor line reads as "you are here"
+    // WITHOUT violating editor_field_is_flat_tv_blue (which forbids black).
+    void active_line_is_highlighted()
+    {
+        // The current-line band color the theme declares (NOT the field blue,
+        // NOT black). Sampled from crt_tv.theme's editor-colors.CurrentLine.
+        const QColor band(0x00, 0x00, 0xD4);
+        const QColor field(0x00, 0x00, 0xAA);
+        QVERIFY2(band != field,
+                 "CurrentLine equals the field color - the band would be invisible");
+        QVERIFY2(!(band.red() < 16 && band.green() < 16 && band.blue() < 16),
+                 "CurrentLine is black - would break editor_field_is_flat_tv_blue");
+
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("first line\nsecond line\nthird line\n"));
+        v->document()->setHighlightingMode(QStringLiteral("Plain Text"));
+        v->resize(700, 400);
+        v->setCursorPosition(KTextEditor::Cursor(1, 0));   // line index 1
+        QCoreApplication::processEvents();
+        QImage img = v->grab().toImage().convertToFormat(QImage::Format_RGB32);
+
+        // The band paints where the cursor line is: require a real block of the
+        // CurrentLine color, distinct from the surrounding field.
+        const int bandPx = countColor(img, band, 6);
+        const int fieldPx = countColor(img, field, 6);
+        QVERIFY2(bandPx > 200,
+                 qPrintable(QStringLiteral("active-line band painted only %1 px of %2 "
+                                           "(expected a visible CurrentLine block; field=%3)")
+                                .arg(bandPx).arg(img.width() * img.height()).arg(fieldPx)));
+        // The band must be a proper subset - the whole field did not collapse
+        // to the band color (which would mean the highlight swallowed everything).
+        QVERIFY2(fieldPx > bandPx,
+                 qPrintable(QStringLiteral("field-blue (%1) is not larger than band (%2) - "
+                                           "the band color may have leaked over the whole view")
+                                .arg(fieldPx).arg(bandPx)));
+    }
+
     // The editor text must use the bundled Turbo Vision face: the rest of the
     // chrome (menu, tabs, borders, scrollbars) is drawn with PxPlus IBM VGA8 on
     // an 8 px character grid, and a different editor face made the middle of
