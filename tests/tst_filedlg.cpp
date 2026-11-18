@@ -359,6 +359,65 @@ private slots:
         QVERIFY(!dock.typePresets().isEmpty());
         QCOMPARE(dock.typePresets().first(), QStringLiteral("All files (*)"));
     }
+
+    // Typing a directory jumps the list there; typing a file jumps to its
+    // directory AND drops the file name into the name box.
+    void path_box_navigates_and_fills_the_name()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir(dir.path()).mkdir(QStringLiteral("sub")));
+        {
+            QFile f(dir.filePath(QStringLiteral("sub/alpha.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("a");
+        }
+        const QString sub = QFileInfo(dir.filePath(QStringLiteral("sub"))).absoluteFilePath();
+
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+
+        dock.setPathText(sub);
+        dock.navigateToTypedPath();
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(sub).canonicalFilePath());
+        QVERIFY2(dock.files().contains(QStringLiteral("alpha.txt")),
+                 "navigating did not re-list the target directory");
+
+        dock.setPathText(QFileInfo(dir.filePath(QStringLiteral("sub/alpha.txt")))
+                             .absoluteFilePath());
+        dock.navigateToTypedPath();
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(sub).canonicalFilePath());
+        QCOMPARE(dock.editText(), QStringLiteral("alpha.txt"));
+        QCOMPARE(dock.selectedFile(), QStringLiteral("alpha.txt"));
+    }
+
+    // Save As into a name that does not exist yet: split it, do not lose it.
+    void path_box_accepts_a_not_yet_existing_save_path()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        TvFileDock dock;
+        dock.setMode(TvFileDock::Save);
+        dock.setDirectory(dir.path());
+
+        dock.setPathText(dir.filePath(QStringLiteral("brand-new.txt")));
+        dock.navigateToTypedPath();
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(dir.path()).canonicalFilePath());
+        QCOMPARE(dock.editText(), QStringLiteral("brand-new.txt"));
+    }
+
+    // The era's home shorthand.
+    void path_box_expands_a_leading_tilde()
+    {
+        TvFileDock dock;
+        dock.setPathText(QStringLiteral("~"));
+        dock.navigateToTypedPath();
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(QDir::homePath()).canonicalFilePath());
+    }
 };
 
 int main(int argc, char** argv)

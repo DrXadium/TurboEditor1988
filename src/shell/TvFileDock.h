@@ -67,6 +67,11 @@ public:
     QString typeText() const;
     static QStringList typePresets();
 
+    // Act on what the path bar says: go to a directory, or go to a file's
+    // directory and drop its name into the name box. Bound to the bar's Return
+    // key; public so the behaviour is testable without a pointer.
+    void navigateToTypedPath();
+
     // Finish: accept() emits the resolved absolute path, reject() emits an
     // empty one. Both hide the dock.
     void accept();

@@ -75,6 +75,7 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     connect(m_cancel, &QPushButton::clicked, this, &TvFileDock::reject);
     connect(m_edit, &QLineEdit::returnPressed, this, &TvFileDock::accept);
     connect(m_edit, &QLineEdit::textChanged, this, [this] { syncSelectionFromEdit(); });
+    connect(m_pathEdit, &QLineEdit::returnPressed, this, &TvFileDock::navigateToTypedPath);
 
     m_dir = QDir::currentPath();
     setFilter(m_typeEdit->text());
@@ -232,6 +233,30 @@ QStringList TvFileDock::typePresets()
         QStringLiteral("Python (*.py)"),
         QStringLiteral("JSON (*.json)"),
     };
+}
+
+void TvFileDock::navigateToTypedPath()
+{
+    QString text = m_pathEdit ? m_pathEdit->text().trimmed() : QString();
+    if (text.isEmpty())
+        return;
+    // QFileInfo does not expand the shell's home shorthand.
+    if (text == QLatin1String("~") || text.startsWith(QLatin1String("~/")))
+        text = QDir::homePath() + text.mid(1);
+
+    const QFileInfo fi(text);
+    if (fi.isDir()) {                       // an existing directory: just go there
+        setDirectory(fi.absoluteFilePath());
+        return;
+    }
+    if (text.endsWith(QLatin1Char('/'))) {  // a directory that may not exist yet
+        setDirectory(text);
+        return;
+    }
+    // A file (or a Save name): split it into directory + file name.
+    setDirectory(fi.absolutePath());
+    setEditText(fi.fileName());
+    selectFile(fi.fileName());
 }
 
 void TvFileDock::syncSelectionFromEdit()
