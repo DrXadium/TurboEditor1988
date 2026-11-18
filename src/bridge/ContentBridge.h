@@ -46,6 +46,17 @@ public:
                                        int modifiers, double x, double y);
     Q_INVOKABLE void forwardKeyEvent(int type, int key, int modifiers,
                                      const QString& text);
+    // Wheel: the QML input layer forwards no wheel at all, so a scrolled
+    // dropdown never received a QWheelEvent and could not be scrolled by the
+    // mouse. dx/dy are the wheel deltas (QPoint angleDelta components).
+    Q_INVOKABLE void forwardWheelEvent(int dx, int dy, int buttons,
+                                       int modifiers, double x, double y);
+    // Where a key goes. An open popup owns the keyboard (its arrow keys walk the
+    // list); otherwise it is the focused child (the editor). Keys used to go to
+    // keyFocusWidget() unconditionally, so arrows never reached an open dropdown.
+    QWidget* keyTarget() const;
+    // The visible popup containing this shell-local point, else nullptr.
+    QWidget* popupAt(const QPoint& shellLocal) const;
     // Trigger the QAction whose shortcut matches this key combo. Needed because
     // the unmapped shell has no active window, so Qt's own shortcut map is
     // bypassed entirely. Returns true when an action fired.

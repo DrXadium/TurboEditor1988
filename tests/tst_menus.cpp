@@ -1094,6 +1094,215 @@ private slots:
                  "the menu bar is not the editor area");
         QVERIFY2(!shell.isEditorArea(nullptr), "null is not the editor area");
     }
+
+    // User bug: "none of the popups from the status bar have the green highlight
+    // on hover". BorlandMenu paints the highlight correctly in isolation, so the
+    // break must be in DELIVERY: the bridge has to hand the synthesized move to
+    // the open popup, not to whatever sits under it in the shell.
+    void hovering_a_registered_popup_highlights_the_row() {
+        ShellWindow w;
+        w.resize(800, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        const QColor kSelectGreen(0x00, 0xAA, 0x00);
+        auto countGreen = [](const QImage& img) {
+            int n = 0;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (c.green() > 140 && c.red() < 60 && c.blue() < 60)
+                        ++n;
+                }
+            return n;
+        };
+
+        // A SHORT menu (the encoding dropdown's shape) and a SCROLLED one (the
+        // doc-type list's shape) - the user says neither highlights.
+        for (const bool scrolled : {false, true}) {
+            BorlandMenu menu;
+            const int n = scrolled ? 120 : 4;
+            for (int i = 0; i < n; ++i)
+                menu.addAction(QStringLiteral("Mode %1").arg(i));
+            menu.setMaximumWidth(360);
+            if (scrolled)
+                menu.setMaximumHeight(300);
+            menu.resize(360, scrolled ? 300 : 120);
+            menu.move(w.pos().x() + 100, w.pos().y() + 100);
+            b.registerPopup(&menu);
+            menu.show();
+            QCoreApplication::processEvents();
+            QVERIFY(menu.isVisible());
+            QCOMPARE(menu.scrolls(), scrolled);
+
+            QCOMPARE(countGreen(menu.grab().toImage()), 0);
+
+            // Hover a row, in SHELL coordinates, through the bridge.
+            const QPoint inShell = menu.mapTo(&w, QPoint(20, 60));
+            b.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton, Qt::NoButton,
+                                Qt::NoModifier, inShell.x(), inShell.y());
+            QCoreApplication::processEvents();
+
+            QVERIFY2(countGreen(menu.grab().toImage()) > 0,
+                     scrolled ? "scrolled popup: hover left no green highlight"
+                              : "short popup: hover left no green highlight");
+
+            menu.hide();
+            b.unregisterPopup(&menu);
+        }
+    }
+
+    // The live break behind "none of the popups from the status bar have the
+    // green highlight on hover": status-bar dropdowns are parented to the
+    // StatusSelectors widget, which sits far from the shell origin.
+    // QWidget::mapFrom(parent, pos) walks the PARENT CHAIN, but a Qt::Popup is a
+    // window, not a child - so every popup-directed event arrived offset by the
+    // parent's position and no row was ever hit. Menu-bar menus are parented at
+    // the origin, which is why only the status-bar popups lost their highlight.
+    void popup_events_work_when_the_popup_parent_sits_away_from_the_origin() {
+        ShellWindow w;
+        w.resize(800, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        QWidget host(&w);
+        host.setGeometry(500, 400, 200, 40);   // like StatusSelectors in the status row
+
+        BorlandMenu menu(&host);
+        for (int i = 0; i < 120; ++i)
+            menu.addAction(QStringLiteral("Mode %1").arg(i));
+        menu.setMaximumWidth(360);
+        menu.setMaximumHeight(300);
+        menu.resize(360, 300);
+        menu.move(600, 200);
+        b.registerPopup(&menu);
+        menu.show();
+        QCoreApplication::processEvents();
+        QVERIFY(menu.isVisible());
+        QVERIFY(menu.scrolls());
+
+        auto countGreen = [](const QImage& img) {
+            int n = 0;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (c.green() > 140 && c.red() < 60 && c.blue() < 60)
+                        ++n;
+                }
+            return n;
+        };
+        QCOMPARE(countGreen(menu.grab().toImage()), 0);
+
+        const QPoint hoverShell = w.mapFromGlobal(menu.mapToGlobal(QPoint(20, 60)));
+        b.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton, Qt::NoButton,
+                            Qt::NoModifier, hoverShell.x(), hoverShell.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(countGreen(menu.grab().toImage()) > 0,
+                 "hover missed the row: popup events must convert with "
+                 "mapFromGlobal, not mapFrom(parent)");
+
+        // The same conversion drives clicks: pressing a row must activate it.
+        QAction* fired = nullptr;
+        connect(&menu, &QMenu::triggered, &menu, [&fired](QAction* a) { fired = a; });
+        b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                            Qt::NoModifier, hoverShell.x(), hoverShell.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(fired, "press through the bridge did not activate the row");
+        b.unregisterPopup(&menu);
+    }
+
+    // User bug: "how can i use arrow keys to move the list down". Keys went to
+    // the editor (keyFocusWidget) even with a dropdown open, so the arrows never
+    // reached the popup. An open popup must own the keyboard.
+    void key_target_is_the_open_popup() {
+        ShellWindow w;
+        w.resize(800, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        BorlandMenu menu;
+        for (int i = 0; i < 120; ++i)
+            menu.addAction(QStringLiteral("Mode %1").arg(i));
+        menu.setMaximumWidth(360);
+        menu.setMaximumHeight(300);
+        menu.resize(360, 300);
+        b.registerPopup(&menu);
+        menu.show();
+        QCoreApplication::processEvents();
+        QVERIFY(menu.isVisible());
+
+        QCOMPARE(b.keyTarget(), static_cast<QWidget*>(&menu));
+
+        menu.hide();
+        b.unregisterPopup(&menu);
+        QVERIFY2(b.keyTarget() != static_cast<QWidget*>(&menu),
+                 "a hidden popup must not keep the keyboard");
+    }
+
+    // User bug: "how can i use arrow keys to move the list down". Routing the
+    // keys to the popup is only half of it: Down must actually move the
+    // selection AND scroll the list, end to end through the bridge.
+    void arrow_key_through_the_bridge_scrolls_the_list() {
+        ShellWindow w;
+        w.resize(800, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        BorlandMenu menu;
+        for (int i = 0; i < 120; ++i)
+            menu.addAction(QStringLiteral("Mode %1").arg(i));
+        menu.setMaximumWidth(360);
+        menu.setMaximumHeight(300);
+        menu.resize(360, 300);
+        b.registerPopup(&menu);
+        menu.show();
+        QCoreApplication::processEvents();
+        QVERIFY(menu.scrolls());
+        QCOMPARE(menu.scrollOffset(), 0);
+
+        for (int i = 0; i < 40; ++i)
+            b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier, QString());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(menu.scrollOffset() > 0,
+                 "Down did not scroll the list: the open popup never got the key");
+
+        menu.hide();
+        b.unregisterPopup(&menu);
+    }
+
+    // User bug: "clicking on the scroll doesn't let me scroll down". The QML
+    // input layer forwards press/release/move but no wheel at all, so the menu
+    // never received a QWheelEvent. The bridge must forward it to the popup.
+    void wheel_over_an_open_popup_scrolls_it() {
+        ShellWindow w;
+        w.resize(800, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        BorlandMenu menu;
+        for (int i = 0; i < 120; ++i)
+            menu.addAction(QStringLiteral("Mode %1").arg(i));
+        menu.setMaximumWidth(360);
+        menu.setMaximumHeight(300);
+        menu.resize(360, 300);
+        menu.move(w.pos().x() + 100, w.pos().y() + 100);
+        b.registerPopup(&menu);
+        menu.show();
+        QCoreApplication::processEvents();
+        QVERIFY(menu.scrolls());
+        QCOMPARE(menu.scrollOffset(), 0);
+
+        // A point well inside the popup, in SHELL coordinates.
+        const QPoint inShell = menu.mapTo(&w, QPoint(20, 60));
+        b.forwardWheelEvent(0, -120, Qt::NoButton, Qt::NoModifier, inShell.x(), inShell.y());
+        QVERIFY2(menu.scrollOffset() > 0,
+                 qPrintable(QStringLiteral("wheel over the popup left scroll at %1")
+                                .arg(menu.scrollOffset())));
+
+        menu.hide();
+        b.unregisterPopup(&menu);
+    }
 };
 
 int main(int argc, char** argv)

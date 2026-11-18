@@ -37,12 +37,18 @@ public:
     bool scrolls() const;
     int scrollOffset() const { return m_scroll; }
     int contentHeight() const;
+    // Scrollbar geometry, shared by the painter and hit-testing so a click can
+    // never land on the wrong part of the bar. Empty when the menu does not
+    // scroll.
+    QRect scrollBarRect() const;
+    QRect scrollThumbRect() const;
 
 protected:
     void paintEvent(QPaintEvent* ev) override;
     void wheelEvent(QWheelEvent* ev) override;
     void mousePressEvent(QMouseEvent* ev) override;
     void mouseMoveEvent(QMouseEvent* ev) override;
+    void mouseReleaseEvent(QMouseEvent* ev) override;
     void keyPressEvent(QKeyEvent* ev) override;
     void hideEvent(QHideEvent* ev) override;
 
@@ -60,4 +66,8 @@ private:
     void activateRow(int index);
     void paintScrollBar(QPainter& p) const;
     int m_scroll = 0;                        // pixels scrolled from the top
+    // Thumb dragging: set on a press inside the thumb, cleared on release. The
+    // offset keeps the grab point under the cursor so the thumb does not jump.
+    bool m_draggingThumb = false;
+    int m_dragGrabOffset = 0;
 };

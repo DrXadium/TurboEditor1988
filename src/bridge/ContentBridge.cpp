@@ -164,17 +164,8 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // reach them. Resolve visible popups FIRST: a move over an open dropdown
     // must land in the popup (QMenu's hover highlight + the spec-7 status
     // hint depend on it).
-    QWidget* target = nullptr;
+    QWidget* target = popupAt(shellLocal);
     const QPoint shellGlobal = m_shell->mapToGlobal(shellLocal);
-    for (QWidget* popup : std::as_const(m_popups)) {
-        if (!popup || !popup->isVisible())
-            continue;
-        const QPoint inPopup = popup->mapFromGlobal(shellGlobal);
-        if (popup->rect().contains(inPopup)) {
-            target = popup;
-            break;
-        }
-    }
     // A press that MISSES an open popup must still reach the popup: QMenu hides
     // itself when it receives a press outside its rect. This app synthesizes
     // mouse events rather than relying on the popup's mouse grab, so without
@@ -220,7 +211,14 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
         return;
     }
     target = hit ? hit : m_shell;
-    const QPoint local = target->mapFrom(m_shell, shellLocal);
+    // Convert through GLOBAL, never mapFrom(parent, pos): a popup is a top-level
+    // window that merely happens to have a parent widget. QWidget::mapFrom walks
+    // the parent chain subtracting each pos(), so for a status-bar dropdown
+    // (parented to StatusSelectors, far from the origin) every event arrived
+    // offset by the parent's position - no row was ever hit, which is why only
+    // status-bar popups lost their hover highlight. Menu-bar menus are parented
+    // at the origin, so the same bug was invisible there.
+    const QPoint local = target->mapFromGlobal(shellGlobal);
     const QPoint global = target->mapToGlobal(local);
     auto* ev = new QMouseEvent(static_cast<QEvent::Type>(type),
                                QPointF(local), QPointF(global),
@@ -249,11 +247,11 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
 {
     if (!m_shell)
         return;
-    // Keys go to the focused child (editor/line-edit). QWidget::keyPressEvent
-    // routes from the focused widget, and posting at the shell would be
-    // swallowed by QMainWindow::event() - so an unfocused shell means dead keys.
-    // keyFocusWidget() falls back to the editor, which is the default target.
-    QWidget* target = m_shell->keyFocusWidget();
+    // An open popup owns the keyboard: its own key handler walks the list with
+    // the arrows, pages with PageUp/PageDown, and commits with Return. Keys used
+    // to go to keyFocusWidget() unconditionally, so with a dropdown open the
+    // arrows still moved the editor's caret behind it.
+    QWidget* target = keyTarget();
     if (!target)
         return;
     const auto evType = static_cast<QEvent::Type>(type);
@@ -270,7 +268,10 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
     // binds them to bare-key QAction shortcuts, and its key handler only types
     // text. Modifier chords carry an empty `text`, so this must not be gated on
     // non-empty text.
-    if (evType == QEvent::KeyPress) {
+    //
+    // SKIPPED for a popup: while a dropdown is open the keystroke belongs to it
+    // (otherwise Ctrl+A inside a menu would also reach the editor's Select All).
+    if (evType == QEvent::KeyPress && !qobject_cast<QMenu*>(target)) {
         const QKeySequence seq(static_cast<Qt::Key>(key)
                                | static_cast<Qt::KeyboardModifiers>(modifiers));
         const bool menuFired = dispatchShortcut(key, modifiers);
@@ -278,6 +279,49 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
         if (!menuFired && !editorFired)
             dispatchFocusedShortcut(target, key, modifiers);
     }
+    update();
+}
+
+QWidget* ContentBridge::keyTarget() const
+{
+    for (QWidget* p : m_popups)
+        if (p && p->isVisible())
+            return p;
+    return m_shell ? m_shell->keyFocusWidget() : nullptr;
+}
+
+QWidget* ContentBridge::popupAt(const QPoint& shellLocal) const
+{
+    if (!m_shell)
+        return nullptr;
+    const QPoint g = m_shell->mapToGlobal(shellLocal);
+    for (QWidget* p : m_popups) {
+        if (!p || !p->isVisible())
+            continue;
+        if (p->rect().contains(p->mapFromGlobal(g)))
+            return p;
+    }
+    return nullptr;
+}
+
+void ContentBridge::forwardWheelEvent(int dx, int dy, int buttons, int modifiers,
+                                      double x, double y)
+{
+    if (!m_shell)
+        return;
+    const QPoint shellLocal{int(x), int(y)};
+    QWidget* target = popupAt(shellLocal);
+    if (!target)
+        target = m_shell->childAt(shellLocal);
+    if (!target)
+        target = m_shell;
+    const QPoint local = target->mapFrom(m_shell, shellLocal);
+    const QPoint global = target->mapToGlobal(local);
+    QWheelEvent ev(QPointF(local), QPointF(global), QPoint(0, 0), QPoint(dx, dy),
+                   static_cast<Qt::MouseButtons>(buttons),
+                   static_cast<Qt::KeyboardModifiers>(modifiers),
+                   Qt::NoScrollPhase, false);
+    QApplication::sendEvent(target, &ev);
     update();
 }
 

@@ -94,7 +94,15 @@ Window {
             onPositionChanged: (mouse) => bridge.forwardMouseEvent(
                 5 /*QEvent::MouseMove*/, mouse.button, mouse.buttons,
                 mouse.modifiers, mouse.x, mouse.y)
-            onWheel: (wheel) => { /* scroll: not forwarded in this pass */ }
+            // Wheel MUST be forwarded: a scrolled dropdown (the doc-type list)
+            // can only be scrolled by the wheel, and this handler used to throw
+            // the event away, so the list was stuck at the top.
+            onWheel: (wheel) => {
+                bridge.forwardWheelEvent(wheel.angleDelta.x, wheel.angleDelta.y,
+                                         wheel.buttons, wheel.modifiers,
+                                         wheel.x, wheel.y)
+                wheel.accepted = true
+            }
         }
 
         Keys.onPressed: (event) => {

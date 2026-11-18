@@ -741,6 +741,38 @@ int main(int argc, char** argv)
         });
     }
 
+    // Dev aid (unset in normal runs): CRT_KATE_STATUSHOVER=1 opens the doc-type
+    // dropdown through the bridge (the SAME call QML makes from onPressed) and
+    // then hovers a row in it, so the highlight can be captured with
+    // CRT_KATE_SHOT. This host has no pointer tool, so this is the only way to
+    // see hover behave on the real composited popup.
+    if (qEnvironmentVariableIsSet("CRT_KATE_STATUSHOVER")) {
+        // Open early enough that the hover lands BEFORE CRT_KATE_SHOT captures
+        // (the shot fires at 1500 ms and exits).
+        QTimer::singleShot(800, &app, [&app, &shell, &bridge]() {
+            auto* sel = shell.findChild<StatusSelectors*>();
+            if (!sel)
+                return;
+            const QPoint p = sel->mapTo(&shell, sel->docTypeCenter());
+            bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                     Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+            bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                     Qt::NoButton, Qt::NoModifier, p.x(), p.y());
+            QTimer::singleShot(300, &app, [&shell, &bridge]() {
+                for (QWidget* w : bridge.registeredPopups()) {
+                    if (!w || !w->isVisible())
+                        continue;
+                    // Top-level popup: convert through GLOBAL (mapTo(&shell) would
+                    // add the popup's pos AND its parent widget's offsets).
+                    const QPoint hp = shell.mapFromGlobal(w->mapToGlobal(QPoint(20, 60)));
+                    bridge.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton,
+                                             Qt::NoButton, Qt::NoModifier, hp.x(), hp.y());
+                    break;
+                }
+            });
+        });
+    }
+
     // Dev aid (unset in normal runs): CRT_KATE_SCROLL_PROBE=1 loads a long
     // document, drives the painted right-border bar and reports whether the
     // real KTextEditor view actually scrolled (firstDisplayedLine). This is the

@@ -154,21 +154,38 @@ void BorlandMenu::activateRow(int index)
 
 void BorlandMenu::paintScrollBar(QPainter& p) const
 {
-    const QFontMetrics fm = fontMetrics();
-    const int inset = borderInset();
-    const int bw = borderWidth();
-    const int trackW = qMax(3, qMax(1, fm.horizontalAdvance(QLatin1Char('M'))) / 2);
-    const int x = width() - inset - bw - trackW - 1;
-    const int y0 = inset + bw + 1;
-    const int trackH = height() - 2 * (inset + bw + 1);
-    if (trackH <= 0)
+    const QRect thumb = scrollThumbRect();
+    if (thumb.isEmpty())
         return;
-    const int thumbH = qBound(8, int(qint64(trackH) * height() / qMax(1, contentHeight())),
-                              trackH);
-    const int maxS = qMax(1, maxScroll());
-    const int thumbY = y0 + int(qint64(trackH - thumbH) * m_scroll / maxS);
     // Solid black thumb on the gray panel: reads like the menu's own border.
-    p.fillRect(QRect(x, thumbY, trackW, thumbH), kBlack);
+    p.fillRect(thumb, kBlack);
+}
+
+// The track column, just inside the border. Empty when the menu does not
+// scroll, so callers can test containment without a separate flag.
+QRect BorlandMenu::scrollBarRect() const
+{
+    if (!scrolls())
+        return QRect();
+    const int trackW = qMax(3, qMax(1, fontMetrics().horizontalAdvance(QLatin1Char('M'))) / 2);
+    const int x = width() - borderInset() - borderWidth() - trackW - 1;
+    const int y0 = borderInset() + borderWidth() + 1;
+    const int trackH = height() - 2 * (borderInset() + borderWidth() + 1);
+    if (trackH <= 0)
+        return QRect();
+    return QRect(x, y0, trackW, trackH);
+}
+
+QRect BorlandMenu::scrollThumbRect() const
+{
+    const QRect track = scrollBarRect();
+    if (track.isEmpty())
+        return QRect();
+    const int thumbH = qBound(8, int(qint64(track.height()) * height() / qMax(1, contentHeight())),
+                              track.height());
+    const int maxS = qMax(1, maxScroll());
+    const int thumbY = track.top() + int(qint64(track.height() - thumbH) * m_scroll / maxS);
+    return QRect(track.left(), thumbY, track.width(), thumbH);
 }
 
 // --- events ------------------------------------------------------------------
@@ -189,9 +206,35 @@ void BorlandMenu::mousePressEvent(QMouseEvent* ev)
         QMenu::mousePressEvent(ev);
         return;
     }
+    // The scrollbar owns its column: a press there must NEVER pick a row (that
+    // is what made "clicking on the scroll" pick an entry instead of scrolling).
+    const QRect track = scrollBarRect();
+    if (track.contains(ev->pos())) {
+        const QRect thumb = scrollThumbRect();
+        if (thumb.contains(ev->pos())) {
+            m_draggingThumb = true;
+            m_dragGrabOffset = ev->pos().y() - thumb.top();
+        } else {
+            // Track click: page one viewport toward the click.
+            const int page = qMax(1, height() - 2 * contentTop());
+            scrollBy(ev->pos().y() < thumb.top() ? -page : page);
+        }
+        ev->accept();
+        return;
+    }
     const int idx = rowAt(ev->pos().y());
     if (idx >= 0)
         activateRow(idx);
+    ev->accept();
+}
+
+void BorlandMenu::mouseReleaseEvent(QMouseEvent* ev)
+{
+    if (!scrolls()) {
+        QMenu::mouseReleaseEvent(ev);
+        return;
+    }
+    m_draggingThumb = false;
     ev->accept();
 }
 
@@ -199,6 +242,27 @@ void BorlandMenu::mouseMoveEvent(QMouseEvent* ev)
 {
     if (!scrolls()) {
         QMenu::mouseMoveEvent(ev);
+        return;
+    }
+    const QRect track = scrollBarRect();
+    if (m_draggingThumb) {
+        // Map the thumb position back onto the scroll range, keeping the grab
+        // point under the cursor so the thumb does not jump on the first move.
+        const QRect thumb = scrollThumbRect();
+        const int span = qMax(1, track.height() - thumb.height());
+        const int top = qBound(0, ev->pos().y() - m_dragGrabOffset - track.top(), span);
+        const int next = qBound(0, int(qint64(top) * maxScroll() / span), maxScroll());
+        if (next != m_scroll) {
+            m_scroll = next;
+            update();
+        }
+        ev->accept();
+        return;
+    }
+    // Hovering the scrollbar must not highlight (or later pick) the row that
+    // happens to sit beside it.
+    if (track.contains(ev->pos())) {
+        ev->accept();
         return;
     }
     const int idx = rowAt(ev->pos().y());

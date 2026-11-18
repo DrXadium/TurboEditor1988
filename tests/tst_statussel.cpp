@@ -689,6 +689,110 @@ private slots:
         QCOMPARE(s.overwriteText(), QStringLiteral("INS"));
     }
 
+    // User bug: "none of the popups from the status bar have the green highlight
+    // on hover". A scrolled menu lays its rows out itself, so QMenu never runs
+    // its own hover bookkeeping - BorlandMenu must highlight the row under the
+    // cursor itself. Measured on pixels: no green before the move, green after.
+    void hovering_a_scrolled_row_highlights_it_in_green()
+    {
+        const QColor kSelectGreen(0x00, 0xAA, 0x00);
+        BorlandMenu m;
+        for (int i = 0; i < 120; ++i)
+            m.addAction(QStringLiteral("Mode %1").arg(i));
+        m.setMaximumWidth(360);
+        m.setMaximumHeight(300);
+        m.resize(360, 300);
+        m.show();
+        QCoreApplication::processEvents();
+        QVERIFY(m.scrolls());
+
+        const QImage before = m.grab().toImage();
+        QCOMPARE(inkFraction(before, kSelectGreen), 0.0);
+
+        QMouseEvent mv(QEvent::MouseMove, QPointF(20, 60), QPointF(20, 60),
+                       Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&m, &mv);
+        QCoreApplication::processEvents();
+
+        const QImage after = m.grab().toImage();
+        QVERIFY2(inkFraction(after, kSelectGreen) > 0.0,
+                 "hovering a scrolled row left no green highlight");
+        m.hide();
+    }
+
+    // User bug: "clicking on the scroll doesn't let me scroll down". In scroll
+    // mode the rows are ours, so a press in the scrollbar column fell through to
+    // rowAt() and PICKED a row instead of scrolling. The track must page and the
+    // thumb must drag.
+    void clicking_the_scrollbar_track_scrolls_instead_of_picking_a_row()
+    {
+        BorlandMenu m;
+        for (int i = 0; i < 120; ++i)
+            m.addAction(QStringLiteral("Mode %1").arg(i));
+        m.setMaximumWidth(360);
+        m.setMaximumHeight(300);
+        m.resize(360, 300);
+        m.show();
+        QCoreApplication::processEvents();
+        QVERIFY(m.scrolls());
+        QCOMPARE(m.scrollOffset(), 0);
+
+        bool triggered = false;
+        connect(&m, &QMenu::triggered, this, [&triggered](QAction*) { triggered = true; });
+
+        const QRect track = m.scrollBarRect();
+        QVERIFY2(!track.isEmpty(), "no scrollbar track in a scrolled menu");
+        const QRect thumb = m.scrollThumbRect();
+        QVERIFY2(!thumb.isEmpty(), "no scrollbar thumb in a scrolled menu");
+
+        // Click the track BELOW the thumb: page down, do not pick a row.
+        const QPoint below(track.center().x(),
+                           qMin(track.bottom() - 1, thumb.bottom() + 20));
+        QTest::mouseClick(&m, Qt::LeftButton, Qt::NoModifier, below);
+        QVERIFY2(m.scrollOffset() > 0,
+                 qPrintable(QStringLiteral("track click left scroll at %1")
+                                .arg(m.scrollOffset())));
+        QVERIFY2(!triggered, "the scrollbar click picked a row");
+        m.hide();
+    }
+
+    // Same bug, drag half: grabbing the thumb and pulling it down must move the
+    // list proportionally.
+    void dragging_the_scrollbar_thumb_scrolls_the_list()
+    {
+        BorlandMenu m;
+        for (int i = 0; i < 120; ++i)
+            m.addAction(QStringLiteral("Mode %1").arg(i));
+        m.setMaximumWidth(360);
+        m.setMaximumHeight(300);
+        m.resize(360, 300);
+        m.show();
+        QCoreApplication::processEvents();
+        QVERIFY(m.scrolls());
+        QCOMPARE(m.scrollOffset(), 0);
+
+        const QRect track = m.scrollBarRect();
+        const QRect thumb = m.scrollThumbRect();
+        QVERIFY(!track.isEmpty() && !thumb.isEmpty());
+
+        const QPoint start = thumb.center();
+        QMouseEvent press(QEvent::MouseButtonPress, start, start, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&m, &press);
+        const QPoint end(track.center().x(), track.bottom() - 2);
+        QMouseEvent mv(QEvent::MouseMove, end, end, Qt::NoButton, Qt::LeftButton,
+                       Qt::NoModifier);
+        QApplication::sendEvent(&m, &mv);
+        QMouseEvent rel(QEvent::MouseButtonRelease, end, end, Qt::LeftButton,
+                        Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&m, &rel);
+
+        QVERIFY2(m.scrollOffset() > 0,
+                 qPrintable(QStringLiteral("thumb drag left scroll at %1")
+                                .arg(m.scrollOffset())));
+        m.hide();
+    }
+
 };
 
 QTEST_MAIN(TstStatusSel)
