@@ -57,6 +57,16 @@ public:
     void setEditText(const QString& text);
     QString editText() const;
 
+    // The path bar along the top: where the Files box is looking.
+    void setPathText(const QString& text);
+    QString pathText() const;
+
+    // The file-type box along the bottom. Free text ("*.md", "Text files
+    // (*.txt)", "All files (*)"); typePresets() feeds its dropdown.
+    void setTypeText(const QString& text);
+    QString typeText() const;
+    static QStringList typePresets();
+
     // Finish: accept() emits the resolved absolute path, reject() emits an
     // empty one. Both hide the dock.
     void accept();
@@ -64,7 +74,11 @@ public:
 
     // Geometry, exposed for tests and hit-testing.
     QRect listRect() const { return m_listRect; }
-    QRect entryRect() const { return m_entryRect; }
+    QRect nameRect() const { return m_nameRect; }
+    QRect pathRect() const { return m_pathRect; }
+    QRect typeRect() const { return m_typeRect; }
+    QRect nameDropRect() const { return m_nameDropRect; }
+    QRect typeDropRect() const { return m_typeDropRect; }
     QRect okRect() const { return m_okRect; }
     QRect cancelRect() const { return m_cancelRect; }
     QRect helpRect() const { return m_helpRect; }
@@ -127,18 +141,25 @@ private:
     int m_scroll = 0;
 
     QLineEdit* m_edit = nullptr;
+    QLineEdit* m_pathEdit = nullptr;
+    QLineEdit* m_typeEdit = nullptr;
     QPushButton* m_ok = nullptr;
     QPushButton* m_cancel = nullptr;
     QPushButton* m_help = nullptr;
 
     QRect m_frameRect;
     QRect m_listRect;
-    QRect m_entryRect;
+    QRect m_pathRect;
+    QRect m_nameRect;
+    QRect m_typeRect;
+    QRect m_nameDropRect;     // green completion cell right of the name box
+    QRect m_typeDropRect;     // green preset cell right of the type box
     QRect m_okRect;
     QRect m_cancelRect;
     QRect m_helpRect;
     QRect m_statusRect;
-    QRect m_labelRect;        // "Save file as" / "Open file as"
+    QRect m_pathLabelRect;    // "Path"
     QRect m_filesLabelRect;   // "Files"
-    QRect m_stubRect;         // green completion cell right of the entry
+    QRect m_nameLabelRect;    // "File name"
+    QRect m_typeLabelRect;    // "File type"
 };

@@ -289,6 +289,76 @@ private slots:
         }
         dock.reject();
     }
+
+    // The modern layout: a typeable path bar on top, the Files box in the
+    // middle, then the file-name row (with its recents dropdown) and the
+    // file-type row stacked at the bottom - without disturbing the panels.
+    void layout_stacks_path_on_top_and_name_type_at_the_bottom()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        QVERIFY2(dock.pathRect().isValid(), "no path bar");
+        QVERIFY2(dock.nameRect().isValid(), "no file-name box");
+        QVERIFY2(dock.typeRect().isValid(), "no file-type box");
+
+        QVERIFY2(dock.pathRect().top() < dock.listRect().top(),
+                 "path bar is not above the Files list");
+        QVERIFY2(dock.nameRect().top() > dock.listRect().bottom(),
+                 "file-name box is not below the Files list");
+        QVERIFY2(dock.typeRect().top() > dock.nameRect().bottom(),
+                 "file-type box is not under the file-name box");
+
+        QVERIFY2(!dock.nameRect().intersects(dock.listRect()), "name box overlaps the list");
+        QVERIFY2(!dock.typeRect().intersects(dock.listRect()), "type box overlaps the list");
+        QVERIFY2(!dock.nameRect().intersects(dock.typeRect()), "name and type rows collide");
+
+        for (const QRect& plate : {dock.okRect(), dock.cancelRect(), dock.helpRect()}) {
+            QVERIFY2(!dock.nameRect().intersects(plate), "name box runs into a button");
+            QVERIFY2(!dock.typeRect().intersects(plate), "type box runs into a button");
+        }
+
+        // The recents cell hangs off the right end of the name box, inside the dock.
+        QVERIFY2(dock.nameDropRect().left() > dock.nameRect().right(),
+                 "dropdown cell is not right of the name box");
+        QVERIFY2(dock.rect().contains(dock.nameDropRect()),
+                 "dropdown cell escapes the dock");
+        QVERIFY2(dock.rect().contains(dock.typeDropRect()),
+                 "type dropdown cell escapes the dock");
+        dock.reject();
+    }
+
+    // The dock can be asked for 420x300 (openOn clamps to that floor): the new
+    // rows must not collide or squeeze the Files box to nothing.
+    void layout_survives_the_minimum_dock_size()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(420, 300);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        QVERIFY2(dock.pathRect().isValid(), "no path bar at the minimum size");
+        QVERIFY2(dock.nameRect().isValid(), "no name box at the minimum size");
+        QVERIFY2(dock.typeRect().isValid(), "no type box at the minimum size");
+        QVERIFY2(dock.listRect().height() >= 24, "Files box collapsed at the minimum size");
+        QVERIFY2(!dock.nameRect().intersects(dock.typeRect()), "rows collide at the minimum size");
+        QVERIFY2(!dock.typeRect().intersects(dock.listRect()), "type row eats the list");
+        QVERIFY2(!dock.nameRect().intersects(dock.listRect()), "name row eats the list");
+        dock.reject();
+    }
+
+    // The file-type box starts on "all files" and offers era presets.
+    void type_box_defaults_to_all_files()
+    {
+        TvFileDock dock;
+        QCOMPARE(dock.typeText(), QStringLiteral("All files (*)"));
+        QVERIFY(!dock.typePresets().isEmpty());
+        QCOMPARE(dock.typePresets().first(), QStringLiteral("All files (*)"));
+    }
 };
 
 int main(int argc, char** argv)

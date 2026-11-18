@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QEventLoop>
 #include <QRegularExpression>
+#include <QPolygon>
 #include <QVBoxLayout>
 #include <QStyle>
 
@@ -44,6 +45,17 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     m_edit->setAutoFillBackground(true);
     m_edit->installEventFilter(this);
 
+    // Path bar (top): where the Files box is looking.
+    m_pathEdit = new QLineEdit(this);
+    m_pathEdit->setObjectName(QStringLiteral("tvFileDockPath"));
+    m_pathEdit->setAutoFillBackground(true);
+
+    // File-type box (bottom): free text, seeded with the era default.
+    m_typeEdit = new QLineEdit(this);
+    m_typeEdit->setObjectName(QStringLiteral("tvFileDockType"));
+    m_typeEdit->setAutoFillBackground(true);
+    m_typeEdit->setText(typePresets().first());
+
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new QPushButton(text, this);
         b->setObjectName(QLatin1String(name));
@@ -65,6 +77,7 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     connect(m_edit, &QLineEdit::textChanged, this, [this] { syncSelectionFromEdit(); });
 
     m_dir = QDir::currentPath();
+    setFilter(m_typeEdit->text());
     refreshFiles();
 }
 
@@ -102,6 +115,10 @@ void TvFileDock::setDirectory(const QString& dir)
     const QFileInfo fi(dir.isEmpty() ? QDir::currentPath() : dir);
     m_dir = fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath();
     m_scroll = 0;
+    // Keep the path bar in step with the list. Only the bar's Return key
+    // navigates, so writing the text here can never re-enter this function.
+    if (m_pathEdit && m_pathEdit->text() != QDir::toNativeSeparators(m_dir))
+        m_pathEdit->setText(QDir::toNativeSeparators(m_dir));
     refreshFiles();
     if (m_mode == Save && m_edit->text().trimmed().isEmpty() && !m_defaultExt.isEmpty())
         m_edit->setText(QStringLiteral("untitled.") + m_defaultExt);
@@ -180,6 +197,41 @@ void TvFileDock::setEditText(const QString& text)
 QString TvFileDock::editText() const
 {
     return m_edit->text();
+}
+
+void TvFileDock::setPathText(const QString& text)
+{
+    if (m_pathEdit)
+        m_pathEdit->setText(text);
+}
+
+QString TvFileDock::pathText() const
+{
+    return m_pathEdit ? m_pathEdit->text() : QString();
+}
+
+void TvFileDock::setTypeText(const QString& text)
+{
+    if (m_typeEdit)
+        m_typeEdit->setText(text);
+}
+
+QString TvFileDock::typeText() const
+{
+    return m_typeEdit ? m_typeEdit->text() : QString();
+}
+
+// The era's own filter idioms, offered by the type box's dropdown.
+QStringList TvFileDock::typePresets()
+{
+    return {
+        QStringLiteral("All files (*)"),
+        QStringLiteral("Text files (*.txt)"),
+        QStringLiteral("C/C++ (*.cpp *.h)"),
+        QStringLiteral("Markdown (*.md)"),
+        QStringLiteral("Python (*.py)"),
+        QStringLiteral("JSON (*.json)"),
+    };
 }
 
 void TvFileDock::syncSelectionFromEdit()
@@ -264,19 +316,32 @@ void TvFileDock::layoutChildren()
     const int btnW = qMax(cw * 9, 76);
     const int btnX = inner.right() - kPad - btnW + 1;
 
-    int y = inner.top() + 2;
-    m_labelRect = QRect(x0, y, listW, ch);
-    y += ch + 2;
-
     const int entryH = ch + 6;
-    m_entryRect = QRect(x0, y, qMax(cw * 8, listW - cw - 6), entryH);
-    m_stubRect = QRect(m_entryRect.right() + 5, y, cw, entryH);
+
+    // Bottom block, laid out UPWARD from the status row so the new rows grow
+    // into the space the list gives up, never past the frame.
+    const int typeTop = m_statusRect.top() - 6 - entryH;
+    m_typeRect = QRect(x0, typeTop, listW, entryH);
+    m_typeLabelRect = QRect(x0, typeTop - 2 - ch, listW, ch);
+    m_typeDropRect = QRect(m_typeRect.right() + 5, typeTop, cw, entryH);
+
+    const int nameTop = m_typeLabelRect.top() - 6 - entryH;
+    m_nameRect = QRect(x0, nameTop, qMax(cw * 8, listW - cw - 6), entryH);
+    m_nameDropRect = QRect(m_nameRect.right() + 5, nameTop, cw, entryH);
+    m_nameLabelRect = QRect(x0, nameTop - 2 - ch, listW, ch);
+
+    // Top block: the path bar.
+    int y = inner.top() + 2;
+    m_pathLabelRect = QRect(x0, y, listW, ch);
+    y += ch + 2;
+    m_pathRect = QRect(x0, y, listW, entryH);
     y += entryH + 6;
 
+    // Files label, then the list fills whatever is left in the middle.
     m_filesLabelRect = QRect(x0, y, listW, ch);
     y += ch + 2;
 
-    const int listBottom = m_statusRect.top() - 6;
+    const int listBottom = m_nameLabelRect.top() - 6;
     m_listRect = QRect(x0, y, listW, qMax(ch * 3, listBottom - y));
 
     const int bh = ch + 6;
@@ -286,8 +351,12 @@ void TvFileDock::layoutChildren()
     if (m_cancelRect.bottom() > m_helpRect.top())
         m_cancelRect.moveTop(qMax(m_okRect.bottom() + 4, m_helpRect.top() - bh - 4));
 
+    if (m_pathEdit)
+        m_pathEdit->setGeometry(m_pathRect.adjusted(2, 2, -2, -2));
     if (m_edit)
-        m_edit->setGeometry(m_entryRect.adjusted(2, 2, -2, -2));
+        m_edit->setGeometry(m_nameRect.adjusted(2, 2, -2, -2));
+    if (m_typeEdit)
+        m_typeEdit->setGeometry(m_typeRect.adjusted(2, 2, -2, -2));
     if (m_ok)
         m_ok->setGeometry(m_okRect);
     if (m_cancel)
@@ -451,14 +520,31 @@ void TvFileDock::paintEvent(QPaintEvent*)
     p.save();
     p.setFont(inkFont);
     p.setPen(kYellow);
-    const QString label = (m_mode == Save) ? QStringLiteral("Save file as")
-                                           : QStringLiteral("Open file as");
-    p.drawText(m_labelRect, Qt::AlignLeft | Qt::AlignVCenter, label);
+    p.drawText(m_pathLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Path"));
     p.drawText(m_filesLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Files"));
+    p.drawText(m_nameLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("File name"));
+    p.drawText(m_typeLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("File type"));
     p.restore();
 
-    // Green completion stub at the right end of the entry field.
-    p.fillRect(m_stubRect, kGreen);
+    // Green dropdown cells (recents / type presets), each with its own block
+    // shadow so they read like the plates.
+    auto drawDropCell = [&](const QRect& cell) {
+        if (cell.isNull())
+            return;
+        p.fillRect(cell.translated(kButtonShadow, kButtonShadow), kBlack);
+        p.fillRect(cell, kGreen);
+        const QPoint c = cell.center();
+        QPolygon tri;
+        tri << QPoint(c.x() - 3, c.y() - 2) << QPoint(c.x() + 3, c.y() - 2)
+            << QPoint(c.x(), c.y() + 2);
+        p.save();
+        p.setPen(kBlack);
+        p.setBrush(kBlack);
+        p.drawPolygon(tri);
+        p.restore();
+    };
+    drawDropCell(m_nameDropRect);
+    drawDropCell(m_typeDropRect);
 
     // ---- Files box: teal field, divider, two name columns, scroll strip ----
     p.fillRect(m_listRect, kTeal);
