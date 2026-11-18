@@ -87,6 +87,9 @@ public:
     // save of an untitled buffer) - never call them from automated tests.
     bool saveActive();
     bool saveActiveAs();
+    // Save the active document to an explicit URL (the TV file dialog already
+    // knows the path, so it must not open a native prompt of its own).
+    bool saveActiveAs(const QUrl& url);
 
     // Search menu (Task 10): find() prompts for a pattern (QInputDialog) and
     // jumps to the first match after the cursor; findNext() repeats the last

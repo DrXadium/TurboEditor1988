@@ -10,7 +10,6 @@
 #include <QKeySequence>
 #include <QEvent>
 #include <QKeyEvent>
-#include <QFileDialog>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QDir>
@@ -29,6 +28,7 @@
 #include "src/shell/Minimap.h"
 #include "src/shell/BottomBand.h"
 #include "src/shell/FKeyStatusBar.h"
+#include "src/shell/TvFileDock.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
 #include "src/editor/StatusSelectors.h"
@@ -328,14 +328,29 @@ int main(int argc, char** argv)
 
         // File
         on(act("actionFileNew"), [&tabs] { tabs.newDocument(); });
+        // File > Open / Save As use the app's OWN Turbo Vision dock, drawn as a
+        // child of the shell so it lands inside the CRT texture. A native
+        // QFileDialog opens a host-themed top-level window above the CRT scene,
+        // which is exactly what the user asked to get rid of.
         on(act("actionFileOpen"), [&shell, &tabs] {
-            const QString f =
-                QFileDialog::getOpenFileName(&shell, QObject::tr("Open File"));
+            const QString f = TvFileDock::getOpenFileName(
+                &shell, QObject::tr("Open File"),
+                QDir::currentPath(), QStringLiteral("All files (*)"));
             if (!f.isEmpty())
                 tabs.openFile(QUrl::fromLocalFile(f));
         });
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
-        on(act("actionFileSaveAs"), [&tabs] { tabs.saveActiveAs(); });
+        on(act("actionFileSaveAs"), [&shell, &tabs] {
+            QString start = QDir::currentPath();
+            if (auto* d = tabs.activeDocument())
+                if (!d->url().isEmpty())
+                    start = QFileInfo(d->url().toLocalFile()).absolutePath();
+            const QString f = TvFileDock::getSaveFileName(
+                &shell, QObject::tr("Save File As"), start,
+                QStringLiteral("All files (*)"));
+            if (!f.isEmpty())
+                tabs.saveActiveAs(QUrl::fromLocalFile(f));
+        });
 
         // Edit: undo / redo. They are enabled from the manager's history signal
         // so a fresh buffer offers them greyed out.
@@ -720,6 +735,22 @@ int main(int argc, char** argv)
             const QPoint p = ed->mapTo(&shell, ed->rect().center());
             bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
                                      Qt::RightButton, Qt::NoModifier, p.x(), p.y());
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_FILEDLG=open|save opens the TV
+    // file dock at launch so CRT_KATE_SHOT can capture it composited INSIDE the
+    // CRT frame - the proof that the dialog is drawn on the app's own surface
+    // rather than in a separate native popup. Non-modal on purpose: the app has
+    // to stay alive for the capture.
+    if (const QByteArray which = qgetenv("CRT_KATE_FILEDLG"); !which.isEmpty()) {
+        const bool save = (which == QByteArrayLiteral("save"));
+        QTimer::singleShot(800, &app, [&shell, save]() {
+            TvFileDock::openOn(&shell, save ? TvFileDock::Save : TvFileDock::Open,
+                               save ? QObject::tr("Save File As")
+                                    : QObject::tr("Open File"),
+                               QDir::currentPath(),
+                               QStringLiteral("All files (*)"));
         });
     }
 

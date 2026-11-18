@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+#include <QWidget>
+#include <QString>
+#include <QStringList>
+
+class QLineEdit;
+class QPushButton;
+class QMouseEvent;
+class QKeyEvent;
+
+// Turbo Vision file dialog, drawn ON the app's own surface.
+//
+// The native QFileDialog opens its own top-level window with the host's theme,
+// which lands outside the CRT pass and looks nothing like the chrome. This dock
+// is an ordinary CHILD of the shell window instead, so ContentBridge's existing
+// QWidget::render pass composites it into the CRT texture for free, and the
+// bridge's synthesized mouse/key routing drives it like every other control.
+//
+// Layout follows the reference "Save File As" screenshot: gray panel, white
+// double-line frame with the title in the top row, black offset drop shadow,
+// yellow labels, a blue entry field with a green stub, a teal two-column Files
+// box with a divider and a scroll strip, green OK / Cancel / Help buttons, and
+// a blue path status row along the bottom.
+class TvFileDock : public QWidget
+{
+    Q_OBJECT
+public:
+    enum Mode { Open, Save };
+    Q_ENUM(Mode)
+
+    explicit TvFileDock(QWidget* parent = nullptr);
+
+    void setMode(Mode m);
+    Mode mode() const { return m_mode; }
+
+    void setTitle(const QString& title);
+    QString title() const { return m_title; }
+
+    // The directory the Files box lists. An empty path means the current
+    // working directory.
+    void setDirectory(const QString& dir);
+    QString directory() const { return m_dir; }
+
+    // Name filter, either bare ("*.txt") or a dialog-style entry
+    // ("Text files (*.txt)"). The first extension seen also becomes the default
+    // extension used to complete a Save name.
+    void setFilter(const QString& filter);
+    QString filter() const { return m_filter; }
+    QString defaultExtension() const { return m_defaultExt; }
+
+    // Names shown in the Files box (".." first, then directories, then files).
+    QStringList files() const { return m_files; }
+    void selectFile(const QString& name);
+    QString selectedFile() const;
+
+    void setEditText(const QString& text);
+    QString editText() const;
+
+    // Finish: accept() emits the resolved absolute path, reject() emits an
+    // empty one. Both hide the dock.
+    void accept();
+    void reject();
+
+    // Geometry, exposed for tests and hit-testing.
+    QRect listRect() const { return m_listRect; }
+    QRect entryRect() const { return m_entryRect; }
+    QRect okRect() const { return m_okRect; }
+    QRect cancelRect() const { return m_cancelRect; }
+    QRect helpRect() const { return m_helpRect; }
+
+    // Show a dock over `anchor` and return it (not modal: the caller decides).
+    static TvFileDock* openOn(QWidget* anchor, Mode mode, const QString& title,
+                              const QString& dir = QString(),
+                              const QString& filter = QString());
+    // Modal convenience wrappers used by the File menu. They run a local event
+    // loop (a plain widget has no popup grab, so unlike QMenu::exec this one
+    // exits reliably on dialogFinished).
+    static QString getOpenFileName(QWidget* anchor, const QString& title,
+                                   const QString& dir = QString(),
+                                   const QString& filter = QString());
+    static QString getSaveFileName(QWidget* anchor, const QString& title,
+                                   const QString& dir = QString(),
+                                   const QString& filter = QString());
+
+signals:
+    void dialogFinished(const QString& path);
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent* ev) override;
+    void mouseDoubleClickEvent(QMouseEvent* ev) override;
+    void wheelEvent(QWheelEvent* ev) override;
+    void keyPressEvent(QKeyEvent* ev) override;
+    void resizeEvent(QResizeEvent* ev) override;
+    void changeEvent(QEvent* ev) override;
+    bool eventFilter(QObject* watched, QEvent* ev) override;
+
+private:
+    // Shared modal round loop for the two convenience wrappers.
+    static QString runModal(QWidget* anchor, Mode mode, const QString& title,
+                            const QString& dir, const QString& filter);
+
+    void refreshFiles();
+    void layoutChildren();
+    void syncSelectionFromEdit();
+    void moveSelection(int delta);
+    void descendInto(const QString& name);
+    QString resolvedPath() const;
+
+    int cellW() const;
+    int cellH() const;
+    int visibleRows() const;
+    int rowAt(const QPoint& p) const;      // -1 when the point is not on a row
+    int columnAt(const QPoint& p) const;   // 0 = left column, 1 = right
+    int rowIndex(int column, int row) const;   // list index for a cell
+    QRect rowRect(int index) const;            // painted rect of list[index]
+    void ensureVisible(int index);
+
+    Mode m_mode = Open;
+    QString m_title = QStringLiteral("Open File");
+    QString m_dir;
+    QString m_filter;
+    QString m_defaultExt = QStringLiteral("txt");
+    QStringList m_files;
+    int m_selected = -1;
+    int m_scroll = 0;
+
+    QLineEdit* m_edit = nullptr;
+    QPushButton* m_ok = nullptr;
+    QPushButton* m_cancel = nullptr;
+    QPushButton* m_help = nullptr;
+
+    QRect m_frameRect;
+    QRect m_listRect;
+    QRect m_entryRect;
+    QRect m_okRect;
+    QRect m_cancelRect;
+    QRect m_helpRect;
+    QRect m_statusRect;
+    QRect m_labelRect;        // "Save file as" / "Open file as"
+    QRect m_filesLabelRect;   // "Files"
+    QRect m_stubRect;         // green completion cell right of the entry
+};

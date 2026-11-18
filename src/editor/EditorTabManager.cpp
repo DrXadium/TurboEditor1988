@@ -851,6 +851,12 @@ bool EditorTabManager::saveActiveAs()
     return d && d->documentSaveAs();
 }
 
+bool EditorTabManager::saveActiveAs(const QUrl& url)
+{
+    KTextEditor::Document* d = activeDocument();
+    return d && !url.isEmpty() && d->saveAs(url);
+}
+
 void EditorTabManager::find()
 {
     const QString pattern =

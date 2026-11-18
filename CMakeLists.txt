@@ -57,6 +57,8 @@ add_library(crt-shell STATIC
   src/shell/RightScrollBar.h
   src/shell/BottomBand.cpp
   src/shell/BottomBand.h
+  src/shell/TvFileDock.cpp
+  src/shell/TvFileDock.h
   src/shell/ScrollBarInstaller.cpp
   src/shell/ScrollBarInstaller.h
   fonts/fonts.qrc
@@ -208,6 +210,11 @@ add_test(NAME tst_fkeys COMMAND tst_fkeys)
 add_executable(tst_scrollbars tests/tst_scrollbars.cpp)
 target_link_libraries(tst_scrollbars PRIVATE crt-shell crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_scrollbars COMMAND tst_scrollbars)
+
+# GUI pass (2026-11-17): Turbo Vision file dialogs drawn on the app screen.
+add_executable(tst_filedlg tests/tst_filedlg.cpp)
+target_link_libraries(tst_filedlg PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_filedlg COMMAND tst_filedlg)
 
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 add_executable(crt-kate src/main.cpp)

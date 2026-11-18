@@ -1,0 +1,261 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Task 1 (2026-11-17 GUI pass): Turbo Vision file dialogs drawn ON the app
+// screen (not a separate native popup). Reference: the TV "Save File As"
+// dialog - gray panel, white double-line frame, black drop shadow, yellow
+// labels, blue entry field, teal Files list box, green OK/Cancel/Help, blue
+// path status row.
+//
+// TDD: these tests are written FIRST and must fail because TvFileDock /
+// TvFilePicker do not exist yet.
+#include <QtTest>
+#include <QApplication>
+#include <QImage>
+#include <QTemporaryDir>
+#include <QDir>
+#include <QFile>
+#include <QSignalSpy>
+#include "src/shell/ShellWindow.h"
+#include "src/shell/TvFileDock.h"
+
+namespace {
+// Count pixels within tol of want.
+int countColor(const QImage& img, const QColor& want, int tol)
+{
+    int n = 0;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (qAbs(c.red() - want.red()) <= tol
+                && qAbs(c.green() - want.green()) <= tol
+                && qAbs(c.blue() - want.blue()) <= tol)
+                ++n;
+        }
+    return n;
+}
+} // namespace
+
+class TstFiledlg : public QObject
+{
+    Q_OBJECT
+private slots:
+    // The dock must look like the reference TV modal: gray panel, white
+    // double-line frame, black drop shadow, teal Files box, green buttons.
+    void file_dock_is_a_tv_modal_with_the_reference_panels()
+    {
+        TvFileDock dock;
+        dock.setMode(TvFileDock::Save);
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(560, 400);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        QVERIFY(img.width() > 0);
+
+        // Gray panel background (#AAAAAA) dominates.
+        const int gray = countColor(img, QColor(0xAA, 0xAA, 0xAA), 6);
+        QVERIFY2(gray > img.width() * img.height() / 4,
+                 qPrintable(QStringLiteral("only %1 gray px - panel is not TV gray").arg(gray)));
+
+        // White double-line frame (#FFFFFF) present.
+        const int white = countColor(img, QColor(0xFF, 0xFF, 0xFF), 6);
+        QVERIFY2(white > 40,
+                 qPrintable(QStringLiteral("only %1 white px - no white frame").arg(white)));
+
+        // Black drop shadow (#000000) present.
+        const int black = countColor(img, QColor(0x00, 0x00, 0x00), 6);
+        QVERIFY2(black > 40,
+                 qPrintable(QStringLiteral("only %1 black px - no drop shadow").arg(black)));
+
+        // Teal Files list box (#00AAAA) present.
+        const int teal = countColor(img, QColor(0x00, 0xAA, 0xAA), 6);
+        QVERIFY2(teal > 200,
+                 qPrintable(QStringLiteral("only %1 teal px - no Files list box").arg(teal)));
+
+        // Green OK / Cancel / Help buttons (#00AA00) present.
+        const int green = countColor(img, QColor(0x00, 0xAA, 0x00), 6);
+        QVERIFY2(green > 100,
+                 qPrintable(QStringLiteral("only %1 green px - no green buttons").arg(green)));
+
+        // Yellow labels (#FFFF55) present ("Save file as", "Files").
+        const int yellow = countColor(img, QColor(0xFF, 0xFF, 0x55), 6);
+        QVERIFY2(yellow > 30,
+                 qPrintable(QStringLiteral("only %1 yellow px - no yellow labels").arg(yellow)));
+
+        dock.reject();
+    }
+
+    // The Files list mirrors the current directory; selecting a row fills the
+    // edit box, and typing a name in the edit box selects the matching row.
+    void files_list_and_edit_box_follow_each_other()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        {
+            QFile f(dir.filePath(QStringLiteral("alpha.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("a");
+        }
+        {
+            QFile f(dir.filePath(QStringLiteral("beta.log")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("b");
+        }
+        QVERIFY(QDir(dir.path()).mkdir(QStringLiteral("subdir")));
+
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+        QVERIFY2(dock.files().contains(QStringLiteral("alpha.txt")),
+                 qPrintable(QStringLiteral("files() missing alpha.txt: %1")
+                                .arg(dock.files().join(QStringLiteral(", ")))));
+        QVERIFY2(dock.files().contains(QStringLiteral("beta.log")),
+                 "files() missing beta.log");
+        QVERIFY2(dock.files().contains(QStringLiteral("subdir")),
+                 "files() missing subdir");
+
+        // Selecting a row fills the edit box.
+        dock.selectFile(QStringLiteral("alpha.txt"));
+        QCOMPARE(dock.editText(), QStringLiteral("alpha.txt"));
+
+        // Typing a name selects the matching row.
+        dock.setEditText(QStringLiteral("beta.log"));
+        QCOMPARE(dock.selectedFile(), QStringLiteral("beta.log"));
+    }
+
+    // OK commits the picked path; Cancel discards (empty).
+    void ok_commits_cancel_discards()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        {
+            QFile f(dir.filePath(QStringLiteral("notes.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("hi");
+        }
+
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+        dock.setMode(TvFileDock::Save);
+        dock.selectFile(QStringLiteral("notes.txt"));
+
+        QSignalSpy spy(&dock, &TvFileDock::dialogFinished);
+        dock.accept();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.first().at(0).toString(), dir.filePath(QStringLiteral("notes.txt")));
+
+        TvFileDock dock2;
+        dock2.setDirectory(dir.path());
+        QSignalSpy spy2(&dock2, &TvFileDock::dialogFinished);
+        dock2.reject();
+        QCOMPARE(spy2.count(), 1);
+        QVERIFY2(spy2.first().at(0).toString().isEmpty(),
+                 "Cancel must return an empty path");
+    }
+
+    // Turbo Vision list language: unselected names are BLACK on the teal field
+    // (a blue-on-teal list reads as a link, not a DOS list box), and the field
+    // ends in a teal scroll strip whose thumb is GREEN.
+    void list_ink_and_scroll_strip_follow_the_reference()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char* name : { "aaa.txt", "bbb.txt", "ccc.txt" }) {
+            QFile f(dir.filePath(QLatin1String(name)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+        }
+
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+        dock.resize(560, 400);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        const QRect list = dock.listRect();
+        QVERIFY2(list.width() > 40 && list.height() > 40, "Files box has no area");
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+
+        // Black ink inside the list (the file names), excluding the selection
+        // plate: the selected row is the only blue-on-teal row.
+        int black = 0;
+        for (int y = list.top(); y < list.bottom() - 7; ++y)
+            for (int x = list.left(); x < list.right(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() < 24 && c.green() < 24 && c.blue() < 24)
+                    ++black;
+            }
+        QVERIFY2(black > 20,
+                 qPrintable(QStringLiteral("list names are not black ink (%1 black px)")
+                                .arg(black)));
+
+        // Green thumb in the bottom scroll strip of the box.
+        int thumb = 0;
+        for (int y = list.bottom() - 6; y <= list.bottom(); ++y)
+            for (int x = list.left(); x < list.right(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.green() > 120 && c.red() < 60 && c.blue() < 60)
+                    ++thumb;
+            }
+        QVERIFY2(thumb > 10,
+                 qPrintable(QStringLiteral("no green scroll thumb under the list (%1 px)")
+                                .arg(thumb)));
+
+        // The two-column divider: a solid blue rule down the middle of the box.
+        // It is what makes the reference's Files field read as two columns.
+        int divider = 0;
+        const int mid = list.left() + list.width() / 2;
+        for (int y = list.top() + 2; y < list.bottom() - 8; ++y)
+            for (int x = mid - 2; x <= mid + 3; ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.blue() > 120 && c.red() < 40 && c.green() < 40)
+                    ++divider;
+            }
+        QVERIFY2(divider > 30,
+                 qPrintable(QStringLiteral("no column divider in the Files box (%1 px)")
+                                .arg(divider)));
+
+        dock.reject();
+    }
+
+    // Save mode pre-fills the default extension so the user does not have to
+    // remember it.
+    void save_dock_offers_the_default_extension()
+    {
+        TvFileDock dock;
+        dock.setMode(TvFileDock::Save);
+        dock.setDirectory(QStringLiteral("/tmp"));
+        QVERIFY2(!dock.defaultExtension().isEmpty(),
+                 "Save mode must offer a default extension");
+        dock.reject();
+    }
+
+    // The composition root must open OUR dock on the shell, not a native
+    // QFileDialog (the whole point: drawn on the app screen).
+    void wiring_opens_the_dock_not_qfiledialog()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                              QStringLiteral("Open File"),
+                                              QStringLiteral("/tmp"));
+        QVERIFY2(dock, "openOn returned no dock");
+        QVERIFY2(dock->parentWidget() == &shell, "dock is not parented to the shell");
+        QVERIFY2(dock->isVisible(), "dock did not show");
+        QVERIFY2(shell.findChild<TvFileDock*>(QStringLiteral("tvFileDock")),
+                 "dock not findable under the shell");
+        dock->reject();
+        QCoreApplication::processEvents();
+    }
+};
+
+int main(int argc, char** argv)
+{
+    QApplication app(argc, argv);
+    TstFiledlg tc;
+    return QTest::qExec(&tc, argc, argv);
+}
+#include "tst_filedlg.moc"
