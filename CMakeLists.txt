@@ -59,6 +59,8 @@ add_library(crt-shell STATIC
   src/shell/BottomBand.h
   src/shell/TvFileDock.cpp
   src/shell/TvFileDock.h
+  src/shell/RecentFilesStore.cpp
+  src/shell/RecentFilesStore.h
   src/shell/ScrollBarInstaller.cpp
   src/shell/ScrollBarInstaller.h
   fonts/fonts.qrc
@@ -215,6 +217,12 @@ add_test(NAME tst_scrollbars COMMAND tst_scrollbars)
 add_executable(tst_filedlg tests/tst_filedlg.cpp)
 target_link_libraries(tst_filedlg PRIVATE crt-shell Qt6::Test Qt6::Widgets)
 add_test(NAME tst_filedlg COMMAND tst_filedlg)
+
+# File dock modern layout (2026-11-18): the persisted MRU-10 behind the
+# recents dropdown. ctest -R tst_recents
+add_executable(tst_recents tests/tst_recents.cpp)
+target_link_libraries(tst_recents PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_recents COMMAND tst_recents)
 
 # GUI pass 2026-11-17, Task 3: the spell section of the editor right-click
 # menu (bold headline, hover popout, suggestions / add / ignore). ctest -R tst_spellmenu
