@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "TvFileDock.h"
 #include "TvFrame.h"
+#include "TabListMenu.h"
+#include <QAction>
+#include <QMenu>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QPainter>
@@ -31,6 +34,7 @@ const int kShadowRight = 10;     // black drop shadow gutter (right/bottom)
 const int kShadowBottom = 8;
 const int kButtonShadow = 4;     // black block shadow behind each green plate
 const int kPad = 6;
+const int kMaxRecents = 10;      // the dropdown lists the last ten files
 } // namespace
 
 TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
@@ -280,6 +284,70 @@ void TvFileDock::navigateToTypedPath()
     setDirectory(fi.absolutePath());
     setEditText(fi.fileName());
     selectFile(fi.fileName());
+}
+
+void TvFileDock::setRecents(const QStringList& paths)
+{
+    m_recents.clear();
+    for (const QString& p : paths) {
+        if (p.trimmed().isEmpty() || m_recents.contains(p))
+            continue;
+        m_recents << p;
+        if (m_recents.size() >= kMaxRecents)
+            break;
+    }
+}
+
+void TvFileDock::applyRecent(const QString& path)
+{
+    const QFileInfo fi(path);
+    // A recent whose directory has since disappeared still fills the name;
+    // only navigate when the directory is actually there.
+    if (!fi.absolutePath().isEmpty() && QFileInfo(fi.absolutePath()).isDir())
+        setDirectory(fi.absolutePath());
+    setEditText(fi.fileName());
+    selectFile(fi.fileName());
+}
+
+void TvFileDock::showRecentsMenu()
+{
+    emit recentsRequested();
+    if (m_recents.isEmpty())
+        return;
+
+    QMenu* menu = TabListMenu::build(this, m_recents, -1);
+    QObject::connect(menu, &QMenu::triggered, this, [this](QAction* a) {
+        const int idx = a ? a->data().toInt() : -1;
+        if (idx >= 0 && idx < m_recents.size())
+            applyRecent(m_recents.at(idx));
+    });
+    QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+
+    // Same anchoring contract as the tab list: global cell rect, clamped to the
+    // window so the list can never open off-screen.
+    QWidget* top = window();
+    const QRect shellRect(top->mapToGlobal(QPoint(0, 0)), top->size());
+    const QRect cellGlobal(mapToGlobal(m_nameDropRect.topLeft()), m_nameDropRect.size());
+    menu->popup(TabListMenu::anchoredPos(cellGlobal, menu->sizeHint(), shellRect));
+}
+
+void TvFileDock::showTypeMenu()
+{
+    emit typePresetsRequested();
+    const QStringList presets = typePresets();
+
+    QMenu* menu = TabListMenu::build(this, presets, -1);
+    QObject::connect(menu, &QMenu::triggered, this, [this, presets](QAction* a) {
+        const int idx = a ? a->data().toInt() : -1;
+        if (idx >= 0 && idx < presets.size())
+            setTypeText(presets.at(idx));
+    });
+    QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+
+    QWidget* top = window();
+    const QRect shellRect(top->mapToGlobal(QPoint(0, 0)), top->size());
+    const QRect cellGlobal(mapToGlobal(m_typeDropRect.topLeft()), m_typeDropRect.size());
+    menu->popup(TabListMenu::anchoredPos(cellGlobal, menu->sizeHint(), shellRect));
 }
 
 void TvFileDock::syncSelectionFromEdit()
@@ -657,6 +725,8 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
     if (m_okRect.contains(pos)) { accept(); return; }
     if (m_cancelRect.contains(pos)) { reject(); return; }
     if (m_helpRect.contains(pos)) { return; }   // no help topic in this build
+    if (m_nameDropRect.contains(pos)) { showRecentsMenu(); return; }
+    if (m_typeDropRect.contains(pos)) { showTypeMenu(); return; }
     if (m_listRect.contains(pos)) {
         const int idx = rowAt(pos);
         if (idx >= 0) {

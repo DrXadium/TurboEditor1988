@@ -468,6 +468,72 @@ private slots:
         QVERIFY2(dock.files().contains(QStringLiteral("..")),
                  "filtering hid the parent entry");
     }
+
+    // The dropdown keeps at most ten entries and the green cell asks for it.
+    void recents_are_capped_at_ten_and_the_cell_requests_the_menu()
+    {
+        TvFileDock dock;
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        QStringList many;
+        for (int i = 0; i < 12; ++i)
+            many << QStringLiteral("/tmp/f%1.txt").arg(i);
+        dock.setRecents(many);
+        QCOMPARE(dock.recents().size(), 10);
+        QCOMPARE(dock.recents().first(), QStringLiteral("/tmp/f0.txt"));
+
+        QSignalSpy spy(&dock, &TvFileDock::recentsRequested);
+        QTest::mouseClick(&dock, Qt::LeftButton, Qt::NoModifier,
+                          dock.nameDropRect().center());
+        QCOMPARE(spy.count(), 1);
+        dock.reject();
+    }
+
+    // Picking a recent navigates to it and names it.
+    void applying_a_recent_navigates_and_fills_the_name()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString file = dir.filePath(QStringLiteral("picked.txt"));
+        {
+            QFile f(file);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+        }
+
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.setRecents({file});
+        dock.applyRecent(file);
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(dir.path()).canonicalFilePath());
+        QCOMPARE(dock.editText(), QStringLiteral("picked.txt"));
+        QCOMPARE(dock.selectedFile(), QStringLiteral("picked.txt"));
+    }
+
+    // A recent whose file has since been deleted must not take the dock down.
+    void applying_a_deleted_recent_does_not_crash()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.applyRecent(QStringLiteral("/definitely/not/here/gone.txt"));
+        QCOMPARE(dock.editText(), QStringLiteral("gone.txt"));
+    }
+
+    // The type row's green cell asks for the preset list.
+    void type_cell_requests_the_preset_menu()
+    {
+        TvFileDock dock;
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QSignalSpy spy(&dock, &TvFileDock::typePresetsRequested);
+        QTest::mouseClick(&dock, Qt::LeftButton, Qt::NoModifier,
+                          dock.typeDropRect().center());
+        QCOMPARE(spy.count(), 1);
+        dock.reject();
+    }
 };
 
 int main(int argc, char** argv)

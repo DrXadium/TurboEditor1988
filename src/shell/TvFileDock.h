@@ -72,6 +72,13 @@ public:
     // key; public so the behaviour is testable without a pointer.
     void navigateToTypedPath();
 
+    // The last-10 recents shown by the name box's green dropdown cell.
+    void setRecents(const QStringList& paths);
+    QStringList recents() const { return m_recents; }
+    void applyRecent(const QString& path);
+    void showRecentsMenu();
+    void showTypeMenu();
+
     // Finish: accept() emits the resolved absolute path, reject() emits an
     // empty one. Both hide the dock.
     void accept();
@@ -104,6 +111,10 @@ public:
 
 signals:
     void dialogFinished(const QString& path);
+    // The green cells were clicked (the pointer-free test hook, same shape as
+    // TabStrip::tabListRequested).
+    void recentsRequested();
+    void typePresetsRequested();
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -144,6 +155,7 @@ private:
     QString m_filter;
     QString m_defaultExt = QStringLiteral("txt");
     QStringList m_files;
+    QStringList m_recents;
     int m_selected = -1;
     int m_scroll = 0;
 
