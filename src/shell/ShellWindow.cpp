@@ -515,12 +515,15 @@ void ShellWindow::wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* vi
     }
 }
 
-// Editor right-click menu: the edit commands (Undo/Redo/Cut/Copy/Paste) plus
-// the spellcheck toggle, drawn as a BorlandMenu so it matches the dropdowns.
+// Editor right-click menu: the edit commands (Undo/Redo/Cut/Copy/Paste), drawn
+// as a BorlandMenu so it matches the dropdowns.
 //
 // It REUSES the Edit menu's own QActions rather than duplicating them: one
 // implementation per command, and Undo/Redo keep the enable state that
 // EditorTabManager::historyChanged drives.
+//
+// The spellcheck toggle is NOT here: it lives in the Edit menu bar only (user,
+// 2026-11-17 - "that's in the menu bar"), so the menu ends after Paste.
 void ShellWindow::showEditorContextMenu(const QPoint& shellLocal)
 {
     BorlandMenu* menu = findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
@@ -539,8 +542,6 @@ void ShellWindow::showEditorContextMenu(const QPoint& shellLocal)
         add("actionEditCut");
         add("actionEditCopy");
         add("actionEditPaste");
-        menu->addSeparator();
-        add("actionEditSpellcheck");
     }
     // popup(), never exec(): the shell is never mapped, so exec()'s nested
     // event loop and the native context-menu path do not behave here. The

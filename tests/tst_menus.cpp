@@ -1001,13 +1001,18 @@ private slots:
                  "expected padding between the border and the item text");
     }
 
-    // Right-clicking in the editor must open a context menu carrying the edit
-    // commands and the spellcheck commands, styled like the dropdowns. Styled
-    // like the dropdowns means it must be a BorlandMenu (borland.qss carries no
-    // QMenu rules on purpose, and QStyleSheetStyle hijacks CE_MenuItem as soon
-    // as any rule matches), and it must be registered with ContentBridge so it
-    // gets the drop shadow and synthesized mouse events.
-    void editor_context_menu_offers_edit_and_spellcheck_commands()
+    // Right-clicking in the editor opens a context menu carrying the edit
+    // commands, styled like the dropdowns. Styled like the dropdowns means it
+    // must be a BorlandMenu (borland.qss carries no QMenu rules on purpose, and
+    // QStyleSheetStyle hijacks CE_MenuItem as soon as any rule matches), and it
+    // must be registered with ContentBridge so it gets the drop shadow and
+    // synthesized mouse events.
+    //
+    // The spellcheck toggle is NOT here any more (user, 2026-11-17): "modify the
+    // right click menu to remove the enable spell beck option sice that's in the
+    // menu bar". It stays in the Edit menu; the context menu keeps two
+    // separators (after Undo/Redo and after Paste) and nothing else.
+    void editor_context_menu_offers_only_edit_commands()
     {
         ShellWindow shell;
         ContentBridge b;
@@ -1038,11 +1043,31 @@ private slots:
         const QStringList wanted{
             QStringLiteral("actionEditUndo"), QStringLiteral("actionEditRedo"),
             QStringLiteral("actionEditCut"), QStringLiteral("actionEditCopy"),
-            QStringLiteral("actionEditPaste"), QStringLiteral("actionEditSpellcheck")};
+            QStringLiteral("actionEditPaste")};
         for (const QString& name : wanted)
             QVERIFY2(have.contains(name),
                      qPrintable(QStringLiteral("context menu missing %1 (has: %2)")
                                     .arg(name, have.join(QStringLiteral(", ")))));
+
+        // The spellcheck toggle belongs to the Edit menu bar only.
+        QVERIFY2(!have.contains(QStringLiteral("actionEditSpellcheck")),
+                 qPrintable(QStringLiteral("context menu still offers the spellcheck toggle (has: %1)")
+                                .arg(have.join(QStringLiteral(", ")))));
+
+        // Exactly ONE separator: Undo/Redo --- Cut/Copy/Paste. The old menu had
+        // a second one before the spellcheck row; leaving it behind would show
+        // a dangling rule at the bottom of the menu.
+        int separators = 0;
+        QStringList shape;
+        for (QAction* a : menu->actions()) {
+            if (a->isSeparator())
+                ++separators;
+            shape << (a->isSeparator() ? QStringLiteral("---") : a->objectName());
+        }
+        QVERIFY2(separators == 1,
+                 qPrintable(QStringLiteral("expected 1 separator, found %1 (shape: %2)")
+                                .arg(separators)
+                                .arg(shape.join(QStringLiteral(", ")))));
 
         // It must be registered, or it gets neither the drop shadow nor the
         // synthesized mouse events that drive hover/dismissal.
