@@ -55,6 +55,8 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     m_typeEdit->setObjectName(QStringLiteral("tvFileDockType"));
     m_typeEdit->setAutoFillBackground(true);
     m_typeEdit->setText(typePresets().first());
+    connect(m_typeEdit, &QLineEdit::textChanged, this,
+            [this](const QString& text) { setFilter(text); });
 
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new QPushButton(text, this);
@@ -142,6 +144,27 @@ void TvFileDock::setFilter(const QString& filter)
     refreshFiles();
 }
 
+// "Text files (*.txt)" -> {"*.txt"}; a bare "*.md" stays as it is.
+QStringList TvFileDock::filterGlobs() const
+{
+    QString s = m_filter;
+    const int open = s.indexOf(QLatin1Char('('));
+    const int close = s.lastIndexOf(QLatin1Char(')'));
+    if (open >= 0 && close > open)
+        s = s.mid(open + 1, close - open - 1);
+    return s.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+}
+
+bool TvFileDock::matchesFilter(const QString& name) const
+{
+    const QStringList globs = filterGlobs();
+    // An empty box, a bare "*" and the DOS "*.*" all mean "everything".
+    if (globs.isEmpty() || globs.contains(QStringLiteral("*"))
+        || globs.contains(QStringLiteral("*.*")))
+        return true;
+    return QDir::match(globs, name);
+}
+
 void TvFileDock::refreshFiles()
 {
     m_files.clear();
@@ -157,7 +180,7 @@ void TvFileDock::refreshFiles()
     for (const QFileInfo& fi : entries) {
         if (fi.isDir())
             dirs << fi.fileName();
-        else
+        else if (matchesFilter(fi.fileName()))
             plain << fi.fileName();
     }
     m_files << dirs << plain;

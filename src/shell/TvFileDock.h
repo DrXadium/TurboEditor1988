@@ -121,6 +121,8 @@ private:
                             const QString& dir, const QString& filter);
 
     void refreshFiles();
+    QStringList filterGlobs() const;           // "Text files (*.txt)" -> {"*.txt"}
+    bool matchesFilter(const QString& name) const;
     void layoutChildren();
     void syncSelectionFromEdit();
     void moveSelection(int delta);

@@ -418,6 +418,56 @@ private slots:
         QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
                  QFileInfo(QDir::homePath()).canonicalFilePath());
     }
+
+    // The type box is the listing's filter: a glob narrows it, and the two
+    // "everything" idioms (bare "*", DOS "*.*", or an empty box) show all.
+    void type_box_filters_the_listing()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char* name : {"notes.txt", "readme.md", "Makefile"}) {
+            QFile f(dir.filePath(QString::fromLatin1(name)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+        }
+
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+        QVERIFY(dock.files().contains(QStringLiteral("notes.txt")));
+        QVERIFY(dock.files().contains(QStringLiteral("readme.md")));
+
+        dock.setTypeText(QStringLiteral("*.md"));
+        QVERIFY2(dock.files().contains(QStringLiteral("readme.md")),
+                 "*.md hid the markdown file");
+        QVERIFY2(!dock.files().contains(QStringLiteral("notes.txt")),
+                 "*.md did not hide the text file");
+        QCOMPARE(dock.defaultExtension(), QStringLiteral("md"));
+
+        dock.setTypeText(QStringLiteral("All files (*.*)"));
+        QVERIFY2(dock.files().contains(QStringLiteral("Makefile")),
+                 "the DOS all-files idiom hid an extensionless file");
+        QVERIFY(dock.files().contains(QStringLiteral("notes.txt")));
+
+        dock.setTypeText(QString());
+        QVERIFY2(dock.files().contains(QStringLiteral("Makefile")),
+                 "an empty type box hid files");
+        QVERIFY(dock.files().contains(QStringLiteral("readme.md")));
+    }
+
+    // Directories are navigation, never filtered away.
+    void type_box_never_filters_directories()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir(dir.path()).mkdir(QStringLiteral("subdir")));
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+        dock.setTypeText(QStringLiteral("*.md"));
+        QVERIFY2(dock.files().contains(QStringLiteral("subdir")),
+                 "filtering hid a directory");
+        QVERIFY2(dock.files().contains(QStringLiteral("..")),
+                 "filtering hid the parent entry");
+    }
 };
 
 int main(int argc, char** argv)
