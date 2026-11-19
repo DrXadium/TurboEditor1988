@@ -540,6 +540,78 @@ private slots:
         dock.reject();
     }
 
+    // Reported live: "buttons don't return to an unpressed state / color if
+    // released". The hand-fed press/release pair above passes while the real
+    // app sticks - clicks arrive as SYNTHESIZED events through ContentBridge,
+    // and the dock only sees them if childAt() resolves the plate. Assert the
+    // full round trip: press lights the cell, and the release both fires the
+    // menu and leaves the cell dark again.
+    void a_bridge_click_lights_the_drop_cell_and_reverts_it()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                              QStringLiteral("Open File"),
+                                              QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        const QRect cell = dock->nameDropRect();
+        QVERIFY2(!cell.isNull(), "the dock has no recents cell");
+        const int kOffset = 4;
+        const QPoint probe(cell.right() + kOffset / 2, cell.top() + 5);
+        const QPoint shellPt = cell.center() + dock->pos();
+        const QPoint platePt = shellPt - dock->pos();   // the cell is a painted
+        // rect: its centre in shell coordinates, then in dock coordinates.
+        Q_UNUSED(platePt);
+
+        QSignalSpy spy(dock, &TvFileDock::recentsRequested);
+
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+
+        const QImage down = dock->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QColor lit = down.pixelColor(probe);
+        QVERIFY2(lit.green() > 0xAA && lit.red() > 0x20,
+                 qPrintable(QStringLiteral("the press through the bridge did not light the cell: "
+                                           "%1,%2,%3")
+                                .arg(lit.red()).arg(lit.green()).arg(lit.blue())));
+        QCOMPARE(spy.count(), 0);
+
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+
+        QCOMPARE(spy.count(), 1);
+
+        // THE BUG: after the release the cell must be back at rest - flat
+        // green over its black shadow, not still shifted onto it.
+        const QImage up = dock->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QColor rest = up.pixelColor(probe);
+        QVERIFY2(rest.red() < 16 && rest.green() < 16 && rest.blue() < 16,
+                 qPrintable(QStringLiteral("the cell is still down after release - shadow probe "
+                                           "is %1,%2,%3")
+                                .arg(rest.red()).arg(rest.green()).arg(rest.blue())));
+
+        const QPoint cellTopLeft = cell.topLeft();
+        const QColor corner = up.pixelColor(cellTopLeft + QPoint(2, 2));
+        QVERIFY2(!(corner.green() > 0xAA && corner.red() > 0x20),
+                 qPrintable(QStringLiteral("the cell is still shifted after release - its corner "
+                                           "is %1,%2,%3")
+                                .arg(corner.red()).arg(corner.green()).arg(corner.blue())));
+
+        dock->reject();
+        QCoreApplication::processEvents();
+    }
+
     // The dropdown keeps at most ten entries and the green cell asks for it.
     void recents_are_capped_at_ten_and_the_cell_requests_the_menu()
     {

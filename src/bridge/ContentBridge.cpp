@@ -218,7 +218,8 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // forwarded press resolved to and where focus went. A click that "does
     // nothing" is almost always a hit-test disagreement, and the shell is never
     // mapped so there is no other way to see it.
-    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress) {
+    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
+        || static_cast<QEvent::Type>(type) == QEvent::MouseButtonRelease) {
         const QByteArray logPath = qgetenv("CRT_KATE_MOUSELOG");
         if (!logPath.isEmpty()) {
             if (QFile f(QString::fromLocal8Bit(logPath));
@@ -227,8 +228,12 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
                 // never activated (the shell is WA_DontShowOnScreen), so report
                 // the shell's own focus child - that is what keyTarget() uses.
                 const QWidget* focused = m_shell->focusWidget();
-                f.write(QStringLiteral("press shell=%1,%2 hit=%3 focus=%4\n")
+                f.write(QStringLiteral("%1 shell=%2,%3 button=%4 buttons=%5 hit=%6 focus=%7\n")
+                            .arg(static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
+                                     ? QStringLiteral("press")
+                                     : QStringLiteral("release"))
                             .arg(shellLocal.x()).arg(shellLocal.y())
+                            .arg(button).arg(buttons)
                             .arg(hit ? (hit->objectName().isEmpty()
                                             ? QString::fromLatin1(hit->metaObject()->className())
                                             : hit->objectName())

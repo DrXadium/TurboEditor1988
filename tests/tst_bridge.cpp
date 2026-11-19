@@ -8,6 +8,8 @@
 #include <QSignalSpy>
 #include "src/shell/ShellWindow.h"
 #include "src/bridge/ContentBridge.h"
+#include "src/shell/TvPlate.h"
+#include <QPushButton>
 
 namespace {
 // Count pixels close to Borland navy #0000aa = (0,0,170).
@@ -79,6 +81,52 @@ private slots:
         b.setShellWindow(&w);
         b.resizeShell(800, 600);
         QCOMPARE(w.size(), QSize(800, 600));
+    }
+
+    // Reported live: "buttons don't return to an unpressed state / color if
+    // released". The widget-level press/release pair passes while the real app
+    // sticks, so the difference is the SYNTHESIZED events the bridge delivers:
+    // QML's MouseArea forwards `mouse.buttons`, which on a Qt release is
+    // NoButton, and `QAbstractButton` ignores a release whose button is not
+    // LeftButton - leaving `down` true and the plate bright/shifted forever.
+    // This test drives a real TvPlate through forwardMouseEvent exactly as the
+    // QML does.
+    void a_release_through_the_bridge_returns_the_plate_to_rest()
+    {
+        ShellWindow shell;
+        shell.resize(640, 400);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+
+        // A plate parented to the shell, in shell coordinates the bridge can
+        // resolve with childAt().
+        auto* plate = new TvPlate(QStringLiteral("OK"), &shell);
+        plate->setGeometry(200, 150, 120, 40);
+        plate->show();
+        QCoreApplication::processEvents();
+
+        const QPoint center = plate->mapTo(&shell, plate->rect().center());
+
+        // PRESS with buttons = LeftButton (QML's onPressed: mouse.buttons).
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 center.x(), center.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(plate->isDown(), "the press did not land on the plate");
+
+        // RELEASE exactly as QML's onReleased does: mouse.button = LeftButton,
+        // mouse.buttons = NoButton (Qt reports no buttons held on release).
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 center.x(), center.y());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(!plate->isDown(),
+                 "the plate is still pressed after a release through the "
+                 "bridge - it will paint bright and shifted forever");
     }
 };
 

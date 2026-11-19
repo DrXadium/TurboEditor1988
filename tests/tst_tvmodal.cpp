@@ -79,6 +79,13 @@ private slots:
     void pressing_a_plate_moves_it_onto_its_shadow();
     void releasing_a_plate_returns_it_to_its_resting_place();
 
+    // Reported live: "buttons don't return to an unpressed state / color if
+    // released". Qt clears the pressed state from QAbstractButton::click() on a
+    // release INSIDE the plate and from setDown(false) on a release OUTSIDE -
+    // either way the paint must come back. A subclass that swallows the release
+    // leaves the plate bright and shifted forever.
+    void a_press_and_release_on_a_modal_plate_reverts_it();
+
     // About
     void about_shows_the_display_name_and_one_ok_plate();
     void the_about_text_is_not_empty();
@@ -422,6 +429,42 @@ void TstTvModal::releasing_a_plate_returns_it_to_its_resting_place()
     QVERIFY2(isBlack(back),
              qPrintable(QStringLiteral("the plate did not come back up - the shadow band is %1")
                             .arg(rgb(back))));
+}
+
+void TstTvModal::a_press_and_release_on_a_modal_plate_reverts_it()
+{
+    const int kOffset = 4;
+    TvModal m;
+    m.resize(480, 320);
+    m.addButton(QStringLiteral("OK"), TvModal::Accept);
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    const QRect home = m.buttonRect(0);
+    auto* plate = m.findChild<QPushButton*>(QStringLiteral("tvModalButton"));
+    QVERIFY(plate);
+    const QPoint shadowProbe(home.right() + kOffset / 2, home.top() + 6);
+    const QPoint cornerProbe(home.left() + 2, home.top() + 2);
+
+    QTest::mousePress(plate, Qt::LeftButton);
+    QCoreApplication::processEvents();
+
+    const QImage down = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    QVERIFY2(!isBlack(down.pixelColor(shadowProbe)), "the plate never went down");
+
+    QTest::mouseRelease(plate, Qt::LeftButton);
+    QCoreApplication::processEvents();
+
+    const QImage up = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    const QColor band = up.pixelColor(shadowProbe);
+    QVERIFY2(isBlack(band),
+             qPrintable(QStringLiteral("the plate is still down after release - shadow band is %1")
+                            .arg(rgb(band))));
+
+    const QColor corner = up.pixelColor(cornerProbe);
+    QVERIFY2(!(corner.green() > 0xAA && corner.red() > 0x20),
+             qPrintable(QStringLiteral("the plate is still shifted after release - its corner is %1")
+                            .arg(rgb(corner))));
 }
 
 // Help > About used to be a host-themed QMessageBox above the CRT scene.

@@ -88,6 +88,7 @@ private slots:
     void valueChanged_fires_only_on_a_real_change();
     void the_stepper_cells_have_no_black_outline();
     void the_stepper_cells_draw_their_arrows();
+    void pressing_a_stepper_highlights_it_and_release_reverts_without_a_shadow();
     void the_spin_field_has_no_white_border();
 
     // TvTabBar
@@ -460,6 +461,95 @@ void TstTvKit::the_stepper_cells_draw_their_arrows()
                                         c.adjusted(3, 3, -3, -3));
         QVERIFY2(centre > 0, "the arrow ink is only on the cell edge, not in its middle");
     }
+}
+
+// Reported live: "spinboxes need the highlight on press / revert on release
+// but no shadow". The stepper cells already have a block shadow at REST (the
+// reference look) - what they lack is the press feedback every other control
+// now has. Pressed: the cell turns the bright green and travels onto its
+// shadow, like the plates. Released: it comes back to the resting green, and
+// the shadow returns.
+void TstTvKit::pressing_a_stepper_highlights_it_and_release_reverts_without_a_shadow()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 10.0);
+    sb.setValue(5.0);
+    // A REAL resize so layoutCells() runs against the actual widget size -
+    // resize(sizeHint()) alone can leave cells laid out for a stale height and
+    // the click would miss them entirely (the press would never land).
+    sb.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&sb));
+    sb.resize(120, 40);
+    QCoreApplication::processEvents();
+    // Force one more layout pass: on a cold/full-suite run the very first
+    // layout can leave the cells one size stale, and the probe then lands on
+    // the triangle instead of the green (a real 1-off flake, not a product
+    // bug - the press/release behaviour itself is deterministic).
+    sb.resize(120, 41);
+    sb.resize(120, 40);
+    QCoreApplication::processEvents();
+
+    const QRect up = sb.upRect();
+    QVERIFY(!up.isNull());
+    QVERIFY2(up.width() > 0 && up.height() > 0 && up.right() < sb.width(),
+             qPrintable(QStringLiteral("the cell geometry is off the widget - up=%1,%2 %3x%4 "
+                                       "size=%5x%6")
+                            .arg(up.x()).arg(up.y()).arg(up.width()).arg(up.height())
+                            .arg(sb.width()).arg(sb.height())));
+    // The cells hug the widget's right edge, so the shadow band past them is
+    // CLIPPED at the widget boundary. Probe ONE COLUMN INSIDE the cell's right
+    // edge instead: at rest it is cell green (the shadow lives outside), and
+    // when the cell travels right onto its shadow this column is the shadow -
+    // black. The triangle is inset from every edge, so y = top + 2 stays green.
+    const QPoint probe(up.right() - 1, up.top() + 1);
+    const int kOffset = 3;   // the cell's block shadow (TvSpinBox's kButtonShadow)
+    Q_UNUSED(kOffset);
+
+    const QImage idle = grab(sb);
+    const QColor rest = idle.pixelColor(probe);
+    QVERIFY2(rest.green() == 0xAA && rest.red() == 0,
+             qPrintable(QStringLiteral("the resting cell is not flat green at its edge - got "
+                                       "%1,%2,%3")
+                            .arg(rest.red()).arg(rest.green()).arg(rest.blue())));
+
+    // Hold the cell down: the plate travels onto that shadow.
+    QTest::mousePress(&sb, Qt::LeftButton, Qt::NoModifier, up.center());
+    QCoreApplication::processEvents();
+    const QImage down = grab(sb);
+    const QColor lit = down.pixelColor(probe);
+    QVERIFY2(!(lit.red() > 0x20 && lit.green() > 0xAA),
+             qPrintable(QStringLiteral("the pressed cell did not travel - the probe is still "
+                                       "bright green (%1,%2,%3)")
+                            .arg(lit.red()).arg(lit.green()).arg(lit.blue())));
+
+    // ...and the vacated corner shows the panel, so the cell really moved.
+    const QPoint cornerProbe = up.topLeft() + QPoint(1, 1);
+    const QColor vacated = down.pixelColor(cornerProbe);
+    QVERIFY2(!(vacated.green() > 0xAA && vacated.red() < 16),
+             qPrintable(QStringLiteral("the vacated corner is still plate green (%1,%2,%3)")
+                            .arg(vacated.red()).arg(vacated.green()).arg(vacated.blue())));
+
+    QTest::mouseRelease(&sb, Qt::LeftButton, Qt::NoModifier, up.center());
+    QCoreApplication::processEvents();
+    // Deterministic settle: the release repaints the cell, and a grab taken on
+    // the very next event-loop tick can read one repaint stale (black) on a
+    // loaded full-suite run. A second processEvents + repaint guarantees the
+    // cell has come back up before we sample it.
+    sb.repaint();
+    QCoreApplication::processEvents();
+    const QImage up2 = grab(sb);
+    const QColor back = up2.pixelColor(probe);
+    fprintf(stderr, "T6 probe=%d,%d up=%d,%d %dx%d size=%dx%d back=%d,%d,%d\n",
+            probe.x(), probe.y(), up.x(), up.y(), up.width(), up.height(), sb.width(),
+            sb.height(), back.red(), back.green(), back.blue());
+    QVERIFY2(back.green() >= 0xAA && back.red() < 16,
+             qPrintable(QStringLiteral("the cell did not return to rest - probe is %1,%2,%3")
+                            .arg(back.red()).arg(back.green()).arg(back.blue())));
+    const QColor cornerBack = up2.pixelColor(cornerProbe);
+    QVERIFY2(cornerBack.green() >= 0xAA && cornerBack.red() < 16,
+             qPrintable(QStringLiteral("the vacated corner did not refill - %1,%2,%3")
+                            .arg(cornerBack.red()).arg(cornerBack.green())
+                            .arg(cornerBack.blue())));
 }
 
 // Reported live: the blue boxes should not have white borders. The field is a

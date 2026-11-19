@@ -49,6 +49,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
     void resizeEvent(QResizeEvent*) override;
 
 private:
@@ -56,6 +57,10 @@ private:
     void refreshText();
     QString formatted() const;
     double clamped(double value) const;
+
+    // Which stepper cell is held down (press highlights it, release reverts).
+    enum class Cell { None, Up, Down };
+    Cell m_pressed = Cell::None;
 
     QLineEdit* m_edit = nullptr;
     double m_min = 0.0;

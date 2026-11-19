@@ -14,6 +14,8 @@ namespace {
 const QColor kFieldBlue(0x00, 0x00, 0xAA);
 const QColor kInk(Qt::white);
 const QColor kPlate(0x00, 0xAA, 0x00);
+// The press flash: DOS bright green, like the plates (TvPlate's kPlatePressed).
+const QColor kPlatePressed(0x55, 0xFF, 0x55);
 const QColor kPlateDark(0x00, 0x77, 0x00);
 const QColor kBlack(Qt::black);
 const int kButtonShadow = 3;
@@ -154,11 +156,18 @@ void TvSpinBox::paintEvent(QPaintEvent*)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, false);
 
-    // Stepper cells: shadow first, then the green plate.
+    // Stepper cells: shadow first, then the green plate. Pressed, the cell
+    // turns the bright green and travels ONTO that shadow - the same push the
+    // plates make (no NEW shadow: the cells already own one at rest).
+    auto cellFace = [this](const QRect& cell, Cell which) {
+        return (m_pressed == which) ? cell.translated(kButtonShadow, kButtonShadow) : cell;
+    };
     TvFrame::drawPlateShadow(p, m_upRect, kButtonShadow);
     TvFrame::drawPlateShadow(p, m_downRect, kButtonShadow);
-    p.fillRect(m_upRect, kPlate);
-    p.fillRect(m_downRect, kPlate);
+    p.fillRect(cellFace(m_upRect, Cell::Up),
+               m_pressed == Cell::Up ? kPlatePressed : kPlate);
+    p.fillRect(cellFace(m_downRect, Cell::Down),
+               m_pressed == Cell::Down ? kPlatePressed : kPlate);
     // No outline: the cells are flat green fields, the ink is the triangle.
 
     // Painted triangles (the CP437 face has no U+25B2/U+25BC).
@@ -189,8 +198,8 @@ void TvSpinBox::paintEvent(QPaintEvent*)
         p.drawPolygon(poly);
         p.setBrush(Qt::NoBrush);
     };
-    triangle(m_upRect, true);
-    triangle(m_downRect, false);
+    triangle(cellFace(m_upRect, Cell::Up), true);
+    triangle(cellFace(m_downRect, Cell::Down), false);
 
     // Divider between the two cells.
     p.fillRect(QRect(m_upRect.left(), m_upRect.bottom(), m_upRect.width(), 1), kPlateDark);
@@ -203,15 +212,35 @@ void TvSpinBox::mousePressEvent(QMouseEvent* ev)
         return;
     }
     const QPoint pos = ev->pos();
+    fprintf(stderr, "SPINPRESS pos=%d,%d up=%d,%d down=%d,%d field=%d,%d\n",
+            pos.x(), pos.y(), m_upRect.x(), m_upRect.y(), m_downRect.x(), m_downRect.y(),
+            m_fieldRect.x(), m_fieldRect.y());
     if (m_upRect.contains(pos)) {
+        m_pressed = Cell::Up;
+        update();
         stepUp();
         ev->accept();
         return;
     }
     if (m_downRect.contains(pos)) {
+        m_pressed = Cell::Down;
+        update();
         stepDown();
         ev->accept();
         return;
     }
     QWidget::mousePressEvent(ev);
+}
+
+void TvSpinBox::mouseReleaseEvent(QMouseEvent* ev)
+{
+    // Any release reverts the highlight - the cell pops back up even if the
+    // pointer has left it, so a cell can never stay lit.
+    if (m_pressed != Cell::None) {
+        m_pressed = Cell::None;
+        update();
+        ev->accept();
+        return;
+    }
+    QWidget::mouseReleaseEvent(ev);
 }
