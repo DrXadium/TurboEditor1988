@@ -64,6 +64,8 @@ add_library(crt-shell STATIC
   src/shell/TvCheckBox.h
   src/shell/TvSpinBox.cpp
   src/shell/TvSpinBox.h
+  src/shell/TvTabBar.cpp
+  src/shell/TvTabBar.h
   src/shell/TvFileDock.h
   src/shell/RecentFilesStore.cpp
   src/shell/RecentFilesStore.h

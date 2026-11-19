@@ -10,6 +10,7 @@
 #include <QWidget>
 #include "src/shell/TvCheckBox.h"
 #include "src/shell/TvSpinBox.h"
+#include "src/shell/TvTabBar.h"
 #include <QLineEdit>
 
 namespace {
@@ -60,6 +61,12 @@ private slots:
     void unparsable_text_snaps_back();
     void clicking_the_up_cell_steps_up();
     void valueChanged_fires_only_on_a_real_change();
+
+    // TvTabBar
+    void chips_are_laid_out_left_to_right();
+    void the_active_chip_is_grey_and_the_others_blue();
+    void clicking_a_chip_switches_to_it();
+    void currentChanged_fires_only_on_a_real_change();
 };
 
 // The bracket is white too, so counting the whole interior measures the frame.
@@ -263,6 +270,79 @@ void TstTvKit::valueChanged_fires_only_on_a_real_change()
     QCOMPARE(spy.count(), 1);
     sb.setValue(0.6);
     QCOMPARE(spy.count(), 2);
+}
+
+// --- TvTabBar ----------------------------------------------------------------
+
+void TstTvKit::chips_are_laid_out_left_to_right()
+{
+    TvTabBar tabs;
+    tabs.addTab(QStringLiteral("CRT"));
+    tabs.addTab(QStringLiteral("Editor"));
+    QCOMPARE(tabs.count(), 2);
+    tabs.resize(tabs.sizeHint());
+
+    const QRect a = tabs.tabRect(0);
+    const QRect b = tabs.tabRect(1);
+    QVERIFY2(!a.isNull() && !b.isNull(), "a chip was never laid out");
+    QVERIFY2(a.left() < b.left(), "chips are not left to right");
+    QVERIFY2(a.right() < b.left(), "the chips overlap");
+}
+
+void TstTvKit::the_active_chip_is_grey_and_the_others_blue()
+{
+    TvTabBar tabs;
+    tabs.addTab(QStringLiteral("CRT"));
+    tabs.addTab(QStringLiteral("Editor"));
+    tabs.setCurrentIndex(0);
+    tabs.resize(tabs.sizeHint());
+    const QImage img = grab(tabs);
+    QVERIFY2(!img.isNull(), "the tab bar never showed");
+
+    // Near each chip's top-left, clear of the centred label.
+    const QColor active = img.pixelColor(tabs.tabRect(0).left() + 4, tabs.tabRect(0).top() + 3);
+    const QColor inactive = img.pixelColor(tabs.tabRect(1).left() + 4, tabs.tabRect(1).top() + 3);
+    QVERIFY2(qAbs(active.red() - 0xAA) < 16 && qAbs(active.green() - 0xAA) < 16
+                 && qAbs(active.blue() - 0xAA) < 16,
+             qPrintable(QStringLiteral("the active chip is %1,%2,%3, not panel grey")
+                            .arg(active.red()).arg(active.green()).arg(active.blue())));
+    QVERIFY2(inactive.blue() > 0x88 && inactive.red() < 0x30,
+             qPrintable(QStringLiteral("the inactive chip is %1,%2,%3, not blue")
+                            .arg(inactive.red()).arg(inactive.green()).arg(inactive.blue())));
+}
+
+void TstTvKit::clicking_a_chip_switches_to_it()
+{
+    TvTabBar tabs;
+    tabs.addTab(QStringLiteral("CRT"));
+    tabs.addTab(QStringLiteral("Editor"));
+    tabs.resize(tabs.sizeHint());
+    tabs.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    QCOMPARE(tabs.currentIndex(), 0);
+
+    QSignalSpy spy(&tabs, &TvTabBar::currentChanged);
+    QTest::mouseClick(&tabs, Qt::LeftButton, Qt::NoModifier, tabs.tabRect(1).center());
+    QCOMPARE(tabs.currentIndex(), 1);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toInt(), 1);
+}
+
+void TstTvKit::currentChanged_fires_only_on_a_real_change()
+{
+    TvTabBar tabs;
+    tabs.addTab(QStringLiteral("CRT"));
+    tabs.addTab(QStringLiteral("Editor"));
+    QSignalSpy spy(&tabs, &TvTabBar::currentChanged);
+    tabs.setCurrentIndex(0);        // already 0 after the first add
+    QCOMPARE(spy.count(), 0);
+    tabs.setCurrentIndex(1);
+    QCOMPARE(spy.count(), 1);
+    tabs.setCurrentIndex(1);
+    QCOMPARE(spy.count(), 1);
+    tabs.setCurrentIndex(99);       // out of range: ignored, no signal
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(tabs.currentIndex(), 1);
 }
 
 QTEST_MAIN(TstTvKit)
