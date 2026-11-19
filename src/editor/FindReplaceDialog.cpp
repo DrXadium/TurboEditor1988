@@ -15,6 +15,7 @@
 #include <QPaintEvent>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <ktexteditor/view.h>
 
 namespace {
 
@@ -108,6 +109,8 @@ FieldCell* makeField(QLineEdit*& edit, const char* name, QWidget* parent)
 
 } // namespace
 
+QString FindReplaceDialog::s_lastPattern;
+
 FindReplaceDialog::FindReplaceDialog(EditorTabManager* tabs, QWidget* parent)
     : TvModal(parent)
     , m_tabs(tabs)
@@ -176,11 +179,40 @@ FindReplaceDialog::FindReplaceDialog(EditorTabManager* tabs, QWidget* parent)
     for (QLineEdit* field : {m_findField, m_replaceField})
         field->installEventFilter(this);
 
+    // Options: a regex search cannot also be a whole-word one.
+    connect(m_regexBox, &TvCheckBox::toggled, this,
+            [this](bool on) { m_wholeWordsBox->setEnabled(!on); });
+
+    // An empty pattern has nothing to look for, so the action plates go dead.
+    connect(m_findField, &QLineEdit::textChanged, this, [this](const QString& text) {
+        s_lastPattern = text;
+        const bool has = !text.isEmpty();
+        for (QPushButton* plate : {m_findNext, m_replace, m_replaceAll})
+            if (plate)
+                plate->setEnabled(has);
+    });
+
+    // The Selection scope is offered only when the view HAS a selection, and
+    // the range is captured NOW: Find Next selects the hit it finds, and a
+    // scope that re-read the live selection would then search that hit.
+    if (m_tabs) {
+        if (KTextEditor::View* view = m_tabs->activeView())
+            m_capturedSelection = view->selectionRange();
+    }
+    m_scopeBar->setTabEnabled(2, m_capturedSelection.isValid() && !m_capturedSelection.isEmpty());
+
+    m_findField->setText(s_lastPattern);   // pre-fill, and seed the plates' state
+    m_findNext->setEnabled(!s_lastPattern.isEmpty());
+    m_replace->setEnabled(!s_lastPattern.isEmpty());
+    m_replaceAll->setEnabled(!s_lastPattern.isEmpty());
+
     setInitialField(0);
 }
 
 void FindReplaceDialog::setScope(Scope scope)
 {
+    if (scope == Scope::Selection && !m_scopeBar->isTabEnabled(2))
+        return;   // nothing to search in: stay where we are
     m_scopeBar->setCurrentIndex(int(scope));
 }
 
@@ -207,6 +239,21 @@ void FindReplaceDialog::setInitialField(int which)
 QString FindReplaceDialog::statusText() const
 {
     return m_status ? m_status->text() : QString();
+}
+
+FindReplace::Options FindReplaceDialog::options() const
+{
+    FindReplace::Options o;
+    o.caseSensitive = m_caseBox && m_caseBox->isChecked();
+    o.regex = m_regexBox && m_regexBox->isChecked();
+    // Whole words only exists for plaintext matching.
+    o.wholeWords = !o.regex && m_wholeWordsBox && m_wholeWordsBox->isChecked();
+    return o;
+}
+
+QString FindReplaceDialog::lastPattern()
+{
+    return s_lastPattern;
 }
 
 void FindReplaceDialog::setActiveField(QLineEdit* field)

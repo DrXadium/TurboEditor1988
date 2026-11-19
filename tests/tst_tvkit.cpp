@@ -11,6 +11,7 @@
 #include "src/shell/TvCheckBox.h"
 #include "src/shell/TvSpinBox.h"
 #include "src/shell/TvTabBar.h"
+#include "src/shell/TvPlate.h"
 #include <QLineEdit>
 
 namespace {
@@ -90,6 +91,7 @@ private slots:
     void the_stepper_cells_draw_their_arrows();
     void pressing_a_stepper_highlights_it_and_release_reverts_without_a_shadow();
     void a_disabled_chip_ignores_clicks_and_paints_dimmed();
+    void a_disabled_plate_reads_as_disabled();
     void the_spin_field_has_no_white_border();
 
     // TvTabBar
@@ -587,6 +589,35 @@ void TstTvKit::a_disabled_chip_ignores_clicks_and_paints_dimmed()
     QVERIFY2(disabledInk == 0,
              qPrintable(QStringLiteral("the disabled chip still paints white ink (%1 px)")
                             .arg(disabledInk)));
+}
+
+// A plate that is not available (an empty find pattern, say) must LOOK
+// unavailable - TvPlate paints itself, so the style engine cannot grey it out.
+void TstTvKit::a_disabled_plate_reads_as_disabled()
+{
+    TvPlate plate(QStringLiteral("Find Next"));
+    plate.setInk(Qt::black);
+    plate.setBackdrop(QColor(0xAA, 0xAA, 0xAA));
+    plate.setShadowOffset(4);
+    plate.resize(120, 28);
+    plate.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&plate));
+
+    const QImage on = plate.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    const QColor live = on.pixelColor(plate.rect().center());
+    QVERIFY2(live.green() >= 0xAA,
+             qPrintable(QStringLiteral("the enabled plate is not green (%1,%2,%3)")
+                            .arg(live.red()).arg(live.green()).arg(live.blue())));
+
+    plate.setEnabled(false);
+    plate.repaint();
+    const QImage off = plate.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    const QColor dead = off.pixelColor(plate.rect().center());
+    QVERIFY2(dead != live,
+             qPrintable(QStringLiteral("the disabled plate paints the same green (%1,%2,%3)")
+                            .arg(dead.red()).arg(dead.green()).arg(dead.blue())));
+    QVERIFY2(dead.green() < live.green() + 1,
+             "the disabled plate is brighter than the live one");
 }
 
 // Reported live: the blue boxes should not have white borders. The field is a

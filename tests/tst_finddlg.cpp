@@ -72,6 +72,21 @@ QImage grabWidget(QWidget* w)
     return w->grab().toImage().convertToFormat(QImage::Format_RGB32);
 }
 
+// The 2 px yellow ring around a field's cell is the "you are typing here" mark.
+// Asserting on it (not on qApp->focusWidget()) keeps the test independent of
+// window activation, which an offscreen platform does not always deliver.
+bool ringIsYellow(const QImage& img, QLineEdit* field, QWidget* root)
+{
+    QWidget* cell = field->parentWidget();
+    if (!cell)
+        return false;
+    const QRect r = inDialog(cell, root).adjusted(0, 0, -1, -1);
+    const QColor yellow(0xFF, 0xFF, 0x55);
+    const int outer = countColorIn(img, yellow, 30, r);
+    const int inner = countColorIn(img, yellow, 30, r.adjusted(2, 2, -2, -2));
+    return outer - inner > 20;
+}
+
 } // namespace
 
 class TstFindDlg : public QObject
@@ -86,6 +101,12 @@ private slots:
     void the_fields_are_tv_blue_with_no_border();
     void clicking_a_field_marks_it_active();
     void the_status_row_starts_blank();
+
+    // Task 4: the option and scope rules.
+    void ticking_regex_disables_whole_words();
+    void the_selection_chip_needs_a_selection();
+    void an_empty_pattern_disables_the_action_buttons();
+    void the_dialog_opens_on_the_find_field_with_the_last_pattern();
 };
 
 void TstFindDlg::initTestCase()
@@ -282,14 +303,8 @@ void TstFindDlg::clicking_a_field_marks_it_active()
 
     QTest::mouseClick(dlg.findField(), Qt::LeftButton);
 
-    const QImage img = grabWidget(&dlg);
-    QWidget* cell = dlg.findField()->parentWidget();
-    const QRect r = inDialog(cell, &dlg).adjusted(0, 0, -1, -1);
-    // The 2 px ring around the field is the "you are typing here" mark.
-    const int yellow = countColorIn(img, QColor(0xFF, 0xFF, 0x55), 30, r)
-                       - countColorIn(img, QColor(0xFF, 0xFF, 0x55), 30, r.adjusted(2, 2, -2, -2));
-    QVERIFY2(yellow > 20,
-             qPrintable(QStringLiteral("clicking the field painted no yellow ring (%1 px)").arg(yellow)));
+    QVERIFY2(ringIsYellow(grabWidget(&dlg), dlg.findField(), &dlg),
+             "clicking the field painted no yellow ring");
     // ...and the content is selected, the visible proof the click landed.
     QCOMPARE(dlg.findField()->selectedText(), QStringLiteral("needle"));
 }
@@ -306,6 +321,106 @@ void TstFindDlg::the_status_row_starts_blank()
              qPrintable(QStringLiteral("the status row opens saying '%1'").arg(dlg.statusText())));
     QVERIFY2(dlg.findChild<QLabel*>(QStringLiteral("findStatus")),
              "the dialog has no status label");
+}
+
+// KTextEditor's whole-word matching is plaintext-only, so a regex and the
+// Whole words box cannot both be in force. Ticking Regex greys the box out and
+// leaves its state alone for when Regex is switched back off.
+void TstFindDlg::ticking_regex_disables_whole_words()
+{
+    EditorTabManager tabs;
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    QVERIFY2(dlg.wholeWordsBox()->isEnabled(), "Whole words starts disabled");
+    dlg.wholeWordsBox()->setChecked(true);
+
+    dlg.regexBox()->setChecked(true);
+    QVERIFY2(!dlg.wholeWordsBox()->isEnabled(),
+             "ticking Regular expression left Whole words usable");
+    QVERIFY2(!dlg.options().wholeWords,
+             "a regex search still reports wholeWords in its options");
+    QVERIFY2(dlg.options().regex, "options() does not report the regex box");
+
+    dlg.regexBox()->setChecked(false);
+    QVERIFY2(dlg.wholeWordsBox()->isEnabled(), "unticking Regex left Whole words disabled");
+    QVERIFY2(dlg.wholeWordsBox()->isChecked(), "the box lost its state on the round trip");
+    QVERIFY(dlg.options().wholeWords);
+
+    dlg.caseBox()->setChecked(true);
+    QVERIFY(dlg.options().caseSensitive);
+}
+
+// The Selection scope is only offered when the active view HAS a selection at
+// the moment the dialog opens.
+void TstFindDlg::the_selection_chip_needs_a_selection()
+{
+    EditorTabManager tabs;   // no document, so no selection
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    QVERIFY2(!dlg.scopeBar()->isTabEnabled(2),
+             "the Selection chip is offered with nothing selected");
+    QCOMPARE(dlg.scope(), FindReplaceDialog::Scope::CurrentDocument);
+
+    dlg.setScope(FindReplaceDialog::Scope::Selection);
+    QVERIFY2(dlg.scope() == FindReplaceDialog::Scope::CurrentDocument,
+             "setScope(Selection) with no selection did not fall back");
+}
+
+// An empty pattern has nothing to look for: the three action plates go dead
+// rather than reporting "Not found" on every click.
+void TstFindDlg::an_empty_pattern_disables_the_action_buttons()
+{
+    EditorTabManager tabs;
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QString());
+    QVERIFY2(!dlg.findNextButton()->isEnabled(), "Find Next is live with an empty pattern");
+    QVERIFY2(!dlg.replaceButton()->isEnabled(), "Replace is live with an empty pattern");
+    QVERIFY2(!dlg.replaceAllButton()->isEnabled(), "Replace All is live with an empty pattern");
+
+    dlg.findField()->setText(QStringLiteral("a"));
+    QVERIFY2(dlg.findNextButton()->isEnabled(), "Find Next stayed dead after typing a pattern");
+    QVERIFY2(dlg.replaceButton()->isEnabled(), "Replace stayed dead after typing a pattern");
+    QVERIFY2(dlg.replaceAllButton()->isEnabled(), "Replace All stayed dead after typing a pattern");
+}
+
+// Ctrl+F lands in the Find what field, pre-filled with the last pattern and
+// selected, so typing replaces it. Ctrl+H lands in Replace with instead.
+void TstFindDlg::the_dialog_opens_on_the_find_field_with_the_last_pattern()
+{
+    EditorTabManager tabs;
+    {
+        FindReplaceDialog first(&tabs);
+        first.findField()->setText(QStringLiteral("remembered"));
+    }
+
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    QCOMPARE(dlg.findField()->text(), QStringLiteral("remembered"));
+    QCOMPARE(dlg.findField()->selectedText(), QStringLiteral("remembered"));
+    QVERIFY2(ringIsYellow(grabWidget(&dlg), dlg.findField(), &dlg),
+             "the dialog did not open on the Find what field");
+    QVERIFY2(!ringIsYellow(grabWidget(&dlg), dlg.replaceField(), &dlg),
+             "the Replace with field opened marked as active too");
+
+    dlg.setInitialField(1);
+    const QImage after = grabWidget(&dlg);
+    QVERIFY2(ringIsYellow(after, dlg.replaceField(), &dlg),
+             "setInitialField(1) did not move to the Replace with field");
+    QVERIFY2(!ringIsYellow(after, dlg.findField(), &dlg),
+             "setInitialField(1) left the Find what field marked active");
 }
 
 QTEST_MAIN(TstFindDlg)

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "FindReplace.h"
 #include "src/shell/TvModal.h"
 
 #include <QString>
+#include <ktexteditor/range.h>
+#include <ktexteditor/view.h>
 
 class QLabel;
 class QLineEdit;
@@ -46,6 +49,14 @@ public:
     void replaceOne();
     void replaceAll();
 
+    // What the three boxes currently say. Whole words is off whenever regex is
+    // on: KTextEditor's whole-word matching is plaintext-only.
+    FindReplace::Options options() const;
+
+    // The pattern the last dialog left behind - Search > Find Next uses it when
+    // the dialog is closed.
+    static QString lastPattern();
+
 protected:
     bool eventFilter(QObject* watched, QEvent* ev) override;
 
@@ -65,4 +76,12 @@ private:
     QPushButton* m_findNext = nullptr;
     QPushButton* m_replace = nullptr;
     QPushButton* m_replaceAll = nullptr;
+
+    // The selection as it was when the dialog opened. Find Next selects the hit
+    // it finds; if the Selection scope re-read the live selection, choosing it
+    // after a Find Next would silently search the hit instead of the user's
+    // range.
+    KTextEditor::Range m_capturedSelection;
+
+    static QString s_lastPattern;
 };

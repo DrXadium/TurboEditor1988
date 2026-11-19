@@ -12,6 +12,8 @@ const QColor kPlateHover(0x1F, 0xBE, 0x1F);
 // The press flash: DOS bright green, with black ink so the label stays
 // readable on the light plate.
 const QColor kPlatePressed(0x55, 0xFF, 0x55);
+// Unavailable: a darker green, so it reads as a plate you cannot press.
+const QColor kPlateDead(0x00, 0x55, 0x00);
 const QColor kBlack(Qt::black);
 } // namespace
 
@@ -74,12 +76,16 @@ void TvPlate::paintEvent(QPaintEvent*)
     // Down: onto the shadow. Hover: one step brighter. Otherwise the flat plate.
     const bool down = isDown();
     const QRect face = down ? plate.translated(m_offset, m_offset) : plate;
-    p.fillRect(face, down ? kPlatePressed : (underMouse() ? kPlateHover : kPlate));
+    // A plate that cannot be used must not look like one that can: the style
+    // engine never sees this paint, so the dimming has to happen here.
+    const bool dead = !isEnabled();
+    p.fillRect(face, dead ? kPlateDead
+                          : (down ? kPlatePressed : (underMouse() ? kPlateHover : kPlate)));
 
     QFont f = font();
     f.setStyleStrategy(QFont::NoAntialias);
     p.setFont(f);
-    p.setPen(down ? kBlack : m_ink);
+    p.setPen(down || dead ? kBlack : m_ink);
     p.drawText(face, Qt::AlignCenter, text());
 }
 
