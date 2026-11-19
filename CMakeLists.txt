@@ -126,6 +126,8 @@ add_test(NAME tst_input COMMAND tst_input)
 add_library(crt-editor STATIC
   src/editor/EditorTabManager.cpp
   src/editor/EditorTabManager.h
+  src/editor/FindReplace.cpp
+  src/editor/FindReplace.h
   src/editor/StatusSelectors.cpp
   src/editor/StatusSelectors.h
   src/editor/tvtheme/tvtheme.qrc
@@ -142,6 +144,11 @@ add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
 add_executable(tst_tveditor tests/tst_tveditor.cpp)
 target_link_libraries(tst_tveditor PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_tveditor COMMAND tst_tveditor)
+
+# Find and Replace (2026-11-18) test: the matching engine, on plain strings.
+add_executable(tst_find tests/tst_find.cpp)
+target_link_libraries(tst_find PRIVATE crt-editor Qt6::Test Qt6::Core KF6::TextEditor)
+add_test(NAME tst_find COMMAND tst_find)
 
 # Status-line selectors: F-row indicators + dropdowns (spell, encoding, doc
 # type, INS/OVR) and the blinking caret. ctest -R tst_statussel
