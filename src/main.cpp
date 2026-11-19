@@ -534,12 +534,13 @@ int main(int argc, char** argv)
                 restoreEntries(sessions.entries());
         });
 
-        // Settings -> SettingsDialog. Opens NATIVELY while exec()'d: do NOT pass
-        // it through bridge.registerPopup - that WA_DontShowOnScreen hardening
-        // would leave a modal dialog with no window and no way to dismiss it.
+        // Settings -> SettingsDialog, on the house-style modal. It is a child of
+        // the shell, so it composites inside the CRT pass like the file dock;
+        // TvModal::exec runs the local round loop (a native exec() on a
+        // WA_DontShowOnScreen shell would never return).
         on(act("actionSettingsConfigure"), [&shell, &crtSettings] {
-            SettingsDialog dlg(&crtSettings, &shell);
-            dlg.exec();
+            SettingsDialog dlg(&crtSettings);
+            TvModal::exec(&shell, &dlg);
         });
 
         // Help. About is a house-style modal child of the shell, not a
@@ -726,12 +727,18 @@ int main(int argc, char** argv)
         });
     }
 
-    // Dev aid (unset in normal runs): CRT_KATE_MODAL=about shows the real
-    // house-style About modal over the shell before CRT_KATE_SHOT captures it.
+    // Dev aid (unset in normal runs): CRT_KATE_MODAL=about|settings shows the
+    // real house-style modal over the shell before CRT_KATE_SHOT captures it.
     // Shown WITHOUT the round loop - exec() would block the capture timer.
-    if (const QByteArray which = qgetenv("CRT_KATE_MODAL"); which == "about") {
-        QTimer::singleShot(700, &app, [&shell]() {
-            auto* modal = new AboutModal(&shell);
+    if (const QByteArray which = qgetenv("CRT_KATE_MODAL"); !which.isEmpty()) {
+        QTimer::singleShot(700, &app, [&shell, &crtSettings, which]() {
+            TvModal* modal = nullptr;
+            if (which == "about")
+                modal = new AboutModal(&shell);
+            else if (which == "settings")
+                modal = new SettingsDialog(&crtSettings, &shell);
+            if (!modal)
+                return;
             const QSize want = modal->sizeHint();
             modal->resize(want);
             modal->move((shell.width() - want.width()) / 2,

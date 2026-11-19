@@ -15,6 +15,8 @@
 #include <QLabel>
 #include <QSpinBox>
 #include "src/settings/SettingsDialog.h"
+#include "src/shell/TvCheckBox.h"
+#include "src/shell/TvSpinBox.h"
 
 class TstSettings : public QObject
 {
@@ -206,7 +208,7 @@ private slots:
                      qPrintable("stale label copy: " + lab->text()));
         }
         // And the wired control is actually present.
-        QVERIFY2(dlg.findChild<QSpinBox*>(QStringLiteral("fontSizeSpin")),
+        QVERIFY2(dlg.findChild<TvSpinBox*>(QStringLiteral("fontSizeSpin")),
                  "fontSizeSpin missing from the Appearance tab");
     }
 
@@ -229,8 +231,8 @@ private slots:
         s.setBrightness(0.7);
         s.setScreenCurvature(0.0);
         SettingsDialog dlg(&s);
-        auto* bright = dlg.findChild<QDoubleSpinBox*>(QStringLiteral("brightnessSpin"));
-        auto* curv = dlg.findChild<QCheckBox*>(QStringLiteral("curvatureCheck"));
+        auto* bright = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
+        auto* curv = dlg.findChild<TvCheckBox*>(QStringLiteral("curvatureCheck"));
         QVERIFY2(bright, "brightnessSpin not found in dialog");
         QVERIFY2(curv, "curvatureCheck not found in dialog");
         QCOMPARE(bright->value(), 0.7);
@@ -242,15 +244,15 @@ private slots:
         SettingsDialog dlg(&s);
         QSignalSpy brightSpy(&s, &CrtSettings::brightnessChanged);
 
-        auto* bright = dlg.findChild<QDoubleSpinBox*>(QStringLiteral("brightnessSpin"));
-        auto* scan = dlg.findChild<QCheckBox*>(QStringLiteral("scanlinesCheck"));
+        auto* bright = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
+        auto* scan = dlg.findChild<TvCheckBox*>(QStringLiteral("scanlinesCheck"));
         QVERIFY(bright && scan);
 
         bright->setValue(0.42);
         QCOMPARE(brightSpy.count(), 1);
         QCOMPARE(s.brightness(), 0.42);
 
-        // Toggle applies immediately (no OK button; Close only).
+        // Toggle applies immediately (OK/Cancel: live preview, Cancel reverts).
         scan->setChecked(false);
         QVERIFY(!s.scanlinesEnabled());
         scan->setChecked(true);
@@ -260,8 +262,8 @@ private slots:
     void dialog_curvature_checkbox_roundtrip() {
         CrtSettings s;
         SettingsDialog dlg(&s);
-        auto* curv = dlg.findChild<QCheckBox*>(QStringLiteral("curvatureCheck"));
-        auto* curvSpin = dlg.findChild<QDoubleSpinBox*>(QStringLiteral("curvatureSpin"));
+        auto* curv = dlg.findChild<TvCheckBox*>(QStringLiteral("curvatureCheck"));
+        auto* curvSpin = dlg.findChild<TvSpinBox*>(QStringLiteral("curvatureSpin"));
         QVERIFY(curv && curvSpin);
 
         curv->setChecked(true);
@@ -316,7 +318,7 @@ private slots:
         CrtSettings s;
         s.setAutosaveIntervalSeconds(77);
         SettingsDialog dlg(&s);
-        auto* spin = dlg.findChild<QSpinBox*>(
+        auto* spin = dlg.findChild<TvSpinBox*>(
             QStringLiteral("autosaveIntervalSpin"));
         QVERIFY2(spin, "no autosaveIntervalSpin in the Settings dialog");
         QCOMPARE(spin->value(), 77);

@@ -16,7 +16,14 @@
 #include "src/shell/TvModal.h"
 #include "src/shell/AboutModal.h"
 #include "src/AppIdentity.h"
+#include "src/settings/SettingsDialog.h"
+#include "src/settings/CrtSettings.h"
+#include "src/shell/TvCheckBox.h"
+#include "src/shell/TvSpinBox.h"
+#include "src/shell/TvTabBar.h"
 #include <QLabel>
+#include <QStackedWidget>
+#include <QLineEdit>
 
 namespace {
 
@@ -69,6 +76,14 @@ private slots:
     // About
     void about_shows_the_display_name_and_one_ok_plate();
     void the_about_text_is_not_empty();
+
+    // Settings
+    void settings_uses_the_house_chrome();
+    void the_two_tabs_switch_pages();
+    void a_checkbox_toggle_reaches_the_settings();
+    void cancel_restores_every_setting();
+    void ok_keeps_the_changes();
+    void escape_cancels_like_the_button();
 };
 
 // The chrome the file dock established, on a bare modal: gray panel inside a
@@ -309,6 +324,114 @@ void TstTvModal::the_about_text_is_not_empty()
     QVERIFY2(label->text().trimmed().size() > 40,
              qPrintable(QStringLiteral("the about text is only %1 chars")
                             .arg(label->text().trimmed().size())));
+}
+
+// --- Settings ----------------------------------------------------------------
+
+void TstTvModal::settings_uses_the_house_chrome()
+{
+    CrtSettings s;
+    SettingsDialog dlg(&s);
+    QVERIFY2(dlg.title().contains(AppIdentity::displayName()),
+             qPrintable(QStringLiteral("settings title is %1").arg(dlg.title())));
+    QCOMPARE(dlg.buttonCount(), 2);
+    QVERIFY2(dlg.frameRect().width() > 0, "the settings modal has no frame");
+}
+
+void TstTvModal::the_two_tabs_switch_pages()
+{
+    CrtSettings s;
+    SettingsDialog dlg(&s);
+
+    auto* tabs = dlg.findChild<TvTabBar*>();
+    QVERIFY2(tabs, "no TvTabBar in the settings modal");
+    QCOMPARE(tabs->count(), 2);
+
+    auto* stack = dlg.findChild<QStackedWidget*>();
+    QVERIFY2(stack, "no page stack in the settings modal");
+    QCOMPARE(stack->count(), 2);
+    QCOMPARE(stack->currentIndex(), 0);
+
+    tabs->setCurrentIndex(1);
+    QCOMPARE(stack->currentIndex(), 1);
+    // The second page really carries the Editor controls.
+    QVERIFY2(stack->widget(1)->findChild<TvSpinBox*>(QStringLiteral("fontSizeSpin")),
+             "the Editor page has no font size control");
+}
+
+void TstTvModal::a_checkbox_toggle_reaches_the_settings()
+{
+    CrtSettings s;
+    SettingsDialog dlg(&s);
+    auto* scan = dlg.findChild<TvCheckBox*>(QStringLiteral("scanlinesCheck"));
+    QVERIFY2(scan, "scanlinesCheck is missing");
+    const bool before = s.scanlinesEnabled();
+    scan->setChecked(!before);
+    QCOMPARE(s.scanlinesEnabled(), !before);
+}
+
+// Review Focus 2: Cancel must undo every edit, not just the visible one.
+void TstTvModal::cancel_restores_every_setting()
+{
+    CrtSettings s;
+    s.setBrightness(0.7);
+    s.setContrast(1.1);
+    s.setScanlinesEnabled(true);
+    const double b0 = s.brightness();
+    const double c0 = s.contrast();
+
+    SettingsDialog dlg(&s);
+    auto* bright = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
+    auto* contrast = dlg.findChild<TvSpinBox*>(QStringLiteral("contrastSpin"));
+    auto* scan = dlg.findChild<TvCheckBox*>(QStringLiteral("scanlinesCheck"));
+    QVERIFY(bright && contrast && scan);
+
+    bright->setValue(0.2);
+    contrast->setValue(0.5);
+    scan->setChecked(false);
+
+    // Edits apply live (the CRT preview is the point of the dialog) ...
+    QCOMPARE(s.brightness(), 0.2);
+    QCOMPARE(s.contrast(), 0.5);
+    QCOMPARE(s.scanlinesEnabled(), false);
+
+    // ... and Cancel puts all of them back.
+    dlg.reject();
+    QCOMPARE(s.brightness(), b0);
+    QCOMPARE(s.contrast(), c0);
+    QCOMPARE(s.scanlinesEnabled(), true);
+}
+
+void TstTvModal::ok_keeps_the_changes()
+{
+    CrtSettings s;
+    s.setBrightness(0.7);
+    SettingsDialog dlg(&s);
+    auto* bright = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
+    QVERIFY(bright);
+    bright->setValue(0.25);
+    dlg.accept();
+    QCOMPARE(s.brightness(), 0.25);
+}
+
+// Review Focus 3: Escape while a field has focus must still cancel.
+void TstTvModal::escape_cancels_like_the_button()
+{
+    CrtSettings s;
+    s.setBrightness(0.7);
+    SettingsDialog dlg(&s);
+    dlg.resize(520, 400);
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    auto* bright = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
+    QVERIFY(bright);
+    bright->editor()->setFocus();
+    bright->setValue(0.15);
+    QCOMPARE(s.brightness(), 0.15);
+
+    QTest::keyClick(bright->editor(), Qt::Key_Escape);
+    QCOMPARE(s.brightness(), 0.7);
 }
 
 QTEST_MAIN(TstTvModal)

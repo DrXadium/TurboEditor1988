@@ -155,7 +155,7 @@ add_library(crt-settings STATIC
   src/settings/SettingsDialog.h
 )
 target_include_directories(crt-settings PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(crt-settings PUBLIC Qt6::Gui Qt6::Widgets)
+target_link_libraries(crt-settings PUBLIC Qt6::Gui Qt6::Widgets crt-shell)
 
 # Task 7: named session manager (JSON snapshot of open files + cursor).
 add_library(crt-session STATIC
@@ -237,7 +237,7 @@ add_test(NAME tst_recents COMMAND tst_recents)
 # House-style modals (2026-11-18): TvModal chrome, About and Settings.
 # ctest -R tst_tvmodal
 add_executable(tst_tvmodal tests/tst_tvmodal.cpp)
-target_link_libraries(tst_tvmodal PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_tvmodal PRIVATE crt-shell crt-settings Qt6::Test Qt6::Widgets)
 add_test(NAME tst_tvmodal COMMAND tst_tvmodal)
 
 # The TV widget kit: checkbox, spin box, tab bar. ctest -R tst_tvkit

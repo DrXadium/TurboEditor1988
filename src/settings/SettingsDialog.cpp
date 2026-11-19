@@ -2,193 +2,250 @@
 #include "SettingsDialog.h"
 #include "CrtSettings.h"
 #include "src/AppIdentity.h"
-#include <QTabWidget>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QCheckBox>
-#include <QDoubleSpinBox>
+#include "src/shell/TvCheckBox.h"
+#include "src/shell/TvSpinBox.h"
+#include "src/shell/TvTabBar.h"
+
+#include <QGridLayout>
 #include <QLabel>
-#include <QFormLayout>
-#include <QSpinBox>
-#include <QDialogButtonBox>
-#include <QPushButton>
-#include <QPainter>
-#include <QPaintEvent>
+#include <QStackedWidget>
+#include <QVBoxLayout>
 
 namespace {
-// A slider+spin row bound to a CrtSettings double property, with an optional
-// enabling checkbox (per-effect on/off maps to a driver float).
-QDoubleSpinBox* makeSpin(double value, double min, double max, double step)
+
+// Row labels are the dialog's yellow ink on the gray panel. A QLabel is the one
+// control that needs no repainting: the style engine already draws it in the
+// right font, and the colour is a single property.
+QLabel* tvLabel(const QString& text)
 {
-    auto* sb = new QDoubleSpinBox;
-    sb->setRange(min, max);
-    sb->setSingleStep(step);
-    sb->setDecimals(2);
-    sb->setValue(value);
-    return sb;
+    auto* label = new QLabel(text);
+    label->setObjectName(QStringLiteral("tvFieldLabel"));
+    label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+    return label;
 }
+
+TvSpinBox* tvSpin(double value, double lo, double hi, double step, int decimals)
+{
+    auto* spin = new TvSpinBox;
+    spin->setRange(lo, hi);
+    spin->setSingleStep(step);
+    spin->setDecimals(decimals);
+    spin->setValue(value);
+    return spin;
+}
+
 } // namespace
 
 SettingsDialog::SettingsDialog(CrtSettings* settings, QWidget* parent)
-    : QDialog(parent), m_settings(settings)
+    : TvModal(parent)
+    , m_settings(settings)
 {
-    setWindowTitle(tr("Settings — %1").arg(AppIdentity::displayName()));
+    // The window title is kept for anything that treats this as a window; the
+    // visible title is the one drawn in the frame.
+    setWindowTitle(tr("Settings \u2014 %1").arg(AppIdentity::displayName()));
     setObjectName(QStringLiteral("settingsDialog"));
+    setTitle(tr("Settings \u2014 %1").arg(AppIdentity::displayName()));
 
-    auto* outer = new QVBoxLayout(this);
-    auto* tabs = new QTabWidget;
-    tabs->addTab(buildCrtTab(), tr("CRT"));
-    tabs->addTab(buildAppearanceTab(), tr("Editor / Appearance"));
-    outer->addWidget(tabs);
+    snapshot();
 
-    auto* buttonBox = new QHBoxLayout;
-    auto* closeBtn = new QDialogButtonBox(QDialogButtonBox::Close);
-    // Turbo Vision green buttons (the app-wide QSS rule doesn't reach
-    // QDialogButtonBox's themed buttons, so style them explicitly here).
-    if (QPushButton* pb = closeBtn->button(QDialogButtonBox::Close)) {
-        pb->setObjectName(QStringLiteral("tvButton"));
-        pb->setStyleSheet(QStringLiteral(
-            "QPushButton { background-color: #00AA00; color: #FFFFFF; "
-            "border: 1px solid #000000; padding: 3px 18px; min-width: 60px; } "
-            "QPushButton:hover { background-color: #1FBE1F; } "
-            "QPushButton:pressed { background-color: #148A14; }"));
-    }
-    connect(closeBtn, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    buttonBox->addStretch();
-    buttonBox->addWidget(closeBtn);
-    outer->addLayout(buttonBox);
+    auto* body = new QWidget;
+    auto* layout = new QVBoxLayout(body);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
 
-    // Turbo Vision drop-shadow band: reserve a 2-col/1-row gutter at the
-    // right/bottom so paintEvent can draw the black offset shadow over the
-    // gray panel (QSS can't translate a shadow, so we paint it ourselves).
-    outer->setContentsMargins(2, 2, 14, 12);
-    setAutoFillBackground(false);   // paintEvent fills the gray panel itself
+    auto* tabs = new TvTabBar;
+    tabs->setObjectName(QStringLiteral("settingsTabs"));
+
+    auto* stack = new QStackedWidget;
+    stack->setObjectName(QStringLiteral("settingsStack"));
+    stack->addWidget(buildCrtTab());
+    stack->addWidget(buildAppearanceTab());
+
+    tabs->addTab(tr("CRT"));
+    tabs->addTab(tr("Editor"));
+    connect(tabs, &TvTabBar::currentChanged, stack, &QStackedWidget::setCurrentIndex);
+
+    layout->addWidget(tabs);
+    layout->addWidget(stack, 1);
+
+    setBody(body);
+    addButton(tr("OK"), Accept);
+    addButton(tr("Cancel"), Reject);
 }
 
-// Turbo Vision modal: fill the gray panel, draw the white double-line frame
-// and the black drop shadow along the right + bottom edges (offset 2px).
-void SettingsDialog::paintEvent(QPaintEvent* ev)
+void SettingsDialog::snapshot()
 {
-    QPainter p(this);
-    const QRect r = rect();
-    p.fillRect(r, QColor(0xAA, 0xAA, 0xAA));            // gray panel
-    // Black drop shadow: right column + bottom row, offset 2px in.
-    p.fillRect(QRect(r.right() - 10, r.top() + 4, 10, r.height() - 6), Qt::black);
-    p.fillRect(QRect(r.left() + 4, r.bottom() - 8, r.width() - 6, 8), Qt::black);
-    // White double-line frame (inset to sit inside the shadow gutter).
-    const QRect fr = r.adjusted(2, 2, -12, -10);
-    p.setPen(QColor(0xFF, 0xFF, 0xFF));
-    p.drawRect(fr);
-    p.drawRect(fr.adjusted(1, 1, -1, -1));
-    QDialog::paintEvent(ev);                             // children on top
+    m_snapshot.scanlines = m_settings->scanlinesEnabled();
+    m_snapshot.curvature = m_settings->screenCurvature();
+    m_snapshot.brightness = m_settings->brightness();
+    m_snapshot.contrast = m_settings->contrast();
+    m_snapshot.bloom = m_settings->bloom();
+    m_snapshot.flickering = m_settings->flickering();
+    m_snapshot.noise = m_settings->staticNoise();
+    m_snapshot.jitter = m_settings->jitter();
+    m_snapshot.fontSize = m_settings->fontSize();
+    m_snapshot.autosaveSeconds = m_settings->autosaveIntervalSeconds();
+}
+
+void SettingsDialog::restore()
+{
+    m_settings->setScreenCurvature(m_snapshot.curvature);
+    m_settings->setBrightness(m_snapshot.brightness);
+    m_settings->setContrast(m_snapshot.contrast);
+    m_settings->setBloom(m_snapshot.bloom);
+    m_settings->setFlickering(m_snapshot.flickering);
+    m_settings->setStaticNoise(m_snapshot.noise);
+    m_settings->setJitter(m_snapshot.jitter);
+    m_settings->setScanlinesEnabled(m_snapshot.scanlines);
+    m_settings->setFontSize(m_snapshot.fontSize);
+    m_settings->setAutosaveIntervalSeconds(m_snapshot.autosaveSeconds);
+}
+
+void SettingsDialog::reject()
+{
+    restore();
+    TvModal::reject();
 }
 
 QWidget* SettingsDialog::buildCrtTab()
 {
-    auto* w = new QWidget;
-    auto* form = new QFormLayout(w);
+    auto* page = new QWidget;
+    auto* grid = new QGridLayout(page);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(12);
+    grid->setVerticalSpacing(6);
+    grid->setColumnStretch(0, 1);
+    int row = 0;
 
-    // Scanlines (per-effect toggle).
-    auto* scan = new QCheckBox(tr("Scanlines"));
+    // Scanlines: a bare toggle, the label lives in the control.
+    auto* scan = new TvCheckBox(tr("Scanlines"));
     scan->setObjectName(QStringLiteral("scanlinesCheck"));
     scan->setChecked(m_settings->scanlinesEnabled());
-    connect(scan, &QCheckBox::toggled, m_settings, &CrtSettings::setScanlinesEnabled);
-    form->addRow(scan);
+    connect(scan, &TvCheckBox::toggled, m_settings, &CrtSettings::setScanlinesEnabled);
+    grid->addWidget(scan, row++, 0, 1, 2);
 
-    // Curvature.
-    auto* curv = new QCheckBox(tr("Screen curvature"));
+    // Curvature: toggle + amount.
+    auto* curv = new TvCheckBox(tr("Screen curvature"));
     curv->setObjectName(QStringLiteral("curvatureCheck"));
     curv->setChecked(m_settings->curvatureEnabled());
-    auto* curvSpin = makeSpin(m_settings->screenCurvature(), 0.0, 1.0, 0.05);
+    auto* curvSpin = tvSpin(m_settings->screenCurvature(), 0.0, 1.0, 0.05, 2);
     curvSpin->setObjectName(QStringLiteral("curvatureSpin"));
     curvSpin->setEnabled(curv->isChecked());
-    connect(curv, &QCheckBox::toggled, curvSpin, &QWidget::setEnabled);
-    connect(curv, &QCheckBox::toggled, this, [this](bool on) {
+    connect(curv, &TvCheckBox::toggled, curvSpin, &QWidget::setEnabled);
+    connect(curv, &TvCheckBox::toggled, this, [this](bool on) {
         m_settings->setScreenCurvature(on ? 0.3 : 0.0);
     });
-    connect(curvSpin, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setScreenCurvature);
-    form->addRow(curv, curvSpin);
+    connect(curvSpin, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setScreenCurvature);
+    grid->addWidget(curv, row, 0);
+    grid->addWidget(curvSpin, row++, 1);
 
-    // Brightness / contrast sliders.
-    auto* bright = makeSpin(m_settings->brightness(), 0.0, 1.0, 0.05);
+    // Brightness / contrast: plain values.
+    auto* bright = tvSpin(m_settings->brightness(), 0.0, 1.0, 0.05, 2);
     bright->setObjectName(QStringLiteral("brightnessSpin"));
-    connect(bright, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setBrightness);
-    form->addRow(tr("Brightness"), bright);
+    connect(bright, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setBrightness);
+    grid->addWidget(tvLabel(tr("Brightness")), row, 0);
+    grid->addWidget(bright, row++, 1);
 
-    auto* contrast = makeSpin(m_settings->contrast(), 0.0, 2.0, 0.05);
-    connect(contrast, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setContrast);
-    form->addRow(tr("Contrast"), contrast);
+    auto* contrast = tvSpin(m_settings->contrast(), 0.0, 2.0, 0.05, 2);
+    contrast->setObjectName(QStringLiteral("contrastSpin"));
+    connect(contrast, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setContrast);
+    grid->addWidget(tvLabel(tr("Contrast")), row, 0);
+    grid->addWidget(contrast, row++, 1);
 
-    // Glow.
-    auto* glow = new QCheckBox(tr("Glow / bloom"));
+    // Glow: toggle + amount.
+    auto* glow = new TvCheckBox(tr("Glow / bloom"));
+    glow->setObjectName(QStringLiteral("glowCheck"));
     glow->setChecked(m_settings->glowEnabled());
-    auto* glowSpin = makeSpin(m_settings->bloom(), 0.0, 1.0, 0.05);
+    auto* glowSpin = tvSpin(m_settings->bloom(), 0.0, 1.0, 0.05, 2);
+    glowSpin->setObjectName(QStringLiteral("glowSpin"));
     glowSpin->setEnabled(glow->isChecked());
-    connect(glow, &QCheckBox::toggled, glowSpin, &QWidget::setEnabled);
-    connect(glow, &QCheckBox::toggled, this, [this](bool on) {
+    connect(glow, &TvCheckBox::toggled, glowSpin, &QWidget::setEnabled);
+    connect(glow, &TvCheckBox::toggled, this, [this](bool on) {
         m_settings->setBloom(on ? 0.55 : 0.0);
     });
-    connect(glowSpin, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setBloom);
-    form->addRow(glow, glowSpin);
+    connect(glowSpin, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setBloom);
+    grid->addWidget(glow, row, 0);
+    grid->addWidget(glowSpin, row++, 1);
 
-    // Flicker.
-    auto* flick = new QCheckBox(tr("Flickering"));
+    // Flicker: toggle + amount.
+    auto* flick = new TvCheckBox(tr("Flickering"));
+    flick->setObjectName(QStringLiteral("flickerCheck"));
     flick->setChecked(m_settings->flickerEnabled());
-    auto* flickSpin = makeSpin(m_settings->flickering(), 0.0, 1.0, 0.02);
+    auto* flickSpin = tvSpin(m_settings->flickering(), 0.0, 1.0, 0.02, 2);
+    flickSpin->setObjectName(QStringLiteral("flickerSpin"));
     flickSpin->setEnabled(flick->isChecked());
-    connect(flick, &QCheckBox::toggled, flickSpin, &QWidget::setEnabled);
-    connect(flick, &QCheckBox::toggled, this, [this](bool on) {
+    connect(flick, &TvCheckBox::toggled, flickSpin, &QWidget::setEnabled);
+    connect(flick, &TvCheckBox::toggled, this, [this](bool on) {
         m_settings->setFlickering(on ? 0.1 : 0.0);
     });
-    connect(flickSpin, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setFlickering);
-    form->addRow(flick, flickSpin);
+    connect(flickSpin, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setFlickering);
+    grid->addWidget(flick, row, 0);
+    grid->addWidget(flickSpin, row++, 1);
 
-    // Static noise.
-    auto* noise = makeSpin(m_settings->staticNoise(), 0.0, 1.0, 0.02);
-    connect(noise, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setStaticNoise);
-    form->addRow(tr("Static noise"), noise);
+    // Static noise: plain value.
+    auto* noise = tvSpin(m_settings->staticNoise(), 0.0, 1.0, 0.02, 2);
+    noise->setObjectName(QStringLiteral("noiseSpin"));
+    connect(noise, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setStaticNoise);
+    grid->addWidget(tvLabel(tr("Static noise")), row, 0);
+    grid->addWidget(noise, row++, 1);
 
-    // Motion (jitter).
-    auto* motion = new QCheckBox(tr("Motion (jitter)"));
+    // Motion (jitter): toggle + amount.
+    auto* motion = new TvCheckBox(tr("Motion (jitter)"));
+    motion->setObjectName(QStringLiteral("motionCheck"));
     motion->setChecked(m_settings->motionEnabled());
-    auto* motionSpin = makeSpin(m_settings->jitter(), 0.0, 1.0, 0.05);
+    auto* motionSpin = tvSpin(m_settings->jitter(), 0.0, 1.0, 0.05, 2);
+    motionSpin->setObjectName(QStringLiteral("motionSpin"));
     motionSpin->setEnabled(motion->isChecked());
-    connect(motion, &QCheckBox::toggled, motionSpin, &QWidget::setEnabled);
-    connect(motion, &QCheckBox::toggled, this, [this](bool on) {
+    connect(motion, &TvCheckBox::toggled, motionSpin, &QWidget::setEnabled);
+    connect(motion, &TvCheckBox::toggled, this, [this](bool on) {
         m_settings->setJitter(on ? 0.2 : 0.0);
     });
-    connect(motionSpin, &QDoubleSpinBox::valueChanged, m_settings, &CrtSettings::setJitter);
-    form->addRow(motion, motionSpin);
+    connect(motionSpin, &TvSpinBox::valueChanged, m_settings, &CrtSettings::setJitter);
+    grid->addWidget(motion, row, 0);
+    grid->addWidget(motionSpin, row++, 1);
 
-    return w;
+    grid->setRowStretch(row, 1);
+    return page;
 }
 
 QWidget* SettingsDialog::buildAppearanceTab()
 {
-    auto* w = new QWidget;
-    auto* form = new QFormLayout(w);
+    auto* page = new QWidget;
+    auto* grid = new QGridLayout(page);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(12);
+    grid->setVerticalSpacing(6);
+    grid->setColumnStretch(0, 1);
 
-    // Editor font size (Task 12: Turbo Vision default 16px, user-changeable).
-    auto* sizeSpin = new QSpinBox;
+    auto* sizeSpin = new TvSpinBox;
     sizeSpin->setObjectName(QStringLiteral("fontSizeSpin"));
     sizeSpin->setRange(8, 48);
+    sizeSpin->setDecimals(0);
+    sizeSpin->setSingleStep(1);
     sizeSpin->setValue(m_settings->fontSize());
-    connect(sizeSpin, &QSpinBox::valueChanged, m_settings, &CrtSettings::setFontSize);
-    form->addRow(tr("Editor font size (px):"), sizeSpin);
+    connect(sizeSpin, &TvSpinBox::valueChanged, this, [this](double v) {
+        m_settings->setFontSize(int(qRound(v)));
+    });
+    grid->addWidget(tvLabel(tr("Editor font size")), 0, 0);
+    grid->addWidget(sizeSpin, 0, 1);
 
-    // Autosave round (approach A): interval in seconds, clamped to the
-    // same 1..3600 range the setting enforces.
-    auto* intervalSpin = new QSpinBox;
+    auto* intervalSpin = new TvSpinBox;
     intervalSpin->setObjectName(QStringLiteral("autosaveIntervalSpin"));
     intervalSpin->setRange(1, 3600);
+    intervalSpin->setDecimals(0);
+    intervalSpin->setSingleStep(1);
     intervalSpin->setSuffix(tr(" s"));
     intervalSpin->setValue(m_settings->autosaveIntervalSeconds());
-    connect(intervalSpin, &QSpinBox::valueChanged, m_settings,
-            &CrtSettings::setAutosaveIntervalSeconds);
-    form->addRow(tr("Autosave interval:"), intervalSpin);
+    connect(intervalSpin, &TvSpinBox::valueChanged, this, [this](double v) {
+        m_settings->setAutosaveIntervalSeconds(int(qRound(v)));
+    });
+    grid->addWidget(tvLabel(tr("Autosave interval")), 1, 0);
+    grid->addWidget(intervalSpin, 1, 1);
 
-    form->addRow(new QLabel(
-        tr("Editor scheme, chrome theme and minimap options are configured "
-           "by the theme and editor settings.")));
-    return w;
+    auto* note = tvLabel(tr("Editor scheme, chrome theme and minimap options are "
+                            "configured by the theme and editor settings."));
+    note->setWordWrap(true);
+    grid->addWidget(note, 2, 0, 1, 2);
+    grid->setRowStretch(3, 1);
+    return page;
 }
