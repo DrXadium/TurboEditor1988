@@ -43,6 +43,25 @@ bool isBlack(const QColor& c)
     return c.red() < 40 && c.green() < 40 && c.blue() < 40;
 }
 
+// The checkbox lives on the modal's gray panel, so the probes must too: a bare
+// widget grab has a BLACK background (nothing fills it), which would count as
+// bracket ink and make every probe here lie.
+QImage grabOnGreyPanel(TvCheckBox& cb, QWidget& panel)
+{
+    panel.setAutoFillBackground(true);
+    QPalette pal = panel.palette();
+    pal.setColor(QPalette::Window, QColor(0xAA, 0xAA, 0xAA));
+    panel.setPalette(pal);
+    cb.setParent(&panel);
+    cb.move(0, 0);
+    cb.resize(cb.sizeHint());
+    panel.resize(cb.sizeHint());
+    panel.show();
+    if (!QTest::qWaitForWindowExposed(&panel))
+        return QImage();
+    return panel.grab().toImage().convertToFormat(QImage::Format_RGB32);
+}
+
 } // namespace
 
 class TstTvKit : public QObject
@@ -52,7 +71,8 @@ class TstTvKit : public QObject
 private slots:
     // TvCheckBox
     void the_box_is_empty_when_unchecked();
-    void the_box_shows_a_cross_when_checked();
+    void the_box_shows_a_green_square_when_checked();
+    void the_brackets_are_black();
     void clicking_anywhere_in_the_row_toggles();
     void space_toggles();
     void toggled_fires_only_on_a_real_change();
@@ -85,31 +105,58 @@ QRect boxCentre(const QRect& box)
 }
 } // namespace
 
+// The bracket is the ink of the control, so "empty" means the interior carries
+// no fill at all - the centre is where the filled square sits when checked.
 void TstTvKit::the_box_is_empty_when_unchecked()
 {
+    QWidget panel;
     TvCheckBox cb(QStringLiteral("Scanlines"));
-    cb.resize(cb.sizeHint());
-    const QImage img = grab(cb);
+    const QImage img = grabOnGreyPanel(cb, panel);
     QVERIFY2(!img.isNull(), "the checkbox never showed");
 
-    const int ink = countColorIn(img, QColor(Qt::white), 20, boxCentre(cb.boxRect()));
-    QVERIFY2(ink == 0,
-             qPrintable(QStringLiteral("an unchecked box carries %1 white px at its centre").arg(ink)));
+    const QColor green(0x00, 0xAA, 0x00);
+    const int fill = countColorIn(img, green, 40, cb.boxRect());
+    QVERIFY2(fill == 0,
+             qPrintable(QStringLiteral("an unchecked box carries %1 green px").arg(fill)));
+    const int centre = countColorIn(img, QColor(Qt::black), 40, boxCentre(cb.boxRect()));
+    QVERIFY2(centre == 0, "an unchecked box still draws ink at its centre");
     QVERIFY2(cb.boxRect().width() > 6 && cb.boxRect().height() > 6,
-             "the box has no room for a cross");
+             "the box has no room for a square");
 }
 
-void TstTvKit::the_box_shows_a_cross_when_checked()
+// Reported: the control reads [ ] empty and [green square] checked - the
+// brackets are black, the square inside them is green.
+void TstTvKit::the_box_shows_a_green_square_when_checked()
 {
+    QWidget panel;
     TvCheckBox cb(QStringLiteral("Scanlines"));
     cb.setChecked(true);
-    cb.resize(cb.sizeHint());
-    const QImage img = grab(cb);
+    const QImage img = grabOnGreyPanel(cb, panel);
     QVERIFY2(!img.isNull(), "the checkbox never showed");
 
-    const int ink = countColorIn(img, QColor(Qt::white), 20, boxCentre(cb.boxRect()));
-    QVERIFY2(ink > 0,
-             "a checked box shows no cross at its centre - the diagonals do not meet");
+    const QColor green(0x00, 0xAA, 0x00);
+    const int fill = countColorIn(img, green, 40, cb.boxRect());
+    QVERIFY2(fill > 8,
+             qPrintable(QStringLiteral("a checked box carries only %1 green px").arg(fill)));
+    const int centre = countColorIn(img, green, 40, boxCentre(cb.boxRect()));
+    QVERIFY2(centre > 0, "the green square does not cover the box centre");
+}
+
+void TstTvKit::the_brackets_are_black()
+{
+    for (bool checked : {false, true}) {
+        QWidget panel;
+        TvCheckBox cb(QStringLiteral("Scanlines"));
+        cb.setChecked(checked);
+        const QImage img = grabOnGreyPanel(cb, panel);
+        QVERIFY2(!img.isNull(), "the checkbox never showed");
+        const int black = countColorIn(img, QColor(Qt::black), 40, cb.boxRect());
+        QVERIFY2(black > 10,
+                 qPrintable(QStringLiteral("a %1 box carries only %2 black px - the brackets "
+                                           "are not black")
+                                .arg(checked ? QStringLiteral("checked") : QStringLiteral("empty"))
+                                .arg(black)));
+    }
 }
 
 void TstTvKit::clicking_anywhere_in_the_row_toggles()

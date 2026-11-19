@@ -40,11 +40,17 @@ inline void doubleV(QPainter& p, const QRect& band, const QColor& ink)
 
 // Cell-sized rectangle outline (bracket boxes like [■] and [↕]): two rules per
 // side, so the box reads at the same weight as the frame it sits in.
+// Daylight between a bracket box's two rules per side.
+inline int boxGap(const QRect& r)
+{
+    return qMax(2, qMin(r.width(), r.height()) / 4);
+}
+
 inline void box(QPainter& p, const QRect& r, const QColor& ink)
 {
     if (r.width() <= 2 || r.height() <= 2)
         return;
-    const int gap = qMax(2, qMin(r.width(), r.height()) / 4);
+    const int gap = boxGap(r);
     // Top + bottom pairs.
     p.fillRect(QRect(r.left(), r.top(), r.width(), 1), ink);
     p.fillRect(QRect(r.left(), r.top() + gap, r.width(), 1), ink);
@@ -55,6 +61,17 @@ inline void box(QPainter& p, const QRect& r, const QColor& ink)
     p.fillRect(QRect(r.left() + gap, r.top(), 1, r.height()), ink);
     p.fillRect(QRect(r.right() - gap, r.top(), 1, r.height()), ink);
     p.fillRect(QRect(r.right(), r.top(), 1, r.height()), ink);
+}
+
+// The space BETWEEN a bracket box's inner rules - what a checked box fills.
+// Derived from the same gap as box(), so the fill can never drift from the
+// brackets it sits inside.
+inline QRect boxInterior(const QRect& r)
+{
+    if (r.width() <= 2 || r.height() <= 2)
+        return QRect();
+    const int inset = boxGap(r) + 1;
+    return r.adjusted(inset, inset, -inset, -inset);
 }
 
 // Draw one box-drawing character centred in a CHARACTER CELL.

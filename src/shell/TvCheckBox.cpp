@@ -12,6 +12,10 @@
 
 namespace {
 const QColor kInk(Qt::white);
+// The control reads [ ] when empty and [square] when checked: the BRACKETS are
+// black, the filled square inside them is the TV green.
+const QColor kBracket(Qt::black);
+const QColor kSquare(0x00, 0xAA, 0x00);
 const int kGap = 6;   // daylight between the box and the label
 } // namespace
 
@@ -58,15 +62,15 @@ void TvCheckBox::paintEvent(QPaintEvent*)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, false);
 
-    // Bracket box: the frame's own double rule, so it reads at frame weight.
-    TvFrame::box(p, m_boxRect, kInk);
-
+    // Bracket box in black, the frame's own double rule so it reads at frame
+    // weight. Checked fills the space between the inner rules with green -
+    // TvFrame::boxInterior derives that space from the same gap the brackets
+    // are drawn with, so the fill cannot drift out from under them.
+    TvFrame::box(p, m_boxRect, kBracket);
     if (m_checked) {
-        // Two 1 px diagonals, inset so they never touch the bracket.
-        const QRect in = m_boxRect.adjusted(3, 3, -3, -3);
-        p.setPen(QPen(kInk, 1));
-        p.drawLine(in.topLeft(), in.bottomRight());
-        p.drawLine(in.bottomLeft(), in.topRight());
+        const QRect inner = TvFrame::boxInterior(m_boxRect);
+        if (inner.width() > 0 && inner.height() > 0)
+            p.fillRect(inner, kSquare);
     }
 
     QFont f = font();
