@@ -40,6 +40,7 @@
 #include "src/settings/SettingsDialog.h"
 #include "src/shell/AboutModal.h"
 #include "src/shell/TvModal.h"
+#include <QPushButton>
 #include "src/session/SessionManager.h"
 #include "src/autosave/AutosaveService.h"
 #include <ktexteditor/view.h>
@@ -939,6 +940,68 @@ int main(int argc, char** argv)
                                QDir::currentPath(),
                                QStringLiteral("All files (*)"),
                                recentFiles.entries());
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_CLICKPROBE=dockhelp sends a
+    // press+release through the bridge at the dock's Help plate - a plate that
+    // deliberately does NOT close its dialog, so a capture taken afterwards
+    // shows whether the plate came back to rest. This host has no pointer tool;
+    // the bridge IS the input, and the values match QML exactly (press
+    // buttons=LeftButton, release buttons=NoButton).
+    if (const QByteArray what = qgetenv("CRT_KATE_CLICKPROBE"); !what.isEmpty()) {
+        QTimer::singleShot(1600, &app, [&app, &shell, &bridge, what]() {
+            // Grab AFTER the release: a capture taken before the click proves
+            // nothing (that mistake cost a whole round of false "it reverts").
+            auto shotAfterRelease = [&shell, &app]() {
+                const QByteArray out = qgetenv("CRT_KATE_CLICKSHOT");
+                if (out.isEmpty())
+                    return;
+                QTimer::singleShot(400, &app, [&shell, &app, out]() {
+                    shell.grab().save(QString::fromLocal8Bit(out));
+                    QCoreApplication::quit();
+                });
+            };
+            // The modal plate: CRT_KATE_MODAL shows a TvModal WITHOUT the round
+            // loop, so clicking OK does not hide it and the capture shows the
+            // plate's state right after the release.
+            if (what == "modalok") {
+                auto* modal = shell.findChild<TvModal*>();
+                if (!modal)
+                    return;
+                auto* plate = modal->findChild<QPushButton*>(QStringLiteral("tvModalButton"));
+                if (!plate)
+                    return;
+                const QPoint p = plate->mapTo(&shell, plate->rect().center());
+                bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                         Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+                QCoreApplication::processEvents();
+                bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                         Qt::NoButton, Qt::NoModifier, p.x(), p.y());
+                QCoreApplication::processEvents();
+                shotAfterRelease();
+                return;
+            }
+            auto* dock = shell.findChild<TvFileDock*>();
+            if (!dock)
+                return;
+            QRect target;
+            if (what == "dockhelp")
+                target = dock->helpRect();
+            else if (what == "dockok")
+                target = dock->okRect();
+            else
+                return;
+            if (target.isNull())
+                return;
+            const QPoint p = dock->mapTo(&shell, target.center());
+            bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                     Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+            QCoreApplication::processEvents();
+            bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                     Qt::NoButton, Qt::NoModifier, p.x(), p.y());
+            QCoreApplication::processEvents();
+            shotAfterRelease();
         });
     }
 
