@@ -130,6 +130,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent* ev) override;
+    void mouseReleaseEvent(QMouseEvent* ev) override;
     void mouseDoubleClickEvent(QMouseEvent* ev) override;
     void wheelEvent(QWheelEvent* ev) override;
     void keyPressEvent(QKeyEvent* ev) override;
@@ -186,6 +187,14 @@ private:
     QRect m_typeRect;
     QRect m_nameDropRect;     // green completion cell right of the name box
     QRect m_typeDropRect;     // green preset cell right of the type box
+
+    // Which green dropdown cell is currently held down. The cells are painted
+    // rects, not widgets, so their press animation is a state flag: pressed
+    // they turn the bright green and travel onto their own block shadow, and
+    // the menu opens on release - acting on press meant the flash was never
+    // seen at all.
+    enum class DropCell { None, Name, Type };
+    DropCell m_pressedDrop = DropCell::None;
     QRect m_okRect;
     QRect m_cancelRect;
     QRect m_helpRect;

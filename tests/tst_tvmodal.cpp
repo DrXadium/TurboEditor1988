@@ -74,6 +74,11 @@ private slots:
     void the_button_row_stays_inside_the_frame();
     void the_plates_have_no_black_outline();
 
+    // Reported live: the plates never animate. A pressed plate must go
+    // brighter green and travel down-right onto its own shadow, as if pushed.
+    void pressing_a_plate_moves_it_onto_its_shadow();
+    void releasing_a_plate_returns_it_to_its_resting_place();
+
     // About
     void about_shows_the_display_name_and_one_ok_plate();
     void the_about_text_is_not_empty();
@@ -334,6 +339,89 @@ void TstTvModal::the_plates_have_no_black_outline()
                                     .arg(px.red()).arg(px.green()).arg(px.blue())));
         }
     }
+}
+
+// Reported live: pressing a plate did nothing - no movement, no flash. In Turbo
+// Vision a pushed button travels down-right ONTO its own block shadow, which is
+// exactly what "pressed" looks like: the shadow disappears under the plate, so
+// the button reads as sunk into the panel.
+//
+// Asserted on PIXELS, not on the widget's geometry: the widget deliberately
+// never moves (it owns its shadow band, so a release can never miss it). What
+// travels is the painted plate.
+void TstTvModal::pressing_a_plate_moves_it_onto_its_shadow()
+{
+    const int kOffset = 4;   // the plate's block shadow (TvModal's kButtonShadow)
+    TvModal m;
+    m.resize(480, 320);
+    m.addButton(QStringLiteral("OK"), TvModal::Accept);
+    m.addButton(QStringLiteral("Cancel"), TvModal::Reject);
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    const QRect home = m.buttonRect(0);
+    QVERIFY(!home.isNull());
+    auto* plate = m.findChild<QPushButton*>(QStringLiteral("tvModalButton"));
+    QVERIFY2(plate, "the modal has no plate widget");
+
+    // Two probes, clear of the centred label ink:
+    //  - the shadow band just past the plate's right edge (black at rest),
+    //  - the plate's own top-left corner (green at rest).
+    const QPoint shadowProbe(home.right() + kOffset / 2, home.top() + 6);
+    const QPoint cornerProbe(home.left() + 2, home.top() + 2);
+
+    const QImage idle = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    QVERIFY2(isBlack(idle.pixelColor(shadowProbe)),
+             qPrintable(QStringLiteral("no shadow at %1,%2 to cover - got %3")
+                            .arg(shadowProbe.x()).arg(shadowProbe.y())
+                            .arg(rgb(idle.pixelColor(shadowProbe)))));
+    QVERIFY2(!isPanelGrey(idle.pixelColor(cornerProbe)), "the plate corner is not plate-coloured");
+
+    QTest::mousePress(plate, Qt::LeftButton);
+    QCoreApplication::processEvents();
+
+    const QImage down = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+
+    // The plate has travelled onto its shadow: the band is now plate, not black.
+    const QColor covered = down.pixelColor(shadowProbe);
+    QVERIFY2(!isBlack(covered),
+             "the pressed plate left its shadow showing - it did not travel onto it");
+    // ...and it flashes BRIGHTER green than the resting plate (#00AA00).
+    QVERIFY2(covered.green() > 0xAA && covered.red() > 0x20,
+             qPrintable(QStringLiteral("the pressed plate is not the brighter green: %1")
+                            .arg(rgb(covered))));
+
+    // The band it vacated shows the panel again - the plate really moved.
+    const QColor vacated = down.pixelColor(cornerProbe);
+    QVERIFY2(isPanelGrey(vacated),
+             qPrintable(QStringLiteral("the vacated corner is %1, not the panel grey")
+                            .arg(rgb(vacated))));
+}
+
+void TstTvModal::releasing_a_plate_returns_it_to_its_resting_place()
+{
+    const int kOffset = 4;
+    TvModal m;
+    m.resize(480, 320);
+    m.addButton(QStringLiteral("OK"), TvModal::Accept);
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    const QRect home = m.buttonRect(0);
+    auto* plate = m.findChild<QPushButton*>(QStringLiteral("tvModalButton"));
+    QVERIFY(plate);
+    const QPoint shadowProbe(home.right() + kOffset / 2, home.top() + 6);
+
+    QTest::mousePress(plate, Qt::LeftButton);
+    QCoreApplication::processEvents();
+    QVERIFY2(!isBlack(m.grab().toImage().pixelColor(shadowProbe)), "the plate never went down");
+
+    QTest::mouseRelease(plate, Qt::LeftButton);
+    QCoreApplication::processEvents();
+    const QColor back = m.grab().toImage().pixelColor(shadowProbe);
+    QVERIFY2(isBlack(back),
+             qPrintable(QStringLiteral("the plate did not come back up - the shadow band is %1")
+                            .arg(rgb(back))));
 }
 
 // Help > About used to be a host-themed QMessageBox above the CRT scene.

@@ -2,6 +2,7 @@
 #include "TvFileDock.h"
 #include "TvFrame.h"
 #include "TabListMenu.h"
+#include "TvPlate.h"
 #include <QAction>
 #include <QMenu>
 #include <QLineEdit>
@@ -28,6 +29,8 @@ const QColor kBlack(0x00, 0x00, 0x00);
 const QColor kYellow(0xFF, 0xFF, 0x55);
 const QColor kTeal(0x00, 0xAA, 0xAA);
 const QColor kGreen(0x00, 0xAA, 0x00);
+// DOS bright green: the press flash on a plate or a dropdown cell.
+const QColor kGreenBright(0x55, 0xFF, 0x55);
 const QColor kBlue(0x00, 0x00, 0xAA);
 const int kScrollStrip = 7;      // height of the teal scroll strip under the list
 // The drop shadow is the panel's own rect offset down-right by this much, so
@@ -68,15 +71,13 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
             [this](const QString& text) { setFilter(text); });
 
     auto makeButton = [this](const QString& text, const char* name) {
-        auto* b = new QPushButton(text, this);
+        auto* b = new TvPlate(text, this);
         b->setObjectName(QLatin1String(name));
         b->setFocusPolicy(Qt::NoFocus);
         // TV green plate with BLACK ink (the app-wide QSS rule paints white).
-        b->setStyleSheet(QStringLiteral(
-            "QPushButton { background-color: #00AA00; color: #000000; "
-            "border: none; padding: 0; } "
-            "QPushButton:hover { background-color: #1FBE1F; } "
-            "QPushButton:pressed { background-color: #148A14; }"));
+        b->setInk(Qt::black);
+        b->setBackdrop(kPanelGray);
+        b->setShadowOffset(kButtonShadow);
         return b;
     };
     m_ok = makeButton(QStringLiteral("OK"), "tvFileDockOk");
@@ -483,11 +484,11 @@ void TvFileDock::layoutChildren()
     if (m_typeEdit)
         m_typeEdit->setGeometry(m_typeRect.adjusted(2, 2, -2, -2));
     if (m_ok)
-        m_ok->setGeometry(m_okRect);
+        m_ok->setGeometry(m_okRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
     if (m_cancel)
-        m_cancel->setGeometry(m_cancelRect);
+        m_cancel->setGeometry(m_cancelRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
     if (m_help)
-        m_help->setGeometry(m_helpRect);
+        m_help->setGeometry(m_helpRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
 }
 
 int TvFileDock::visibleRows() const
@@ -591,13 +592,8 @@ void TvFileDock::paintEvent(QPaintEvent*)
     p.fillRect(m_frameRect.translated(kShadowOffset, kShadowOffset), kBlack);
     p.fillRect(m_frameRect, kPanelGray);
 
-    // Hard black block shadow behind each green plate, as on the reference
-    // modal. The buttons are child widgets and paint AFTER this pass, so their
-    // plate covers the overlap and only the offset L survives.
-    for (const QRect& plate : {m_okRect, m_cancelRect, m_helpRect})
-        if (!plate.isNull())
-            TvFrame::drawPlateShadow(p, plate, kButtonShadow);
-
+    // The OK / Cancel / Help plates own their block shadows and their press
+    // travel (TvPlate paints both), so this pass draws none of them.
     // White double-line frame with the title in the top row (shared with
     // every other TV modal - see TvFrame::drawDoubleFrame).
     if (!TvFrame::drawDoubleFrame(p, m_frameRect,
@@ -618,13 +614,15 @@ void TvFileDock::paintEvent(QPaintEvent*)
     p.restore();
 
     // Green dropdown cells (recents / type presets), each with its own block
-    // shadow so they read like the plates.
-    auto drawDropCell = [&](const QRect& cell) {
+    // shadow so they read like the plates. Pressed, the cell turns the bright
+    // green and travels onto that shadow - the same push the plates animate.
+    auto drawDropCell = [&](const QRect& cell, bool pressed) {
         if (cell.isNull())
             return;
         p.fillRect(cell.translated(kButtonShadow, kButtonShadow), kBlack);
-        p.fillRect(cell, kGreen);
-        const QPoint c = cell.center();
+        const QRect plate = pressed ? cell.translated(kButtonShadow, kButtonShadow) : cell;
+        p.fillRect(plate, pressed ? kGreenBright : kGreen);
+        const QPoint c = plate.center();
         QPolygon tri;
         tri << QPoint(c.x() - 3, c.y() - 2) << QPoint(c.x() + 3, c.y() - 2)
             << QPoint(c.x(), c.y() + 2);
@@ -634,8 +632,8 @@ void TvFileDock::paintEvent(QPaintEvent*)
         p.drawPolygon(tri);
         p.restore();
     };
-    drawDropCell(m_nameDropRect);
-    drawDropCell(m_typeDropRect);
+    drawDropCell(m_nameDropRect, m_pressedDrop == DropCell::Name);
+    drawDropCell(m_typeDropRect, m_pressedDrop == DropCell::Type);
 
     // Focus mark. The shell is never an active window, so a QLineEdit never
     // draws a caret here - without this the user clicks a field and sees
@@ -716,11 +714,28 @@ void TvFileDock::paintEvent(QPaintEvent*)
 void TvFileDock::mousePressEvent(QMouseEvent* ev)
 {
     const QPoint pos = ev->pos();
+    // A cell left lit by a press that ended outside the dock (no release ever
+    // reached us) pops back up on the next click - a plate stuck down is worse
+    // than a lost frame.
+    if (m_pressedDrop != DropCell::None) {
+        m_pressedDrop = DropCell::None;
+        update();
+    }
     if (m_okRect.contains(pos)) { accept(); return; }
     if (m_cancelRect.contains(pos)) { reject(); return; }
     if (m_helpRect.contains(pos)) { return; }   // no help topic in this build
-    if (m_nameDropRect.contains(pos)) { showRecentsMenu(); return; }
-    if (m_typeDropRect.contains(pos)) { showTypeMenu(); return; }
+    // The green cells go DOWN on press and fire on release, so the push is
+    // visible before the menu takes the pointer.
+    if (m_nameDropRect.contains(pos)) {
+        m_pressedDrop = DropCell::Name;
+        update();
+        return;
+    }
+    if (m_typeDropRect.contains(pos)) {
+        m_pressedDrop = DropCell::Type;
+        update();
+        return;
+    }
     if (m_listRect.contains(pos)) {
         const int idx = rowAt(pos);
         if (idx >= 0) {
@@ -732,6 +747,29 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
         return;
     }
     QWidget::mousePressEvent(ev);
+}
+
+void TvFileDock::mouseReleaseEvent(QMouseEvent* ev)
+{
+    const DropCell held = m_pressedDrop;
+    if (held != DropCell::None) {
+        // Come back up BEFORE the menu opens: the menu runs its own event
+        // loop, and a cell left pressed would stay lit under it.
+        m_pressedDrop = DropCell::None;
+        update();
+
+        const QPoint pos = ev->pos();
+        const bool stillOnCell = (held == DropCell::Name) ? m_nameDropRect.contains(pos)
+                                                          : m_typeDropRect.contains(pos);
+        if (stillOnCell) {
+            if (held == DropCell::Name)
+                showRecentsMenu();
+            else
+                showTypeMenu();
+            return;
+        }
+    }
+    QWidget::mouseReleaseEvent(ev);
 }
 
 void TvFileDock::mouseDoubleClickEvent(QMouseEvent* ev)

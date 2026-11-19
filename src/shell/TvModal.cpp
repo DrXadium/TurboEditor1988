@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "TvModal.h"
 #include "TvFrame.h"
+#include "TvPlate.h"
 
 #include <QEventLoop>
 #include <QFontMetrics>
@@ -21,14 +22,6 @@ const int kPad = 4;
 
 const QColor kPanelGray(0xAA, 0xAA, 0xAA);
 const QColor kBlack(Qt::black);
-
-// Turbo Vision green plate. The app-wide QSS rule does not reach these, so the
-// style is set here, matching the file dock's buttons.
-const char* kPlateQss =
-    "QPushButton { background-color: #00AA00; color: #FFFFFF;"
-    " border: none; padding: 2px 10px; }"
-    "QPushButton:hover { background-color: #1FBE1F; }"
-    "QPushButton:pressed { background-color: #148A14; }";
 
 // The width a plate actually gets. setGeometry() is clamped by the widget's own
 // minimum size, and the app-wide QSS font makes that minimum wider than the
@@ -84,9 +77,13 @@ void TvModal::setBody(QWidget* body)
 
 void TvModal::addButton(const QString& text, int role)
 {
-    auto* button = new QPushButton(text, this);
+    auto* button = new TvPlate(text, this);
     button->setObjectName(QStringLiteral("tvModalButton"));
-    button->setStyleSheet(QString::fromLatin1(kPlateQss));
+    button->setInk(Qt::white);
+    button->setBackdrop(kPanelGray);
+    // The plate owns its block shadow and travels onto it when pressed, so this
+    // is also the band the widget reserves to the right and below the plate.
+    button->setShadowOffset(kButtonShadow);
     button->setCursor(Qt::ArrowCursor);
     connect(button, &QPushButton::clicked, this, [this, role] {
         if (role == Accept)
@@ -168,7 +165,9 @@ void TvModal::layoutChildren()
     for (Button& b : m_buttons) {
         const int w = plateWidth(b.widget, cw, fm);
         b.rect = QRect(x - w + 1, inner.bottom() - buttonH + 1, w, buttonH);
-        b.widget->setGeometry(b.rect);
+        // The widget carries the plate's shadow band too (it paints the shadow
+        // and the press travel itself), so it is offset-sized around the plate.
+        b.widget->setGeometry(b.rect.adjusted(0, 0, kButtonShadow, kButtonShadow));
         x = b.rect.left() - 2 * cw;
     }
 
@@ -188,12 +187,8 @@ void TvModal::paintEvent(QPaintEvent*)
     p.fillRect(m_frameRect.translated(kShadowOffset, kShadowOffset), kBlack);
     p.fillRect(m_frameRect, kPanelGray);
 
-    // The plates are child widgets and paint after this pass, so their shadow
-    // shows only where the plate does not cover it.
-    for (const Button& b : m_buttons)
-        if (!b.rect.isNull())
-            TvFrame::drawPlateShadow(p, b.rect, kButtonShadow);
-
+    // The plates own their block shadows (TvPlate paints shadow + plate + the
+    // press travel), so this pass draws none of them.
     TvFrame::drawDoubleFrame(p, m_frameRect, m_title, cellWidth(), cellHeight());
 }
 

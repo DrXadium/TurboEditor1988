@@ -498,6 +498,48 @@ private slots:
                  "filtering hid the parent entry");
     }
 
+    // Reported live: the green cells that open the dropdowns must animate like
+    // the plates. Press lights the cell brighter and travels it onto its own
+    // block shadow; the menu opens on RELEASE, the way a button activates -
+    // acting on press meant the flash was never seen at all.
+    void pressing_a_drop_cell_lights_it_and_the_menu_waits_for_release()
+    {
+        TvFileDock dock;
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        const QRect cell = dock.nameDropRect();
+        QVERIFY2(!cell.isNull(), "the dock has no recents cell");
+        const int kOffset = 4;   // the cell's block shadow
+        // Just past the cell's right edge, above the centred arrow glyph.
+        const QPoint probe(cell.right() + kOffset / 2, cell.top() + 5);
+
+        const QImage idle = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QColor rest = idle.pixelColor(probe);
+        QVERIFY2(rest.red() < 16 && rest.green() < 16 && rest.blue() < 16,
+                 qPrintable(QStringLiteral("no block shadow beside the cell - got %1,%2,%3")
+                                .arg(rest.red()).arg(rest.green()).arg(rest.blue())));
+
+        QSignalSpy spy(&dock, &TvFileDock::recentsRequested);
+        QTest::mousePress(&dock, Qt::LeftButton, Qt::NoModifier, cell.center());
+        QCoreApplication::processEvents();
+        QCOMPARE(spy.count(), 0);   // the menu waits for the release
+
+        const QImage down = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QColor lit = down.pixelColor(probe);
+        QVERIFY2(!(lit.red() < 16 && lit.green() < 16 && lit.blue() < 16),
+                 "the pressed cell left its shadow showing - it did not travel onto it");
+        QVERIFY2(lit.green() > 0xAA && lit.red() > 0x20,
+                 qPrintable(QStringLiteral("the pressed cell is not the brighter green: "
+                                           "%1,%2,%3")
+                                .arg(lit.red()).arg(lit.green()).arg(lit.blue())));
+
+        QTest::mouseRelease(&dock, Qt::LeftButton, Qt::NoModifier, cell.center());
+        QCOMPARE(spy.count(), 1);
+        dock.reject();
+    }
+
     // The dropdown keeps at most ten entries and the green cell asks for it.
     void recents_are_capped_at_ten_and_the_cell_requests_the_menu()
     {
