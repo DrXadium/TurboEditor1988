@@ -128,6 +128,8 @@ add_library(crt-editor STATIC
   src/editor/EditorTabManager.h
   src/editor/FindReplace.cpp
   src/editor/FindReplace.h
+  src/editor/FindReplaceDialog.cpp
+  src/editor/FindReplaceDialog.h
   src/editor/StatusSelectors.cpp
   src/editor/StatusSelectors.h
   src/editor/tvtheme/tvtheme.qrc
@@ -149,6 +151,11 @@ add_test(NAME tst_tveditor COMMAND tst_tveditor)
 add_executable(tst_find tests/tst_find.cpp)
 target_link_libraries(tst_find PRIVATE crt-editor Qt6::Test Qt6::Core KF6::TextEditor)
 add_test(NAME tst_find COMMAND tst_find)
+
+# Find and Replace (2026-11-18) test: the dialog's chrome, controls and layout.
+add_executable(tst_finddlg tests/tst_finddlg.cpp)
+target_link_libraries(tst_finddlg PRIVATE crt-editor crt-shell Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_finddlg COMMAND tst_finddlg)
 
 # Status-line selectors: F-row indicators + dropdowns (spell, encoding, doc
 # type, INS/OVR) and the blinking caret. ctest -R tst_statussel
