@@ -58,6 +58,8 @@ add_library(crt-shell STATIC
   src/shell/BottomBand.cpp
   src/shell/BottomBand.h
   src/shell/TvFileDock.cpp
+  src/shell/TvModal.cpp
+  src/shell/TvModal.h
   src/shell/TvFileDock.h
   src/shell/RecentFilesStore.cpp
   src/shell/RecentFilesStore.h
@@ -223,6 +225,12 @@ add_test(NAME tst_filedlg COMMAND tst_filedlg)
 add_executable(tst_recents tests/tst_recents.cpp)
 target_link_libraries(tst_recents PRIVATE crt-shell Qt6::Test Qt6::Widgets)
 add_test(NAME tst_recents COMMAND tst_recents)
+
+# House-style modals (2026-11-18): TvModal chrome, About and Settings.
+# ctest -R tst_tvmodal
+add_executable(tst_tvmodal tests/tst_tvmodal.cpp)
+target_link_libraries(tst_tvmodal PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_tvmodal COMMAND tst_tvmodal)
 
 # GUI pass 2026-11-17, Task 3: the spell section of the editor right-click
 # menu (bold headline, hover popout, suggestions / add / ignore). ctest -R tst_spellmenu
