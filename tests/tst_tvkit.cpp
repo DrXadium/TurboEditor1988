@@ -87,12 +87,15 @@ private slots:
     void clicking_the_up_cell_steps_up();
     void valueChanged_fires_only_on_a_real_change();
     void the_stepper_cells_have_no_black_outline();
+    void the_stepper_cells_draw_their_arrows();
+    void the_spin_field_has_no_white_border();
 
     // TvTabBar
     void chips_are_laid_out_left_to_right();
     void the_active_chip_is_grey_and_the_others_blue();
     void clicking_a_chip_switches_to_it();
     void currentChanged_fires_only_on_a_real_change();
+    void the_checked_box_is_one_frame_with_one_square();
 };
 
 // The bracket is white too, so counting the whole interior measures the frame.
@@ -431,5 +434,109 @@ void TstTvKit::the_stepper_cells_have_no_black_outline()
     }
 }
 
+// Reported live: the up and down arrows are missing. Each stepper cell is a
+// green plate whose ink is a black triangle - measured 0 black pixels in all
+// 15 cells of the real dialog.
+void TstTvKit::the_stepper_cells_draw_their_arrows()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setValue(0.5);
+    sb.resize(sb.sizeHint());
+    const QImage img = grab(sb);
+    QVERIFY2(!img.isNull(), "the spin box never showed");
+    const QRect cells[] = {sb.upRect(), sb.downRect()};
+    for (const QRect& c : cells) {
+        QVERIFY(!c.isNull());
+        const int ink = countColorIn(img, QColor(Qt::black), 30, c);
+        QVERIFY2(ink > 4,
+                 qPrintable(QStringLiteral("the stepper cell %1 has no arrow - %2 black px")
+                                .arg(QStringLiteral("%1,%2 %3x%4")
+                                         .arg(c.x()).arg(c.y()).arg(c.width()).arg(c.height()))
+                                .arg(ink)));
+        // The arrow sits in the middle of the cell, not on its edge.
+        const int centre = countColorIn(img, QColor(Qt::black), 30,
+                                        c.adjusted(3, 3, -3, -3));
+        QVERIFY2(centre > 0, "the arrow ink is only on the cell edge, not in its middle");
+    }
+}
+
+// Reported live: the blue boxes should not have white borders. The field is a
+// flat blue field on the panel - no ring around it.
+void TstTvKit::the_spin_field_has_no_white_border()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setValue(0.5);
+    sb.resize(sb.sizeHint());
+    const QImage img = grab(sb);
+    QVERIFY2(!img.isNull(), "the spin box never showed");
+
+    const QRect f = sb.fieldRect();
+    QVERIFY(!f.isNull());
+    // A border sits ON the field's own top and bottom edge rows. NOTE: probe
+    // the two rows separately - uniting them yields a rect spanning the whole
+    // field, whose white TEXT would make the count lie.
+    const QRect topEdge(f.left(), f.top(), f.width(), 1);
+    const QRect bottomEdge(f.left(), f.bottom(), f.width(), 1);
+    const int whiteTop = countColorIn(img, QColor(Qt::white), 20, topEdge);
+    const int whiteBottom = countColorIn(img, QColor(Qt::white), 20, bottomEdge);
+    const int white = whiteTop + whiteBottom;
+    QVERIFY2(white == 0,
+             qPrintable(QStringLiteral("the blue field's edge carries a white border - %1 white px "
+                                       "(top %2, bottom %3)")
+                            .arg(white).arg(whiteTop).arg(whiteBottom)));
+    // And the field is blue where it is actually visible - probe a span just
+    // inside its left edge. (A corner-on probe lands on layout rounding.)
+    const QColor blue(0x00, 0x00, 0xAA);
+    const int blueInField = countColorIn(img, blue, 20, QRect(f.left() + 4, f.top() + 4, 8, 6));
+    QVERIFY2(blueInField >= 20,
+             qPrintable(QStringLiteral("the field is not blue where it should be (%1 blue px)")
+                            .arg(blueInField)));
+}
+
+// Reported live: the checkboxes are not drawn correctly. The reference is a
+// SINGLE thin frame with one square in the middle - not a double-walled box
+// with the fill bleeding into the channel between its two rules.
+void TstTvKit::the_checked_box_is_one_frame_with_one_square()
+{
+    QWidget panel;
+    TvCheckBox cb(QStringLiteral("Scanlines"));
+    cb.setChecked(true);
+    const QImage img = grabOnGreyPanel(cb, panel);
+    QVERIFY2(!img.isNull(), "the checkbox never showed");
+
+    const QRect box = cb.boxRect();
+    QVERIFY2(box.width() > 6 && box.height() > 6, "the box has no room for a square");
+    const QColor black(Qt::black);
+    const QColor green(0x00, 0xAA, 0x00);
+    const QColor grey(0xAA, 0xAA, 0xAA);
+
+    // A single-frame box has ONE black rule per side: probe the row halfway
+    // down the box, where a double box would show THREE rules (outer, inner,
+    // inner) plus the fill between them.
+    const int mid = box.center().y();
+    int rules = 0;
+    for (int x = box.left(); x <= box.right(); ++x)
+        if (countColorIn(img, black, 30, QRect(x, mid, 1, 1)) > 0)
+            ++rules;
+    QVERIFY2(rules <= 2,
+             qPrintable(QStringLiteral("the box middle row carries %1 black rules - a double-"
+                                       "walled box, not a single frame").arg(rules)));
+
+    // The green square is ONE connected block in the middle, and grey daylight
+    // survives between it and the frame on every side.
+    const int greenTotal = countColorIn(img, green, 40, box);
+    QVERIFY2(greenTotal > 8,
+             qPrintable(QStringLiteral("the checked box carries only %1 green px").arg(greenTotal)));
+    // Daylight: the frame's inner edge must still show grey just inside the
+    // outline, at the top-left of the interior.
+    const QRect corner = QRect(box.left() + 1, box.top() + 1, 3, 3);
+    const int greyAtCorner = countColorIn(img, grey, 30, corner);
+    QVERIFY2(greyAtCorner > 0,
+             "the fill touches the frame at the top-left - there is no daylight inside");
+}
 QTEST_MAIN(TstTvKit)
 #include "tst_tvkit.moc"

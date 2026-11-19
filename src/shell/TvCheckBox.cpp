@@ -62,11 +62,11 @@ void TvCheckBox::paintEvent(QPaintEvent*)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, false);
 
-    // Bracket box in black, the frame's own double rule so it reads at frame
-    // weight. Checked fills the space between the inner rules with green -
-    // TvFrame::boxInterior derives that space from the same gap the brackets
-    // are drawn with, so the fill cannot drift out from under them.
-    TvFrame::box(p, m_boxRect, kBracket);
+    // A checkbox is ONE thin frame, not the TV window's double rule - the
+    // double rule reads as two walls with the fill bleeding into the channel
+    // between them ("the checkboxes are still not drawn correctly"). One black
+    // rule per side, and one green square in the middle when checked.
+    TvFrame::thinBox(p, m_boxRect, kBracket);
     if (m_checked) {
         const QRect inner = TvFrame::boxInterior(m_boxRect);
         if (inner.width() > 0 && inner.height() > 0)

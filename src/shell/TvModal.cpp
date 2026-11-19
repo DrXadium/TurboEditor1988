@@ -66,7 +66,16 @@ void TvModal::setBody(QWidget* body)
         m_body->setParent(this);
         // Every widget gets the TV desktop blue from the app-wide QSS; the
         // body has to let the gray panel through.
-        m_body->setStyleSheet(QStringLiteral("background: transparent;"));
+        //
+        // The selector must be TYPESPECIFIC. A bare `background: transparent;`
+        // has no type, so it cascades to every descendant and switches on Qt's
+        // QStyleSheetStyle for the whole subtree - which silently changes how
+        // the kit's children paint (the stepper triangles vanished behind it
+        // and the checkbox frame changed shape) while a widget grabbed on its
+        // own still looked correct. Scoping it to the body's own type keeps the
+        // transparency on the body and leaves the children on normal painting.
+        m_body->setStyleSheet(
+            QStringLiteral("QWidget#%1 { background: transparent; }").arg(m_body->objectName()));
         m_body->show();
     }
     layoutChildren();

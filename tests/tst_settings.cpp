@@ -10,6 +10,8 @@
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QApplication>
+#include <QFile>
+#include <QFontDatabase>
 #include "src/settings/CrtSettings.h"
 #include "src/AppIdentity.h"
 #include <QLabel>
@@ -22,6 +24,12 @@ class TstSettings : public QObject
 {
     Q_OBJECT
 private slots:
+    // Reported live: the up and down arrows are missing from every stepper in
+    // the dialog, though a TvSpinBox drawn alone paints them. The dialog is the
+    // environment that matters - build the real one, show it, grab the real
+    // control and count its arrow ink.
+    void the_settings_dialog_steppers_draw_their_arrows();
+
     // Rename guard: settings must keep living at ~/.config/CRT-Kate/crt.ini.
     // If the default store path follows the new display name, the user's
     // saved preferences are silently lost on next launch.
@@ -329,6 +337,73 @@ private slots:
         QCOMPARE(s.autosaveIntervalSeconds(), 30);
     }
 };
+
+// Reported live: the arrows are missing from every stepper in the dialog.
+// A TvSpinBox grabbed alone paints them (tst_tvkit passes) - so the parity
+// lives in the DIALOG's environment. Build the real SettingsDialog, show it,
+// and grab the real control.
+void TstSettings::the_settings_dialog_steppers_draw_their_arrows()
+{
+    // Replicate the APP's environment exactly, or the probe sizes a taller,
+    // friendlier widget and never sees the bug:
+    //  (1) load the bundled VGA8 TTF as the app-wide default font, and
+    //  (2) load borland.qss (font-size 16px), as ShellWindow does.
+    // The app's real spin box then measures 82x18 -> cells 9px -> the
+    // triangle's 3px inset lands BELOW its own guard and draws nothing.
+    QFile ttf(QStringLiteral(":/fonts/PxPlus_IBM_VGA8.ttf"));
+    if (ttf.open(QIODevice::ReadOnly)) {
+        const int id = QFontDatabase::addApplicationFontFromData(ttf.readAll());
+        if (id >= 0) {
+            const QStringList fams = QFontDatabase::applicationFontFamilies(id);
+            if (!fams.isEmpty()) {
+                QFont def = qApp->font();
+                def.setFamily(fams.first());
+                qApp->setFont(def);
+            }
+        }
+    }
+    QFile qss(QStringLiteral(":/borland.qss"));
+    QVERIFY(qss.open(QIODevice::ReadOnly | QIODevice::Text));
+    qApp->setStyleSheet(QString::fromUtf8(qss.readAll()));
+
+    CrtSettings s;
+    SettingsDialog dlg(&s);
+    // The app resizes the modal to its sizeHint - same path.
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    auto* spin = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
+    QVERIFY2(spin, "the settings dialog has no brightness stepper");
+    // The real app's spin box measures 82x18; assert the layout really gave it
+    // that tight size, so this test cannot quietly pass by probing a taller,
+    // friendlier widget than the one the user sees.
+    QVERIFY2(spin->height() <= 20,
+             qPrintable(QStringLiteral("the stepper was laid out %1px tall - too tall to be the "
+                                       "app's 18; the probe would not see the bug")
+                            .arg(spin->height())));
+    const QImage img = spin->grab().toImage();
+    QVERIFY2(!img.isNull(), "the stepper never showed");
+
+    const QRect cells[] = {spin->upRect(), spin->downRect()};
+    for (const QRect& c : cells) {
+        QVERIFY(!c.isNull());
+        int ink = 0;
+        for (int y = c.top(); y <= c.bottom(); ++y)
+            for (int x = c.left(); x <= c.right(); ++x) {
+                const QColor p = img.pixelColor(x, y);
+                if (p.red() < 60 && p.green() < 60 && p.blue() < 60)
+                    ++ink;
+            }
+        QVERIFY2(ink > 4,
+                 qPrintable(QStringLiteral("the dialog stepper cell %1 (%2x%3) carries no arrow - %4 "
+                                           "black px")
+                                .arg(QStringLiteral("%1,%2").arg(c.x()).arg(c.y()))
+                                .arg(c.width()).arg(c.height()).arg(ink)));
+    }
+    dlg.hide();
+    qApp->setStyleSheet(QString());
+}
 
 int main(int argc, char** argv)
 {

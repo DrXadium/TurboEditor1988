@@ -49,6 +49,7 @@ SettingsDialog::SettingsDialog(CrtSettings* settings, QWidget* parent)
     snapshot();
 
     auto* body = new QWidget;
+    body->setObjectName(QStringLiteral("settingsBody"));
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(6);

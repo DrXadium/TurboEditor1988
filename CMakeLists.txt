@@ -174,8 +174,10 @@ target_include_directories(crt-autosave PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(crt-autosave PUBLIC Qt6::Core)
 
 # Task 6 test: ctest -R tst_settings
+# Links crt-shell too: the stepper-parity test loads :/borland.qss (owned by
+# crt-shell's resources) to replicate the app's 16px font environment.
 add_executable(tst_settings tests/tst_settings.cpp)
-target_link_libraries(tst_settings PRIVATE crt-settings Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_settings PRIVATE crt-settings crt-shell Qt6::Test Qt6::Widgets)
 add_test(NAME tst_settings COMMAND tst_settings)
 
 # Task 7 test: ctest -R tst_session

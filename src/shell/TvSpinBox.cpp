@@ -21,9 +21,13 @@ const int kCellW = 18;   // stepper column width
 
 // The field's own look. The app-wide QSS would otherwise paint it TV blue with
 // the dialog font; this keeps it a field inside the modal's panel.
+//
+// No border: the field is a flat blue field on the gray panel, the same rule
+// the green plates follow (their black belongs only to the shadow behind them).
+// A white ring here was the "blue boxes should not have white borders" report.
 const char* kFieldQss =
     "QLineEdit { background-color: #0000AA; color: #FFFFFF;"
-    " border: 1px solid #FFFFFF; padding: 0px 3px; }";
+    " border: none; padding: 0px 3px; }";
 } // namespace
 
 TvSpinBox::TvSpinBox(QWidget* parent)
@@ -158,8 +162,16 @@ void TvSpinBox::paintEvent(QPaintEvent*)
     // No outline: the cells are flat green fields, the ink is the triangle.
 
     // Painted triangles (the CP437 face has no U+25B2/U+25BC).
+    //
+    // The inset is ADAPTIVE: a fixed +3/-3 (and +4/-4) leaves only 3px of
+    // height on a 9px cell - below this guard's own <4 floor - so the arrow
+    // silently vanished in the real dialog's 82x18 spin box while still
+    // drawing in a taller standalone grab. Scale the inset to the cell so the
+    // arrow always keeps at least 4px of height and a usable width.
     auto triangle = [&p](const QRect& cell, bool up) {
-        const QRect r = cell.adjusted(4, 3, -4, -3);
+        const int insetX = qMax(1, (cell.width() - 6) / 3);
+        const int insetY = qMax(1, cell.height() / 6);
+        const QRect r = cell.adjusted(insetX, insetY, -insetX, -insetY);
         if (r.width() < 4 || r.height() < 4)
             return;
         QPolygon poly;

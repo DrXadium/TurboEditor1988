@@ -46,6 +46,19 @@ inline int boxGap(const QRect& r)
     return qMax(2, qMin(r.width(), r.height()) / 4);
 }
 
+// A checkbox frame: ONE thin black rule per side. The TV window's double rule
+// reads as two walls with the fill bleeding into the channel between them -
+// a checkbox wants a single frame with one square inside it.
+inline void thinBox(QPainter& p, const QRect& r, const QColor& ink)
+{
+    if (r.width() <= 1 || r.height() <= 1)
+        return;
+    p.fillRect(QRect(r.left(), r.top(), r.width(), 1), ink);
+    p.fillRect(QRect(r.left(), r.bottom(), r.width(), 1), ink);
+    p.fillRect(QRect(r.left(), r.top(), 1, r.height()), ink);
+    p.fillRect(QRect(r.right(), r.top(), 1, r.height()), ink);
+}
+
 inline void box(QPainter& p, const QRect& r, const QColor& ink)
 {
     if (r.width() <= 2 || r.height() <= 2)
@@ -63,15 +76,14 @@ inline void box(QPainter& p, const QRect& r, const QColor& ink)
     p.fillRect(QRect(r.right(), r.top(), 1, r.height()), ink);
 }
 
-// The space BETWEEN a bracket box's inner rules - what a checked box fills.
-// Derived from the same gap as box(), so the fill can never drift from the
-// brackets it sits inside.
+// The space INSIDE a thin frame - what a checked box fills. Inset by the rule
+// itself plus one pixel of daylight, so the square never touches the outline
+// and grey still shows between frame and fill.
 inline QRect boxInterior(const QRect& r)
 {
-    if (r.width() <= 2 || r.height() <= 2)
+    if (r.width() <= 4 || r.height() <= 4)
         return QRect();
-    const int inset = boxGap(r) + 1;
-    return r.adjusted(inset, inset, -inset, -inset);
+    return r.adjusted(2, 2, -2, -2);
 }
 
 // Draw one box-drawing character centred in a CHARACTER CELL.

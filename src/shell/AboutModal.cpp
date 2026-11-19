@@ -12,6 +12,7 @@ AboutModal::AboutModal(QWidget* parent)
     setObjectName(QStringLiteral("aboutModal"));
 
     auto* body = new QWidget;
+    body->setObjectName(QStringLiteral("aboutBody"));
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(6);
