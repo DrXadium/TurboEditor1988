@@ -9,7 +9,11 @@
 #include "src/shell/ShellWindow.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/shell/TvPlate.h"
+#include "src/editor/EditorTabManager.h"
+#include "src/editor/FindReplaceDialog.h"
 #include <QPushButton>
+#include <QLineEdit>
+#include <ktexteditor/document.h>
 
 namespace {
 // Count pixels close to Borland navy #0000aa = (0,0,170).
@@ -127,6 +131,50 @@ private slots:
         QVERIFY2(!plate->isDown(),
                  "the plate is still pressed after a release through the "
                  "bridge - it will paint bright and shifted forever");
+    }
+
+    // Reported live: "i cannot type in the path bar; clicking in to it does
+    // nothing". The same must not happen to the Find dialog: a click routed
+    // through the bridge has to land in the field and focus it, and the keys
+    // that follow have to arrive there.
+    void a_click_and_typing_reach_the_find_field()
+    {
+        ShellWindow shell;
+        shell.resize(760, 520);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+
+        EditorTabManager tabs;
+        tabs.newDocument();
+        tabs.activeDocument()->setText(QStringLiteral("needle"));
+
+        auto* dlg = new FindReplaceDialog(&tabs, &shell);
+        dlg->setGeometry(20, 20, dlg->sizeHint().width(), dlg->sizeHint().height());
+        dlg->show();
+        QCoreApplication::processEvents();
+
+        QLineEdit* field = dlg->findField();
+        QVERIFY(field);
+        field->setText(QString());
+        const QPoint centre = field->mapTo(&shell, field->rect().center());
+
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                                 Qt::NoModifier, centre.x(), centre.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
+                                 Qt::NoModifier, centre.x(), centre.y());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(field->hasFocus(), "the click through the bridge did not focus the find field");
+
+        for (const char c : {'a', 'b', 'c'}) {
+            bridge.forwardKeyEvent(QEvent::KeyPress, Qt::Key_A + (c - 'a'), Qt::NoModifier,
+                                   QString(QChar(c)));
+        }
+        QCoreApplication::processEvents();
+        QCOMPARE(field->text(), QStringLiteral("abc"));
     }
 };
 

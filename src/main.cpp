@@ -39,6 +39,7 @@
 #include "src/settings/CrtSettings.h"
 #include "src/settings/SettingsDialog.h"
 #include "src/shell/AboutModal.h"
+#include "src/editor/FindReplaceDialog.h"
 #include "src/shell/TvModal.h"
 #include <QPushButton>
 #include "src/session/SessionManager.h"
@@ -495,8 +496,10 @@ int main(int argc, char** argv)
                                         spell->isChecked());
             });
 
-        // Search
-        on(act("actionSearchFind"), [&tabs] { tabs.find(); });
+        // Search. Find and Replace are house-style modals over the shell, so
+        // they composite inside the CRT pass like the file dock.
+        on(act("actionSearchFind"), [&tabs, &shell] { tabs.findReplace(&shell, 0); });
+        on(act("actionSearchReplace"), [&tabs, &shell] { tabs.findReplace(&shell, 1); });
         on(act("actionSearchFindNext"), [&tabs] { tabs.findNext(); });
 
         // View: zoom + checkable toggles
@@ -732,12 +735,21 @@ int main(int argc, char** argv)
     // real house-style modal over the shell before CRT_KATE_SHOT captures it.
     // Shown WITHOUT the round loop - exec() would block the capture timer.
     if (const QByteArray which = qgetenv("CRT_KATE_MODAL"); !which.isEmpty()) {
-        QTimer::singleShot(700, &app, [&shell, &crtSettings, which]() {
+        QTimer::singleShot(700, &app, [&shell, &crtSettings, &tabs, which]() {
             TvModal* modal = nullptr;
             if (which == "about")
                 modal = new AboutModal(&shell);
             else if (which == "settings")
                 modal = new SettingsDialog(&crtSettings, &shell);
+            else if (which == "find" || which == "replace") {
+                // Find and Replace, shown WITHOUT the round loop so a capture
+                // catches it and a probe can click its plates.
+                auto* find = new FindReplaceDialog(&tabs, &shell);
+                find->setInitialField(which == "replace" ? 1 : 0);
+                find->findField()->setText(QStringLiteral("needle"));
+                find->replaceField()->setText(QStringLiteral("pin"));
+                modal = find;
+            }
             if (!modal)
                 return;
             const QSize want = modal->sizeHint();

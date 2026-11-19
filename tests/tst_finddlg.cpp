@@ -74,19 +74,23 @@ QImage grabWidget(QWidget* w)
     return w->grab().toImage().convertToFormat(QImage::Format_RGB32);
 }
 
-// The 2 px yellow ring around a field's cell is the "you are typing here" mark.
-// Asserting on it (not on qApp->focusWidget()) keeps the test independent of
+// How many yellow pixels the 2 px focus ring around a field's cell carries.
+// Asserting on this (not on qApp->focusWidget()) keeps the test independent of
 // window activation, which an offscreen platform does not always deliver.
-bool ringIsYellow(const QImage& img, QLineEdit* field, QWidget* root)
+//
+// It is a COUNT, not a yes/no, because a field's yellow SELECTION can reach the
+// inner edge of the ring and leak a few dozen pixels into it. A live ring is an
+// order of magnitude larger than that leak, so the callers compare counts.
+int ringYellow(const QImage& img, QLineEdit* field, QWidget* root)
 {
     QWidget* cell = field->parentWidget();
     if (!cell)
-        return false;
+        return 0;
     const QRect r = inDialog(cell, root).adjusted(0, 0, -1, -1);
     const QColor yellow(0xFF, 0xFF, 0x55);
     const int outer = countColorIn(img, yellow, 30, r);
     const int inner = countColorIn(img, yellow, 30, r.adjusted(2, 2, -2, -2));
-    return outer - inner > 20;
+    return outer - inner;
 }
 
 } // namespace
@@ -321,7 +325,7 @@ void TstFindDlg::clicking_a_field_marks_it_active()
 
     QTest::mouseClick(dlg.findField(), Qt::LeftButton);
 
-    QVERIFY2(ringIsYellow(grabWidget(&dlg), dlg.findField(), &dlg),
+    QVERIFY2(ringYellow(grabWidget(&dlg), dlg.findField(), &dlg) > 100,
              "clicking the field painted no yellow ring");
     // ...and the content is selected, the visible proof the click landed.
     QCOMPARE(dlg.findField()->selectedText(), QStringLiteral("needle"));
@@ -428,17 +432,24 @@ void TstFindDlg::the_dialog_opens_on_the_find_field_with_the_last_pattern()
 
     QCOMPARE(dlg.findField()->text(), QStringLiteral("remembered"));
     QCOMPARE(dlg.findField()->selectedText(), QStringLiteral("remembered"));
-    QVERIFY2(ringIsYellow(grabWidget(&dlg), dlg.findField(), &dlg),
-             "the dialog did not open on the Find what field");
-    QVERIFY2(!ringIsYellow(grabWidget(&dlg), dlg.replaceField(), &dlg),
-             "the Replace with field opened marked as active too");
+    const QImage opened = grabWidget(&dlg);
+    const int findRing = ringYellow(opened, dlg.findField(), &dlg);
+    const int replaceRing = ringYellow(opened, dlg.replaceField(), &dlg);
+    QVERIFY2(findRing > 100, "the dialog did not open on the Find what field");
+    QVERIFY2(findRing > 3 * replaceRing,
+             qPrintable(QStringLiteral("the Replace with field opened marked as active too "
+                                       "(%1 vs %2 ring px)")
+                            .arg(replaceRing).arg(findRing)));
 
     dlg.setInitialField(1);
     const QImage after = grabWidget(&dlg);
-    QVERIFY2(ringIsYellow(after, dlg.replaceField(), &dlg),
-             "setInitialField(1) did not move to the Replace with field");
-    QVERIFY2(!ringIsYellow(after, dlg.findField(), &dlg),
-             "setInitialField(1) left the Find what field marked active");
+    const int findAfter = ringYellow(after, dlg.findField(), &dlg);
+    const int replaceAfter = ringYellow(after, dlg.replaceField(), &dlg);
+    QVERIFY2(replaceAfter > 100, "setInitialField(1) did not move to the Replace with field");
+    QVERIFY2(replaceAfter > 3 * findAfter,
+             qPrintable(QStringLiteral("setInitialField(1) left the Find what field marked "
+                                       "active (%1 vs %2 ring px)")
+                            .arg(findAfter).arg(replaceAfter)));
 }
 
 // ---- Task 5: Find Next -------------------------------------------------

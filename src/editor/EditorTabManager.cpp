@@ -5,6 +5,7 @@
 #include <QKeyEvent>
 #include <QClipboard>
 #include "EditorTabManager.h"
+#include "FindReplaceDialog.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -857,46 +858,27 @@ bool EditorTabManager::saveActiveAs(const QUrl& url)
     return d && !url.isEmpty() && d->saveAs(url);
 }
 
-void EditorTabManager::find()
+void EditorTabManager::findReplace(QWidget* anchor, int whichField)
 {
-    const QString pattern =
-        QInputDialog::getText(activeView(), tr("Find"), tr("Find:"),
-                              QLineEdit::Normal, m_lastFind);
-    if (pattern.isEmpty())
-        return;
-    m_lastFind = pattern;
-    findNext();
+    // A child of the shell (TvModal::exec reparents), so it composites inside
+    // the CRT pass like the file dock and the other house modals.
+    FindReplaceDialog dlg(this);
+    dlg.setInitialField(whichField);
+    TvModal::exec(anchor, &dlg);
 }
 
 void EditorTabManager::findNext()
 {
-    if (m_lastFind.isEmpty()) {   // nothing searched yet: prompt first
-        find();
+    // The dialog is gone, so its remembered pattern is the only state. With
+    // nothing remembered there is nothing to repeat: open the dialog instead.
+    if (FindReplaceDialog::lastPattern().isEmpty()) {
+        findReplace(activeView(), 0);
         return;
     }
-    jumpToNextMatch(m_lastFind);
-}
-
-bool EditorTabManager::jumpToNextMatch(const QString& pattern)
-{
-    KTextEditor::Document* d = activeDocument();
-    KTextEditor::View* v = activeView();
-    if (!d || !v || pattern.isEmpty())
-        return false;
-    // Search from just after the cursor, wrapping to the document start.
-    const KTextEditor::Cursor from = v->cursorPosition();
-    QList<KTextEditor::Range> hits =
-        d->searchText(KTextEditor::Range(KTextEditor::Cursor(from.line(), from.column() + 1),
-                                         d->documentEnd()),
-                      pattern);
-    if (hits.isEmpty())
-        hits = d->searchText(KTextEditor::Range(KTextEditor::Cursor(0, 0),
-                                                d->documentEnd()),
-                             pattern);
-    if (hits.isEmpty())
-        return false;
-    v->setCursorPosition(hits.first().start());
-    return true;
+    // One matching path: build the dialog (it re-fills the pattern and the
+    // remembered options) and let it run a Find Next without showing.
+    FindReplaceDialog dlg(this);
+    dlg.findNext();
 }
 
 void EditorTabManager::syncTabs()

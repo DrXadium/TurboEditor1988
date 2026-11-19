@@ -95,10 +95,11 @@ public:
     // knows the path, so it must not open a native prompt of its own).
     bool saveActiveAs(const QUrl& url);
 
-    // Search menu (Task 10): find() prompts for a pattern (QInputDialog) and
-    // jumps to the first match after the cursor; findNext() repeats the last
-    // pattern. Core matching lives in jumpToNextMatch().
-    void find();
+    // Search menu: findReplace() opens the house-style Find and Replace modal
+    // over `anchor` with the Find what (0) or Replace with (1) field active.
+    // findNext() repeats the last search with the dialog closed (F3 / the menu
+    // item), through the same dialog class so there is ONE matching path.
+    void findReplace(QWidget* anchor, int whichField);
     void findNext();
 
     // Installs zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0) and text-tool actions
@@ -155,8 +156,6 @@ private:
     void applyHistoryStep(KTextEditor::Document* doc, int index);
     void notifyHistory();
     void applyZoom(int delta);
-    bool jumpToNextMatch(const QString& pattern);
-
     QList<KTextEditor::Document*> m_docs;
     QList<KTextEditor::View*> m_views;
     int m_active = -1;

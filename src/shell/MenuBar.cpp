@@ -83,7 +83,12 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     spell->setCheckable(true);
 
     QMenu* search = addMenu(QStringLiteral("Search"));
-    added(search, QStringLiteral("&Find..."), QStringLiteral("actionSearchFind"));
+    QAction* findAct = added(search, QStringLiteral("&Find...\tCtrl+F"),
+                             QStringLiteral("actionSearchFind"));
+    findAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+F")));
+    QAction* replaceAct = added(search, QStringLiteral("Re&place...\tCtrl+H"),
+                                QStringLiteral("actionSearchReplace"));
+    replaceAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+H")));
     added(search, QStringLiteral("Find &Next"), QStringLiteral("actionSearchFindNext"));
 
     QMenu* view = addMenu(QStringLiteral("View"));

@@ -333,6 +333,8 @@ private slots:
             QStringLiteral("actionEditSort"),  QStringLiteral("actionEditSpellcheck"),
             QStringLiteral("actionSearchFind"),
             QStringLiteral("actionSearchFindNext"),
+            // Find and Replace (2026-11-18): the Search menu offers Replace.
+            QStringLiteral("actionSearchReplace"),
             QStringLiteral("actionViewZoomIn"), QStringLiteral("actionViewZoomOut"),
             QStringLiteral("actionViewZoomReset"),
             QStringLiteral("actionViewMinimap"), QStringLiteral("actionViewFoldBar"),

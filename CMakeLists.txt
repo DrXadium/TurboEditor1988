@@ -110,7 +110,7 @@ target_link_libraries(crt-bridge PUBLIC crt-shell Qt6::Gui Qt6::Quick)
 
 # Task 4 test: ctest -R tst_bridge
 add_executable(tst_bridge tests/tst_bridge.cpp)
-target_link_libraries(tst_bridge PRIVATE crt-bridge Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_bridge PRIVATE crt-bridge crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_bridge COMMAND tst_bridge)
 
 # Input-forwarding test: ctest -R tst_input
