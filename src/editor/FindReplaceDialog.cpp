@@ -358,6 +358,16 @@ void FindReplaceDialog::setStatus(const QString& text)
         m_status->setText(text);
 }
 
+void FindReplaceDialog::keyPressEvent(QKeyEvent* ev)
+{
+    if (ev->key() == Qt::Key_Return || ev->key() == Qt::Key_Enter) {
+        findNext();
+        ev->accept();
+        return;
+    }
+    TvModal::keyPressEvent(ev);
+}
+
 void FindReplaceDialog::findNext()
 {
     const QString pattern = m_findField->text();
@@ -488,8 +498,19 @@ void FindReplaceDialog::replaceOne()
     if (!FindReplace::isValid(pattern, opts))
         return;
     const KTextEditor::Range range = view->selectionRange();
+    // Replace swaps a MATCH, not whatever happens to be selected: a selection
+    // the pattern does not describe must survive untouched, so this behaves
+    // like Find Next instead of destroying the user's text.
+    const QString selected = doc->text(range);
+    const QList<FindReplace::Hit> onSelection = FindReplace::findAll(selected, pattern, opts);
+    const bool isMatch = onSelection.size() == 1 && onSelection.first().offset == 0
+                         && onSelection.first().length == selected.size();
+    if (!isMatch) {
+        findNext();
+        return;
+    }
+
     const int start = offsetAt(doc->text(), range.start());
-    const int end = offsetAt(doc->text(), range.end());
     const QString replacement = m_replaceField->text();
     doc->replaceText(range, replacement);
     s_lastPattern = pattern;

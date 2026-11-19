@@ -63,6 +63,9 @@ public:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* ev) override;
+    // Return is the repeat gesture here, not TvModal's accept: a Find dialog
+    // must never close itself because the caret was not in a field.
+    void keyPressEvent(QKeyEvent* ev) override;
 
 private:
     void setActiveField(QLineEdit* field);

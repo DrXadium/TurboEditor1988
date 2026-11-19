@@ -129,6 +129,8 @@ private slots:
     void one_replace_all_is_one_undo_step();
     void an_empty_replacement_deletes_the_matches();
     void the_selection_scope_uses_the_range_captured_at_open();
+    void replace_leaves_a_non_matching_selection_alone();
+    void return_on_the_dialog_itself_runs_find_next();
 };
 
 void TstFindDlg::initTestCase()
@@ -710,6 +712,46 @@ void TstFindDlg::the_selection_scope_uses_the_range_captured_at_open()
     dlg.replaceAll(); // ...which must still be the FIRST abc
 
     QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("X abc"));
+}
+
+// Replace must not destroy text the user merely had selected: if the selection
+// is not a match of the pattern, Replace behaves like Find Next instead.
+void TstFindDlg::replace_leaves_a_non_matching_selection_alone()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("hello world"));
+    tabs.activeView()->setSelection(KTextEditor::Range(0, 0, 0, 5));   // "hello"
+
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("world"));
+    dlg.replaceField()->setText(QStringLiteral("X"));
+    dlg.replaceOne();
+
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("hello world"));
+    QCOMPARE(selectedText(tabs), QStringLiteral("world"));   // it found the real hit
+}
+
+// Return is the repeat gesture wherever the dialog has focus - it must never
+// fall through to TvModal's Return-means-accept and close the dialog.
+void TstFindDlg::return_on_the_dialog_itself_runs_find_next()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("one"));
+    dlg.setFocus();
+    QTest::keyClick(&dlg, Qt::Key_Return);
+
+    QVERIFY2(dlg.isVisible(), "Return on the dialog closed it");
+    QCOMPARE(selectedText(tabs), QStringLiteral("one"));
 }
 
 QTEST_MAIN(TstFindDlg)
