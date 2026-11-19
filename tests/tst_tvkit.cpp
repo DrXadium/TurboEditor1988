@@ -9,6 +9,8 @@
 #include <QSignalSpy>
 #include <QWidget>
 #include "src/shell/TvCheckBox.h"
+#include "src/shell/TvSpinBox.h"
+#include <QLineEdit>
 
 namespace {
 
@@ -48,6 +50,16 @@ private slots:
     void clicking_anywhere_in_the_row_toggles();
     void space_toggles();
     void toggled_fires_only_on_a_real_change();
+
+    // TvSpinBox
+    void the_value_is_shown_in_the_field();
+    void the_suffix_is_appended();
+    void step_up_and_down_move_by_the_step();
+    void stepping_stops_at_the_range_ends();
+    void typed_out_of_range_clamps_on_commit();
+    void unparsable_text_snaps_back();
+    void clicking_the_up_cell_steps_up();
+    void valueChanged_fires_only_on_a_real_change();
 };
 
 // The bracket is white too, so counting the whole interior measures the frame.
@@ -130,6 +142,127 @@ void TstTvKit::toggled_fires_only_on_a_real_change()
     QCOMPARE(spy.count(), 2);
     QCOMPARE(spy.at(0).at(0).toBool(), true);
     QCOMPARE(spy.at(1).at(0).toBool(), false);
+}
+
+// --- TvSpinBox ---------------------------------------------------------------
+
+void TstTvKit::the_value_is_shown_in_the_field()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setValue(0.5);
+    QVERIFY2(sb.editor(), "the spin box has no field");
+    QCOMPARE(sb.editor()->text(), QStringLiteral("0.50"));
+}
+
+void TstTvKit::the_suffix_is_appended()
+{
+    TvSpinBox sb;
+    sb.setRange(1, 3600);
+    sb.setDecimals(0);
+    sb.setSuffix(QStringLiteral(" s"));
+    sb.setValue(120);
+    QCOMPARE(sb.editor()->text(), QStringLiteral("120 s"));
+    QCOMPARE(sb.suffix(), QStringLiteral(" s"));
+}
+
+void TstTvKit::step_up_and_down_move_by_the_step()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setSingleStep(0.05);
+    sb.setValue(0.5);
+    sb.stepUp();
+    QCOMPARE(sb.value(), 0.55);
+    sb.stepDown();
+    sb.stepDown();
+    QCOMPARE(sb.value(), 0.45);
+}
+
+void TstTvKit::stepping_stops_at_the_range_ends()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setSingleStep(0.5);
+    sb.setValue(0.9);
+    sb.stepUp();
+    QCOMPARE(sb.value(), 1.0);
+    sb.stepUp();
+    QCOMPARE(sb.value(), 1.0);      // no overshoot, no wrap
+    sb.setValue(0.1);
+    sb.stepDown();
+    QCOMPARE(sb.value(), 0.0);
+    sb.stepDown();
+    QCOMPARE(sb.value(), 0.0);
+}
+
+// Review Focus 1: a typed value outside the range must clamp on commit and be
+// re-rendered, not accepted silently.
+void TstTvKit::typed_out_of_range_clamps_on_commit()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setValue(0.5);
+    QSignalSpy spy(&sb, &TvSpinBox::valueChanged);
+
+    sb.editor()->setText(QStringLiteral("99"));
+    sb.commitTyped();
+
+    QCOMPARE(sb.value(), 1.0);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toDouble(), 1.0);
+    QCOMPARE(sb.editor()->text(), QStringLiteral("1.00"));
+}
+
+void TstTvKit::unparsable_text_snaps_back()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setValue(0.5);
+    QSignalSpy spy(&sb, &TvSpinBox::valueChanged);
+
+    sb.editor()->setText(QStringLiteral("abc"));
+    sb.commitTyped();
+
+    QCOMPARE(sb.value(), 0.5);
+    QCOMPARE(spy.count(), 0);
+    QCOMPARE(sb.editor()->text(), QStringLiteral("0.50"));
+}
+
+void TstTvKit::clicking_the_up_cell_steps_up()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setSingleStep(0.1);
+    sb.setValue(0.5);
+    sb.resize(sb.sizeHint());
+    sb.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&sb));
+
+    QVERIFY2(!sb.upRect().isNull() && !sb.downRect().isNull(), "the stepper cells were never laid out");
+    QTest::mouseClick(&sb, Qt::LeftButton, Qt::NoModifier, sb.upRect().center());
+    QCOMPARE(sb.value(), 0.6);
+    QTest::mouseClick(&sb, Qt::LeftButton, Qt::NoModifier, sb.downRect().center());
+    QCOMPARE(sb.value(), 0.5);
+}
+
+void TstTvKit::valueChanged_fires_only_on_a_real_change()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    QSignalSpy spy(&sb, &TvSpinBox::valueChanged);
+    sb.setValue(0.5);
+    sb.setValue(0.5);
+    QCOMPARE(spy.count(), 1);
+    sb.setValue(0.6);
+    QCOMPARE(spy.count(), 2);
 }
 
 QTEST_MAIN(TstTvKit)
