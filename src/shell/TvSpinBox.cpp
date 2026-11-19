@@ -155,9 +155,7 @@ void TvSpinBox::paintEvent(QPaintEvent*)
     TvFrame::drawPlateShadow(p, m_downRect, kButtonShadow);
     p.fillRect(m_upRect, kPlate);
     p.fillRect(m_downRect, kPlate);
-    p.setPen(kBlack);
-    p.drawRect(m_upRect.adjusted(0, 0, -1, -1));
-    p.drawRect(m_downRect.adjusted(0, 0, -1, -1));
+    // No outline: the cells are flat green fields, the ink is the triangle.
 
     // Painted triangles (the CP437 face has no U+25B2/U+25BC).
     auto triangle = [&p](const QRect& cell, bool up) {

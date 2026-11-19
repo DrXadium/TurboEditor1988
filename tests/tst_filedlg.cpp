@@ -688,6 +688,38 @@ private slots:
         // TvFrame::drawDoubleFrame in tst_tvkit.
     }
 
+    // Reported live: "the green buttons have black outlines which they should
+    // not". A TV plate is a flat green field with the shadow BEHIND it. The
+    // probe is the plate's EDGE RING, not its interior: these plates carry
+    // black label ink by design, so a whole-rect count would measure the text.
+    void the_plates_have_no_black_outline()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect plates[] = {dock.okRect(), dock.cancelRect(), dock.helpRect()};
+        for (const QRect& p : plates) {
+            QVERIFY2(!p.isNull(), "a plate was never laid out");
+            const QPoint probes[] = {
+                QPoint(p.left(), p.center().y()),
+                QPoint(p.right(), p.center().y()),
+                QPoint(p.center().x(), p.top()),
+                QPoint(p.center().x(), p.bottom()),
+            };
+            for (const QPoint& pt : probes) {
+                const QColor px = img.pixelColor(pt);
+                QVERIFY2(!(px.red() < 40 && px.green() < 40 && px.blue() < 40),
+                         qPrintable(QStringLiteral("plate edge at %1,%2 is black (%3,%4,%5)")
+                                        .arg(pt.x()).arg(pt.y())
+                                        .arg(px.red()).arg(px.green()).arg(px.blue())));
+            }
+        }
+    }
+
     // Reported live: "there's no indication anything worked". The shell window
     // is never active, so a QLineEdit never draws a caret - the click has to
     // show itself. Clicking a field highlights its content and draws a yellow

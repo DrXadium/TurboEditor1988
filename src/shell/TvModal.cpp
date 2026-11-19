@@ -26,7 +26,7 @@ const QColor kBlack(Qt::black);
 // style is set here, matching the file dock's buttons.
 const char* kPlateQss =
     "QPushButton { background-color: #00AA00; color: #FFFFFF;"
-    " border: 1px solid #000000; padding: 2px 10px; }"
+    " border: none; padding: 2px 10px; }"
     "QPushButton:hover { background-color: #1FBE1F; }"
     "QPushButton:pressed { background-color: #148A14; }";
 

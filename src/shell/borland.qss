@@ -124,7 +124,10 @@ QWidget#editorBody { background: transparent; }
 QPushButton {
     background-color: #00AA00;
     color: #FFFFFF;
-    border: 1px solid #000000;
+    /* No outline: a TV plate is a flat green field, and the black belongs to
+       the drop shadow painted BEHIND it (TvFileDock / TvModal), not to an
+       edge around the plate. */
+    border: none;
     padding: 3px 14px;
     min-width: 60px;
 }

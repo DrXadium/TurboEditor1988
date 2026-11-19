@@ -72,6 +72,7 @@ private slots:
     void a_modal_larger_than_its_anchor_is_clamped();
     void buttons_get_a_block_shadow();
     void the_button_row_stays_inside_the_frame();
+    void the_plates_have_no_black_outline();
 
     // About
     void about_shows_the_display_name_and_one_ok_plate();
@@ -299,6 +300,39 @@ void TstTvModal::the_button_row_stays_inside_the_frame()
                  qPrintable(QStringLiteral("a plate ends at %1, below the frame").arg(g.bottom())));
         QVERIFY2(g.width() >= b->minimumWidth(),
                  "the plate is narrower than its own minimum");
+    }
+}
+
+// Reported live: "the green buttons have black outlines which they should not".
+// A TV plate is a flat green field with a black shadow BEHIND it - the outline
+// belongs to the shadow, never to the plate. Probed at the plate's edge ring,
+// so label ink in the middle cannot mask (or fake) an outline.
+void TstTvModal::the_plates_have_no_black_outline()
+{
+    TvModal m;
+    m.resize(480, 320);
+    m.addButton(QStringLiteral("OK"), TvModal::Accept);
+    m.addButton(QStringLiteral("Cancel"), TvModal::Reject);
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    const QImage img = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    for (int i = 0; i < m.buttonCount(); ++i) {
+        const QRect b = m.buttonRect(i);
+        QVERIFY(!b.isNull());
+        const QPoint probes[] = {
+            QPoint(b.left(), b.center().y()),
+            QPoint(b.right(), b.center().y()),
+            QPoint(b.center().x(), b.top()),
+            QPoint(b.center().x(), b.bottom()),
+        };
+        for (const QPoint& pt : probes) {
+            const QColor px = img.pixelColor(pt);
+            QVERIFY2(!(px.red() < 40 && px.green() < 40 && px.blue() < 40),
+                     qPrintable(QStringLiteral("plate %1 edge at %2,%3 is black (%4,%5,%6)")
+                                    .arg(i).arg(pt.x()).arg(pt.y())
+                                    .arg(px.red()).arg(px.green()).arg(px.blue())));
+        }
     }
 }
 

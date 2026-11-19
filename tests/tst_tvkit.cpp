@@ -38,6 +38,11 @@ QImage grab(QWidget& w)
     return w.grab().toImage().convertToFormat(QImage::Format_RGB32);
 }
 
+bool isBlack(const QColor& c)
+{
+    return c.red() < 40 && c.green() < 40 && c.blue() < 40;
+}
+
 } // namespace
 
 class TstTvKit : public QObject
@@ -61,6 +66,7 @@ private slots:
     void unparsable_text_snaps_back();
     void clicking_the_up_cell_steps_up();
     void valueChanged_fires_only_on_a_real_change();
+    void the_stepper_cells_have_no_black_outline();
 
     // TvTabBar
     void chips_are_laid_out_left_to_right();
@@ -343,6 +349,39 @@ void TstTvKit::currentChanged_fires_only_on_a_real_change()
     tabs.setCurrentIndex(99);       // out of range: ignored, no signal
     QCOMPARE(spy.count(), 1);
     QCOMPARE(tabs.currentIndex(), 1);
+}
+
+// Reported live: the green plates have black outlines they should not have.
+// Same rule for the stepper cells - the triangles are the ink, the cell is a
+// flat green field.
+void TstTvKit::the_stepper_cells_have_no_black_outline()
+{
+    TvSpinBox sb;
+    sb.setRange(0.0, 1.0);
+    sb.setDecimals(2);
+    sb.setValue(0.5);
+    sb.resize(sb.sizeHint());
+    const QImage img = grab(sb);
+    QVERIFY2(!img.isNull(), "the spin box never showed");
+
+    const QRect cells[] = {sb.upRect(), sb.downRect()};
+    for (const QRect& c : cells) {
+        QVERIFY(!c.isNull());
+        // The four edge midpoints, clear of the inset triangle.
+        const QPoint probes[] = {
+            QPoint(c.center().x(), c.top()),
+            QPoint(c.center().x(), c.bottom()),
+            QPoint(c.left(), c.center().y()),
+            QPoint(c.right(), c.center().y()),
+        };
+        for (const QPoint& pt : probes) {
+            const QColor px = img.pixelColor(pt);
+            QVERIFY2(!isBlack(px),
+                     qPrintable(QStringLiteral("cell edge at %1,%2 is black (%3,%4,%5)")
+                                    .arg(pt.x()).arg(pt.y())
+                                    .arg(px.red()).arg(px.green()).arg(px.blue())));
+        }
+    }
 }
 
 QTEST_MAIN(TstTvKit)

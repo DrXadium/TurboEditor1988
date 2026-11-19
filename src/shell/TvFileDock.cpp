@@ -777,6 +777,13 @@ bool TvFileDock::eventFilter(QObject* watched, QEvent* ev)
                           || watched == m_typeEdit);
     if (isField && ev->type() == QEvent::MouseButtonPress) {
         // Mark the field immediately so the click shows itself at once.
+        // The other fields give up their selection: a highlight left behind in
+        // a field you are no longer editing reads as "this is still active",
+        // and a QLineEdit only drops it when it really loses focus - which
+        // depends on window activation the shell never gets.
+        for (QLineEdit* other : {m_edit, m_pathEdit, m_typeEdit})
+            if (other && other != watched)
+                other->deselect();
         m_activeField = static_cast<QWidget*>(watched);
         update();
         return false;               // the field still places its own caret
