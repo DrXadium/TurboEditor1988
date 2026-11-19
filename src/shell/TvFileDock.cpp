@@ -30,8 +30,11 @@ const QColor kTeal(0x00, 0xAA, 0xAA);
 const QColor kGreen(0x00, 0xAA, 0x00);
 const QColor kBlue(0x00, 0x00, 0xAA);
 const int kScrollStrip = 7;      // height of the teal scroll strip under the list
-const int kShadowRight = 10;     // black drop shadow gutter (right/bottom)
-const int kShadowBottom = 8;
+// The drop shadow is the panel's own rect offset down-right by this much, so
+// the panel also insets by it: the shadow then reaches the widget edge exactly
+// and the gutter around it is left unpainted (the CRT background shows through,
+// which is what makes the L read as a shadow instead of a grey border).
+const int kShadowOffset = 6;
 const int kButtonShadow = 4;     // black block shadow behind each green plate
 const int kPad = 6;
 const int kMaxRecents = 10;      // the dropdown lists the last ten files
@@ -53,11 +56,13 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     m_pathEdit = new QLineEdit(this);
     m_pathEdit->setObjectName(QStringLiteral("tvFileDockPath"));
     m_pathEdit->setAutoFillBackground(true);
+    m_pathEdit->installEventFilter(this);
 
     // File-type box (bottom): free text, seeded with the era default.
     m_typeEdit = new QLineEdit(this);
     m_typeEdit->setObjectName(QStringLiteral("tvFileDockType"));
     m_typeEdit->setAutoFillBackground(true);
+    m_typeEdit->installEventFilter(this);
     m_typeEdit->setText(typePresets().first());
     connect(m_typeEdit, &QLineEdit::textChanged, this,
             [this](const QString& text) { setFilter(text); });
@@ -417,7 +422,9 @@ void TvFileDock::layoutChildren()
 {
     const int cw = cellW();
     const int ch = cellH();
-    m_frameRect = rect().adjusted(2, 2, -kShadowRight, -kShadowBottom);
+    // Flush to the top-left: the panel IS the modal, and the only margin it
+    // needs is the shadow gutter down the right and along the bottom.
+    m_frameRect = rect().adjusted(0, 0, -kShadowOffset, -kShadowOffset);
 
     // Content area: inside the frame's own cell-thick border.
     const QRect inner = m_frameRect.adjusted(cw, ch, -cw, -ch);
@@ -575,8 +582,14 @@ void TvFileDock::paintEvent(QPaintEvent*)
     const int ch = cellH();
     const QFontMetrics fm(font());
 
-    // Panel + hard black drop shadow (offset right/bottom), as on every TV modal.
-    p.fillRect(rect(), kPanelGray);
+    // Drop shadow, then the panel over it, so only the offset L survives. The
+    // gutter around the panel is deliberately left UNPAINTED: the CRT
+    // background shows through there, which is what makes the black read as a
+    // shadow. Filling the whole widget with panel grey (the old behaviour) left
+    // a grey stripe down the right edge, a grey notch above the shadow, and a
+    // missing corner.
+    p.fillRect(m_frameRect.translated(kShadowOffset, kShadowOffset), kBlack);
+    p.fillRect(m_frameRect, kPanelGray);
 
     // Hard black block shadow behind each green plate, as on the reference
     // modal. The buttons are child widgets and paint AFTER this pass, so their
@@ -584,11 +597,6 @@ void TvFileDock::paintEvent(QPaintEvent*)
     for (const QRect& plate : {m_okRect, m_cancelRect, m_helpRect})
         if (!plate.isNull())
             p.fillRect(plate.translated(kButtonShadow, kButtonShadow), kBlack);
-
-    p.fillRect(QRect(width() - kShadowRight, m_frameRect.top() + 4, kShadowRight - 2,
-                     height() - kShadowBottom - 4), kBlack);
-    p.fillRect(QRect(m_frameRect.left() + 4, height() - kShadowBottom, width() - kShadowRight - 4,
-                     kShadowBottom), kBlack);
 
     // White DOUBLE-line frame, drawn with the CP437 glyphs so it tiles.
     const QRect f = m_frameRect;
@@ -663,6 +671,25 @@ void TvFileDock::paintEvent(QPaintEvent*)
     };
     drawDropCell(m_nameDropRect);
     drawDropCell(m_typeDropRect);
+
+    // Focus mark. The shell is never an active window, so a QLineEdit never
+    // draws a caret here - without this the user clicks a field and sees
+    // nothing. A 2 px yellow frame around the field is the CRT-safe "you are
+    // typing here".
+    QRect active;
+    if (m_activeField == m_pathEdit)
+        active = m_pathRect;
+    else if (m_activeField == m_edit)
+        active = m_nameRect;
+    else if (m_activeField == m_typeEdit)
+        active = m_typeRect;
+    if (!active.isNull()) {
+        p.save();
+        p.setPen(QPen(kYellow, 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(active.adjusted(1, 1, -1, -1));
+        p.restore();
+    }
 
     // ---- Files box: teal field, divider, two name columns, scroll strip ----
     p.fillRect(m_listRect, kTeal);
@@ -781,6 +808,24 @@ void TvFileDock::keyPressEvent(QKeyEvent* ev)
 
 bool TvFileDock::eventFilter(QObject* watched, QEvent* ev)
 {
+    const bool isField = (watched == m_edit || watched == m_pathEdit
+                          || watched == m_typeEdit);
+    if (isField && ev->type() == QEvent::MouseButtonPress) {
+        // Mark the field immediately so the click shows itself at once.
+        m_activeField = static_cast<QWidget*>(watched);
+        update();
+        return false;               // the field still places its own caret
+    }
+    if (isField && ev->type() == QEvent::MouseButtonRelease) {
+        // Highlight the content: with no active window the caret never blinks,
+        // so the selection is the visible proof that the click landed. Consume
+        // the release so the field cannot immediately clear it again.
+        auto* edit = static_cast<QLineEdit*>(watched);
+        m_activeField = edit;
+        edit->selectAll();
+        update();
+        return true;
+    }
     if (watched == m_edit && ev->type() == QEvent::KeyPress) {
         auto* kev = static_cast<QKeyEvent*>(ev);
         if (kev->key() == Qt::Key_Escape) {

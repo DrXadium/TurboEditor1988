@@ -215,7 +215,7 @@ add_test(NAME tst_scrollbars COMMAND tst_scrollbars)
 
 # GUI pass (2026-11-17): Turbo Vision file dialogs drawn on the app screen.
 add_executable(tst_filedlg tests/tst_filedlg.cpp)
-target_link_libraries(tst_filedlg PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_filedlg PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
 add_test(NAME tst_filedlg COMMAND tst_filedlg)
 
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the

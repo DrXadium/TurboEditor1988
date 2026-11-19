@@ -16,6 +16,8 @@
 #include <QSignalSpy>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TvFileDock.h"
+#include "src/bridge/ContentBridge.h"
+#include <QLineEdit>
 
 namespace {
 // Count pixels within tol of want.
@@ -31,6 +33,33 @@ int countColor(const QImage& img, const QColor& want, int tol)
                 ++n;
         }
     return n;
+}
+
+// Same, restricted to a rectangle (the focus ring lives around one field).
+int countColorIn(const QImage& img, const QColor& want, int tol, const QRect& r)
+{
+    int n = 0;
+    const QRect clip = r.intersected(img.rect());
+    for (int y = clip.top(); y <= clip.bottom(); ++y)
+        for (int x = clip.left(); x <= clip.right(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (qAbs(c.red() - want.red()) <= tol
+                && qAbs(c.green() - want.green()) <= tol
+                && qAbs(c.blue() - want.blue()) <= tol)
+                ++n;
+        }
+    return n;
+}
+
+bool isPanelGrey(const QColor& c)
+{
+    return qAbs(c.red() - 0xAA) <= 10 && qAbs(c.green() - 0xAA) <= 10
+           && qAbs(c.blue() - 0xAA) <= 10;
+}
+
+bool isWhite(const QColor& c)
+{
+    return c.red() > 240 && c.green() > 240 && c.blue() > 240;
 }
 } // namespace
 
@@ -533,6 +562,192 @@ private slots:
                           dock.typeDropRect().center());
         QCOMPARE(spy.count(), 1);
         dock.reject();
+    }
+
+    // Reported live: the drop shadow stopped short of the widget edge (a grey
+    // stripe down the right), its corner was missing, and the gutter above it
+    // was panel grey instead of clear. The shadow is the panel's own rect
+    // offset down-right, with the panel painted over it.
+    void the_drop_shadow_is_a_complete_offset_L()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect f = dock.frameRect();
+        const int midY = (f.top() + f.bottom()) / 2;
+
+        // Right arm: black from the frame's edge out to the widget's edge.
+        for (int x = f.right() + 1; x <= dock.width() - 1; ++x) {
+            const QColor c = img.pixelColor(x, midY);
+            QVERIFY2(c.red() < 12 && c.green() < 12 && c.blue() < 12,
+                     qPrintable(QStringLiteral("x=%1 y=%2 is %3,%4,%5 - not shadow")
+                                    .arg(x).arg(midY)
+                                    .arg(c.red()).arg(c.green()).arg(c.blue())));
+        }
+        // Bottom arm: same, under the panel.
+        const int midX = (f.left() + f.right()) / 2;
+        for (int y = f.bottom() + 1; y <= dock.height() - 1; ++y) {
+            const QColor c = img.pixelColor(midX, y);
+            QVERIFY2(c.red() < 12 && c.green() < 12 && c.blue() < 12,
+                     qPrintable(QStringLiteral("x=%1 y=%2 is %3,%4,%5 - not shadow")
+                                    .arg(midX).arg(y)
+                                    .arg(c.red()).arg(c.green()).arg(c.blue())));
+        }
+        // ...and the corner where the two arms meet.
+        const QColor corner = img.pixelColor(dock.width() - 2, dock.height() - 2);
+        QVERIFY2(corner.red() < 12 && corner.green() < 12 && corner.blue() < 12,
+                 qPrintable(QStringLiteral("corner is %1,%2,%3 - the shadow L is open")
+                                .arg(corner.red()).arg(corner.green()).arg(corner.blue())));
+        dock.reject();
+    }
+
+    // The gutter outside the shadow is NOT painted: whatever is behind the dock
+    // shows through, which is what makes the L read as a shadow. Above the
+    // right arm (upper right) and left of the bottom arm (lower left) must stay
+    // clear.
+    void the_gutter_outside_the_shadow_is_left_clear()
+    {
+        QWidget host;
+        host.resize(900, 700);
+        host.setAutoFillBackground(true);
+        QPalette pal = host.palette();
+        pal.setColor(QPalette::Window, QColor(0xFF, 0x00, 0x00));   // marker colour
+        host.setPalette(pal);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+
+        auto* dock = new TvFileDock(&host);
+        dock->setDirectory(QStringLiteral("/tmp"));
+        dock->resize(760, 560);
+        dock->move(10, 10);
+        dock->show();
+        QCoreApplication::processEvents();
+
+        const QImage img = host.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect f = dock->frameRect();
+
+        // Upper right: right of the panel, above where the shadow starts.
+        // Whatever the CRT background is there (the app-wide QSS paints widget
+        // backgrounds TV blue), it must not be the panel's grey or the frame's
+        // white - either would mean the panel bleeds into the shadow gutter.
+        const QPoint upperRight(dock->x() + f.right() + 3, dock->y() + f.top() + 2);
+        const QColor upper = img.pixelColor(upperRight);
+        QVERIFY2(!isPanelGrey(upper) && !isWhite(upper),
+                 qPrintable(QStringLiteral("upper-right gutter is %1,%2,%3 - the panel bled into it")
+                                .arg(upper.red()).arg(upper.green()).arg(upper.blue())));
+
+        // Lower left: under the panel, left of where the shadow starts.
+        const QPoint lowerLeft(dock->x() + f.left() + 2, dock->y() + f.bottom() + 3);
+        const QColor lower = img.pixelColor(lowerLeft);
+        QVERIFY2(!isPanelGrey(lower) && !isWhite(lower),
+                 qPrintable(QStringLiteral("lower-left gutter is %1,%2,%3 - the panel bled into it")
+                                .arg(lower.red()).arg(lower.green()).arg(lower.blue())));
+
+        dock->reject();
+        delete dock;
+    }
+
+    // Reported live: "there's no indication anything worked". The shell window
+    // is never active, so a QLineEdit never draws a caret - the click has to
+    // show itself. Clicking a field highlights its content and draws a yellow
+    // frame around it; clicking another moves both.
+    void clicking_a_field_marks_it_active()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        auto* path = dock.findChild<QLineEdit*>(QStringLiteral("tvFileDockPath"));
+        auto* name = dock.findChild<QLineEdit*>(QStringLiteral("tvFileDockEdit"));
+        QVERIFY2(path && name, "dock is missing its fields");
+        QVERIFY2(dock.activeField() == nullptr, "a field is marked active before any click");
+
+        QTest::mouseClick(path, Qt::LeftButton, Qt::NoModifier, path->rect().center());
+        QCOMPARE(dock.activeField(), static_cast<QWidget*>(path));
+        QVERIFY2(path->selectedText() == path->text(),
+                 qPrintable(QStringLiteral("clicking did not highlight the content (selected=%1)")
+                                .arg(path->selectedText())));
+
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const int ring = countColorIn(img, QColor(0xFF, 0xFF, 0x55), 6,
+                                      dock.pathRect().adjusted(-1, -1, 1, 1));
+        QVERIFY2(ring > 200,
+                 qPrintable(QStringLiteral("only %1 yellow px around the active field").arg(ring)));
+
+        // The mark follows the click.
+        QTest::mouseClick(name, Qt::LeftButton, Qt::NoModifier, name->rect().center());
+        QCOMPARE(dock.activeField(), static_cast<QWidget*>(name));
+        const QImage img2 = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const int left = countColorIn(img2, QColor(0xFF, 0xFF, 0x55), 6,
+                                      dock.pathRect().adjusted(-1, -1, 1, 1));
+        QVERIFY2(left < 20,
+                 qPrintable(QStringLiteral("the mark stayed on the path field (%1 px)").arg(left)));
+        const int moved = countColorIn(img2, QColor(0xFF, 0xFF, 0x55), 6,
+                                       dock.nameRect().adjusted(-1, -1, 1, 1));
+        QVERIFY2(moved > 200,
+                 qPrintable(QStringLiteral("the mark did not move to the name field (%1 px)").arg(moved)));
+        dock.reject();
+    }
+
+    // Reported live: "I cannot type in the path bar; clicking into it does
+    // nothing." Clicks arrive through ContentBridge (the shell is never mapped),
+    // so the field must be reachable by childAt() AND end up focused.
+    void clicking_the_path_bar_focuses_it()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                              QStringLiteral("Open File"),
+                                              QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        auto* path = dock->findChild<QLineEdit*>(QStringLiteral("tvFileDockPath"));
+        QVERIFY2(path, "no path edit in the dock");
+        QVERIFY2(path->isVisible(), "path edit exists but is not visible");
+        QVERIFY2(path->geometry().width() > 20 && path->geometry().height() > 8,
+                 "path edit has no usable geometry");
+
+        const QPoint shellPt = path->mapTo(&shell, path->rect().center());
+        QWidget* hit = shell.childAt(shellPt);
+        QVERIFY2(hit == path,
+                 qPrintable(QStringLiteral("childAt resolved %1, not the path edit")
+                                .arg(hit ? hit->objectName() : QStringLiteral("<null>"))));
+
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+        // Assert the shell's own focus child, not hasFocus(): hasFocus() is
+        // false whenever no window is "active", which is always the case for
+        // the never-mapped shell. focusWidget() is what keyTarget() uses.
+        QVERIFY2(shell.focusWidget() == path,
+                 qPrintable(QStringLiteral("clicking the path bar left focus on %1")
+                                .arg(shell.focusWidget()
+                                         ? shell.focusWidget()->objectName()
+                                         : QStringLiteral("<null>"))));
+
+        // ...and then the keys must actually land in the field.
+        bridge.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Slash, Qt::NoModifier,
+                               QStringLiteral("/"));
+        QCoreApplication::processEvents();
+        QVERIFY2(path->text().contains(QLatin1Char('/')),
+                 qPrintable(QStringLiteral("typing did not reach the path bar (text=%1)")
+                                .arg(path->text())));
+
+        dock->reject();
+        QCoreApplication::processEvents();
     }
 };
 

@@ -91,6 +91,10 @@ public:
     QRect typeRect() const { return m_typeRect; }
     QRect nameDropRect() const { return m_nameDropRect; }
     QRect typeDropRect() const { return m_typeDropRect; }
+    QRect frameRect() const { return m_frameRect; }
+    // The field the user last clicked (null until then). Exposed because the
+    // focus mark is the only feedback a never-activated window can give.
+    QWidget* activeField() const { return m_activeField; }
     QRect okRect() const { return m_okRect; }
     QRect cancelRect() const { return m_cancelRect; }
     QRect helpRect() const { return m_helpRect; }
@@ -166,6 +170,7 @@ private:
     QLineEdit* m_edit = nullptr;
     QLineEdit* m_pathEdit = nullptr;
     QLineEdit* m_typeEdit = nullptr;
+    QWidget* m_activeField = nullptr;
     QPushButton* m_ok = nullptr;
     QPushButton* m_cancel = nullptr;
     QPushButton* m_help = nullptr;

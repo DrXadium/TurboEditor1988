@@ -11,6 +11,7 @@
 #include "../shell/MenuBar.h"
 #include <QKeyEvent>
 #include <QApplication>
+#include <QFile>
 #include <QAction>
 
 ContentBridge::ContentBridge(QObject* parent) : QObject(parent) {}
@@ -213,6 +214,33 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
         return;
     }
     target = hit ? hit : m_shell;
+    // Dev aid (unset in normal runs): CRT_KATE_MOUSELOG=<file> records what a
+    // forwarded press resolved to and where focus went. A click that "does
+    // nothing" is almost always a hit-test disagreement, and the shell is never
+    // mapped so there is no other way to see it.
+    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress) {
+        const QByteArray logPath = qgetenv("CRT_KATE_MOUSELOG");
+        if (!logPath.isEmpty()) {
+            if (QFile f(QString::fromLocal8Bit(logPath));
+                f.open(QIODevice::Append | QIODevice::Text)) {
+                // QApplication::focusWidget() is null for a window that was
+                // never activated (the shell is WA_DontShowOnScreen), so report
+                // the shell's own focus child - that is what keyTarget() uses.
+                const QWidget* focused = m_shell->focusWidget();
+                f.write(QStringLiteral("press shell=%1,%2 hit=%3 focus=%4\n")
+                            .arg(shellLocal.x()).arg(shellLocal.y())
+                            .arg(hit ? (hit->objectName().isEmpty()
+                                            ? QString::fromLatin1(hit->metaObject()->className())
+                                            : hit->objectName())
+                                     : QStringLiteral("<null>"))
+                            .arg(focused ? (focused->objectName().isEmpty()
+                                                ? QString::fromLatin1(focused->metaObject()->className())
+                                                : focused->objectName())
+                                         : QStringLiteral("<null>"))
+                            .toUtf8());
+            }
+        }
+    }
     // Convert through GLOBAL, never mapFrom(parent, pos): a popup is a top-level
     // window that merely happens to have a parent widget. QWidget::mapFrom walks
     // the parent chain subtracting each pos(), so for a status-bar dropdown
@@ -257,6 +285,25 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
     if (!target)
         return;
     const auto evType = static_cast<QEvent::Type>(type);
+
+    // Dev aid (unset in normal runs): CRT_KATE_MOUSELOG also records where each
+    // keystroke went. "I cannot type in X" is either a key-target problem or a
+    // widget problem, and this tells them apart.
+    {
+        const QByteArray logPath = qgetenv("CRT_KATE_MOUSELOG");
+        if (!logPath.isEmpty()) {
+            if (QFile f(QString::fromLocal8Bit(logPath));
+                f.open(QIODevice::Append | QIODevice::Text)) {
+                f.write(QStringLiteral("key type=%1 target=%2 text=%3\n")
+                            .arg(type)
+                            .arg(target->objectName().isEmpty()
+                                     ? QString::fromLatin1(target->metaObject()->className())
+                                     : target->objectName())
+                            .arg(text)
+                            .toUtf8());
+            }
+        }
+    }
     auto* ev = new QKeyEvent(evType, static_cast<Qt::Key>(key),
                              static_cast<Qt::KeyboardModifiers>(modifiers), text);
 
