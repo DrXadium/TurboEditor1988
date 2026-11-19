@@ -60,6 +60,8 @@ add_library(crt-shell STATIC
   src/shell/TvFileDock.cpp
   src/shell/TvModal.cpp
   src/shell/TvModal.h
+  src/shell/TvCheckBox.cpp
+  src/shell/TvCheckBox.h
   src/shell/TvFileDock.h
   src/shell/RecentFilesStore.cpp
   src/shell/RecentFilesStore.h
@@ -231,6 +233,11 @@ add_test(NAME tst_recents COMMAND tst_recents)
 add_executable(tst_tvmodal tests/tst_tvmodal.cpp)
 target_link_libraries(tst_tvmodal PRIVATE crt-shell Qt6::Test Qt6::Widgets)
 add_test(NAME tst_tvmodal COMMAND tst_tvmodal)
+
+# The TV widget kit: checkbox, spin box, tab bar. ctest -R tst_tvkit
+add_executable(tst_tvkit tests/tst_tvkit.cpp)
+target_link_libraries(tst_tvkit PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_tvkit COMMAND tst_tvkit)
 
 # GUI pass 2026-11-17, Task 3: the spell section of the editor right-click
 # menu (bold headline, hover popout, suggestions / add / ignore). ctest -R tst_spellmenu
