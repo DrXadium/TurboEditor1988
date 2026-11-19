@@ -30,6 +30,8 @@
 #include "src/shell/BottomBand.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/shell/TvFileDock.h"
+#include "src/shell/RecentFilesStore.h"
+#include <QStandardPaths>
 #include "src/shell/BorlandMenu.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
@@ -359,6 +361,16 @@ int main(int argc, char** argv)
     // Loaded at startup; persisted on quit so the dialog's changes survive restart.
     CrtSettings crtSettings;
     const bool settingsLoaded = crtSettings.load();
+
+    // The file dock's recents (MRU-10). Pinned to the LEGACY storage id for the
+    // same reason as the sessions and the settings: a rename must not orphan
+    // the user's history.
+    const QString recentsIni =
+        QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+        + QLatin1Char('/') + AppIdentity::storageDirName()
+        + QStringLiteral("/recents.ini");
+    RecentFilesStore recentFiles(recentsIni);
+
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &crtSettings,
                      [&crtSettings] {
                          crtSettings.restoreDevBrightness();   // don't persist CRT_KATE_BRIGHT
@@ -392,24 +404,29 @@ int main(int argc, char** argv)
         // child of the shell so it lands inside the CRT texture. A native
         // QFileDialog opens a host-themed top-level window above the CRT scene,
         // which is exactly what the user asked to get rid of.
-        on(act("actionFileOpen"), [&shell, &tabs] {
+        on(act("actionFileOpen"), [&shell, &tabs, &recentFiles] {
             const QString f = TvFileDock::getOpenFileName(
                 &shell, QObject::tr("Open File"),
-                QDir::currentPath(), QStringLiteral("All files (*)"));
-            if (!f.isEmpty())
+                QDir::currentPath(), QStringLiteral("All files (*)"),
+                recentFiles.entries());
+            if (!f.isEmpty()) {
                 tabs.openFile(QUrl::fromLocalFile(f));
+                recentFiles.add(f);
+            }
         });
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
-        on(act("actionFileSaveAs"), [&shell, &tabs] {
+        on(act("actionFileSaveAs"), [&shell, &tabs, &recentFiles] {
             QString start = QDir::currentPath();
             if (auto* d = tabs.activeDocument())
                 if (!d->url().isEmpty())
                     start = QFileInfo(d->url().toLocalFile()).absolutePath();
             const QString f = TvFileDock::getSaveFileName(
                 &shell, QObject::tr("Save File As"), start,
-                QStringLiteral("All files (*)"));
-            if (!f.isEmpty())
+                QStringLiteral("All files (*)"), recentFiles.entries());
+            if (!f.isEmpty()) {
                 tabs.saveActiveAs(QUrl::fromLocalFile(f));
+                recentFiles.add(f);
+            }
         });
 
         // Edit: undo / redo. They are enabled from the manager's history signal
@@ -896,12 +913,13 @@ int main(int argc, char** argv)
     // to stay alive for the capture.
     if (const QByteArray which = qgetenv("CRT_KATE_FILEDLG"); !which.isEmpty()) {
         const bool save = (which == QByteArrayLiteral("save"));
-        QTimer::singleShot(800, &app, [&shell, save]() {
+        QTimer::singleShot(800, &app, [&shell, save, &recentFiles]() {
             TvFileDock::openOn(&shell, save ? TvFileDock::Save : TvFileDock::Open,
                                save ? QObject::tr("Save File As")
                                     : QObject::tr("Open File"),
                                QDir::currentPath(),
-                               QStringLiteral("All files (*)"));
+                               QStringLiteral("All files (*)"),
+                               recentFiles.entries());
         });
     }
 

@@ -98,16 +98,19 @@ public:
     // Show a dock over `anchor` and return it (not modal: the caller decides).
     static TvFileDock* openOn(QWidget* anchor, Mode mode, const QString& title,
                               const QString& dir = QString(),
-                              const QString& filter = QString());
+                              const QString& filter = QString(),
+                              const QStringList& recents = QStringList());
     // Modal convenience wrappers used by the File menu. They run a local event
     // loop (a plain widget has no popup grab, so unlike QMenu::exec this one
     // exits reliably on dialogFinished).
     static QString getOpenFileName(QWidget* anchor, const QString& title,
                                    const QString& dir = QString(),
-                                   const QString& filter = QString());
+                                   const QString& filter = QString(),
+                                   const QStringList& recents = QStringList());
     static QString getSaveFileName(QWidget* anchor, const QString& title,
                                    const QString& dir = QString(),
-                                   const QString& filter = QString());
+                                   const QString& filter = QString(),
+                                   const QStringList& recents = QStringList());
 
 signals:
     void dialogFinished(const QString& path);
@@ -129,7 +132,8 @@ protected:
 private:
     // Shared modal round loop for the two convenience wrappers.
     static QString runModal(QWidget* anchor, Mode mode, const QString& title,
-                            const QString& dir, const QString& filter);
+                            const QString& dir, const QString& filter,
+                            const QStringList& recents);
 
     void refreshFiles();
     QStringList filterGlobs() const;           // "Text files (*.txt)" -> {"*.txt"}

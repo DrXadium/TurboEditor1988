@@ -436,14 +436,16 @@ void TvFileDock::layoutChildren()
 
     // Bottom block, laid out UPWARD from the status row so the new rows grow
     // into the space the list gives up, never past the frame.
+    const int dropW = qMax(cw * 2, 14);          // a real click target, not a sliver
+    const int fieldW = qMax(cw * 8, listW - dropW - 5);
     const int typeTop = m_statusRect.top() - 6 - entryH;
-    m_typeRect = QRect(x0, typeTop, listW, entryH);
+    m_typeRect = QRect(x0, typeTop, fieldW, entryH);
     m_typeLabelRect = QRect(x0, typeTop - 2 - ch, listW, ch);
-    m_typeDropRect = QRect(m_typeRect.right() + 5, typeTop, cw, entryH);
+    m_typeDropRect = QRect(m_typeRect.right() + 5, typeTop, dropW, entryH);
 
     const int nameTop = m_typeLabelRect.top() - 6 - entryH;
-    m_nameRect = QRect(x0, nameTop, qMax(cw * 8, listW - cw - 6), entryH);
-    m_nameDropRect = QRect(m_nameRect.right() + 5, nameTop, cw, entryH);
+    m_nameRect = QRect(x0, nameTop, fieldW, entryH);
+    m_nameDropRect = QRect(m_nameRect.right() + 5, nameTop, dropW, entryH);
     m_nameLabelRect = QRect(x0, nameTop - 2 - ch, listW, ch);
 
     // Top block: the path bar.
@@ -800,13 +802,15 @@ bool TvFileDock::eventFilter(QObject* watched, QEvent* ev)
 // --- entry points -----------------------------------------------------------
 
 TvFileDock* TvFileDock::openOn(QWidget* anchor, Mode mode, const QString& title,
-                               const QString& dir, const QString& filter)
+                               const QString& dir, const QString& filter,
+                               const QStringList& recents)
 {
     auto* dock = new TvFileDock(anchor);
     dock->setMode(mode);
     dock->setTitle(title);
     if (!filter.isEmpty())
         dock->setFilter(filter);
+    dock->setRecents(recents);
     dock->setDirectory(dir);
     // Size it like a TV modal: a fixed share of the host, clamped.
     const QSize host = anchor ? anchor->size() : QSize(900, 600);
@@ -822,15 +826,17 @@ TvFileDock* TvFileDock::openOn(QWidget* anchor, Mode mode, const QString& title,
 }
 
 QString TvFileDock::getOpenFileName(QWidget* anchor, const QString& title,
-                                    const QString& dir, const QString& filter)
+                                    const QString& dir, const QString& filter,
+                                    const QStringList& recents)
 {
-    return runModal(anchor, Open, title, dir, filter);
+    return runModal(anchor, Open, title, dir, filter, recents);
 }
 
 QString TvFileDock::getSaveFileName(QWidget* anchor, const QString& title,
-                                    const QString& dir, const QString& filter)
+                                    const QString& dir, const QString& filter,
+                                    const QStringList& recents)
 {
-    return runModal(anchor, Save, title, dir, filter);
+    return runModal(anchor, Save, title, dir, filter, recents);
 }
 
 // The modal round loop. QMenu::exec() deadlocks under this shell (the popup has
@@ -838,13 +844,15 @@ QString TvFileDock::getSaveFileName(QWidget* anchor, const QString& title,
 // different code path: this loop exits as soon as the dock reports a result,
 // which the OK/Cancel buttons and the Escape/Return keys all emit.
 QString TvFileDock::runModal(QWidget* anchor, Mode mode, const QString& title,
-                             const QString& dir, const QString& filter)
+                             const QString& dir, const QString& filter,
+                             const QStringList& recents)
 {
     TvFileDock dock(anchor);
     dock.setMode(mode);
     dock.setTitle(title);
     if (!filter.isEmpty())
         dock.setFilter(filter);
+    dock.setRecents(recents);
     dock.setDirectory(dir);
     const QSize host = anchor ? anchor->size() : QSize(900, 600);
     const int w = qBound(420, int(host.width() * 0.72), 760);
