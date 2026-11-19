@@ -38,6 +38,8 @@
 #include "src/editor/StatusSelectors.h"
 #include "src/settings/CrtSettings.h"
 #include "src/settings/SettingsDialog.h"
+#include "src/shell/AboutModal.h"
+#include "src/shell/TvModal.h"
 #include "src/session/SessionManager.h"
 #include "src/autosave/AutosaveService.h"
 #include <ktexteditor/view.h>
@@ -540,16 +542,11 @@ int main(int argc, char** argv)
             dlg.exec();
         });
 
-        // Help
+        // Help. About is a house-style modal child of the shell, not a
+        // QMessageBox: a native window would land outside the CRT pass.
         on(act("actionHelpAbout"), [&shell] {
-            QMessageBox::about(
-                &shell,
-                QObject::tr("About %1").arg(AppIdentity::displayName()),
-                QObject::tr("<b>%1</b> - Kate-class editing in a "
-                            "Borland-style shell with cool-retro-term CRT "
-                            "effects.<br>Built on KTextEditor (KDE "
-                            "Frameworks) and Qt.")
-                    .arg(AppIdentity::displayName()));
+            AboutModal about;
+            TvModal::exec(&shell, &about);
         });
 
         // Turbo Vision function keys (Task 12): the status line claims these,
@@ -726,6 +723,21 @@ int main(int argc, char** argv)
             probe->setObjectName(QStringLiteral("crtProbeMenu"));
             probe->move(40, 60);           // over the shell's top-left area
             probe->show();
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_MODAL=about shows the real
+    // house-style About modal over the shell before CRT_KATE_SHOT captures it.
+    // Shown WITHOUT the round loop - exec() would block the capture timer.
+    if (const QByteArray which = qgetenv("CRT_KATE_MODAL"); which == "about") {
+        QTimer::singleShot(700, &app, [&shell]() {
+            auto* modal = new AboutModal(&shell);
+            const QSize want = modal->sizeHint();
+            modal->resize(want);
+            modal->move((shell.width() - want.width()) / 2,
+                        (shell.height() - want.height()) / 2);
+            modal->show();
+            modal->raise();
         });
     }
 

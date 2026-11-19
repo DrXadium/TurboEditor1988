@@ -30,6 +30,16 @@ const char* kPlateQss =
     "QPushButton:hover { background-color: #1FBE1F; }"
     "QPushButton:pressed { background-color: #148A14; }";
 
+// The width a plate actually gets. setGeometry() is clamped by the widget's own
+// minimum size, and the app-wide QSS font makes that minimum wider than the
+// text alone - which is how the OK plate ended up covering the frame's right
+// column. Ask the widget what it needs, then honour it.
+int plateWidth(const QPushButton* button, int cellW, const QFontMetrics& fm)
+{
+    const int wanted = qMax(6 * cellW, fm.horizontalAdvance(button->text()) + 4 * cellW);
+    return qMax(wanted, qMax(button->minimumSizeHint().width(), button->minimumSize().width()));
+}
+
 } // namespace
 
 TvModal::TvModal(QWidget* parent)
@@ -124,7 +134,7 @@ QSize TvModal::sizeHint() const
     int buttonsW = 0;
     const QFontMetrics fm = fontMetrics();
     for (const Button& b : m_buttons)
-        buttonsW += qMax(6 * cw, fm.horizontalAdvance(b.widget->text()) + 4 * cw) + 2 * cw;
+        buttonsW += plateWidth(b.widget, cw, fm) + 2 * cw;
 
     const int w = qMax(bodyHint.width(), buttonsW) + 2 * (cw + kPad) + kShadowOffset;
     const int h = bodyHint.height()
@@ -147,7 +157,7 @@ void TvModal::layoutChildren()
     const QFontMetrics fm = fontMetrics();
     int x = inner.right();
     for (Button& b : m_buttons) {
-        const int w = qMax(6 * cw, fm.horizontalAdvance(b.widget->text()) + 4 * cw);
+        const int w = plateWidth(b.widget, cw, fm);
         b.rect = QRect(x - w + 1, inner.bottom() - buttonH + 1, w, buttonH);
         b.widget->setGeometry(b.rect);
         x = b.rect.left() - 2 * cw;

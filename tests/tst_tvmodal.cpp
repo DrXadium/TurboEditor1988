@@ -12,7 +12,11 @@
 #include <QSignalSpy>
 #include <QTimer>
 #include <QWidget>
+#include <QPushButton>
 #include "src/shell/TvModal.h"
+#include "src/shell/AboutModal.h"
+#include "src/AppIdentity.h"
+#include <QLabel>
 
 namespace {
 
@@ -60,6 +64,11 @@ private slots:
     void exec_centres_the_modal_over_its_anchor();
     void a_modal_larger_than_its_anchor_is_clamped();
     void buttons_get_a_block_shadow();
+    void the_button_row_stays_inside_the_frame();
+
+    // About
+    void about_shows_the_display_name_and_one_ok_plate();
+    void the_about_text_is_not_empty();
 };
 
 // The chrome the file dock established, on a bare modal: gray panel inside a
@@ -239,6 +248,67 @@ void TstTvModal::buttons_get_a_block_shadow()
     const QColor shadow = img.pixelColor(ok.right() + 3, ok.center().y());
     QVERIFY2(isBlack(shadow),
              qPrintable(QStringLiteral("the OK plate has no block shadow (%1)").arg(rgb(shadow))));
+}
+
+// Caught live: the OK plate covered the frame's right column and the shadow
+// gutter. setGeometry() is clamped by the widget's own minimum size, so a
+// button that cannot shrink to the width layout computed overflows to the
+// right - which is what the app-wide QSS font does to these plates.
+void TstTvModal::the_button_row_stays_inside_the_frame()
+{
+    TvModal m;
+    m.addButton(QStringLiteral("OK"), TvModal::Accept);
+    m.addButton(QStringLiteral("Cancel"), TvModal::Reject);
+    // Force the condition: a plate that cannot shrink to the computed width.
+    for (auto* b : m.findChildren<QPushButton*>())
+        b->setMinimumWidth(150);
+
+    // A size that is NOT the sizeHint, the way exec() and the dev aid set it.
+    m.resize(520, 300);
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    const QRect f = m.frameRect();
+    const int cw = m.cellWidth();
+    const auto buttons = m.findChildren<QPushButton*>();
+    QCOMPARE(buttons.size(), 2);
+    for (QPushButton* b : buttons) {
+        const QRect g(b->geometry());
+        QVERIFY2(g.right() <= f.right() - cw,
+                 qPrintable(QStringLiteral("a plate ends at %1, past the frame column at %2")
+                                .arg(g.right()).arg(f.right() - cw)));
+        QVERIFY2(g.left() >= f.left() + cw,
+                 qPrintable(QStringLiteral("a plate starts at %1, left of the frame column at %2")
+                                .arg(g.left()).arg(f.left() + cw)));
+        QVERIFY2(g.bottom() <= f.bottom() - 1,
+                 qPrintable(QStringLiteral("a plate ends at %1, below the frame").arg(g.bottom())));
+        QVERIFY2(g.width() >= b->minimumWidth(),
+                 "the plate is narrower than its own minimum");
+    }
+}
+
+// Help > About used to be a host-themed QMessageBox above the CRT scene.
+void TstTvModal::about_shows_the_display_name_and_one_ok_plate()
+{
+    AboutModal m;
+    QVERIFY2(m.title().contains(AppIdentity::displayName()),
+             qPrintable(QStringLiteral("the title is %1").arg(m.title())));
+    QCOMPARE(m.buttonCount(), 1);
+
+    auto* label = m.findChild<QLabel*>(QStringLiteral("tvAboutText"));
+    QVERIFY2(label, "the about text is missing");
+    QVERIFY2(label->text().contains(AppIdentity::displayName()),
+             "the about text does not name the app");
+}
+
+void TstTvModal::the_about_text_is_not_empty()
+{
+    AboutModal m;
+    auto* label = m.findChild<QLabel*>(QStringLiteral("tvAboutText"));
+    QVERIFY(label);
+    QVERIFY2(label->text().trimmed().size() > 40,
+             qPrintable(QStringLiteral("the about text is only %1 chars")
+                            .arg(label->text().trimmed().size())));
 }
 
 QTEST_MAIN(TstTvModal)
