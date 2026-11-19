@@ -86,6 +86,11 @@ private slots:
     // leaves the plate bright and shifted forever.
     void a_press_and_release_on_a_modal_plate_reverts_it();
 
+    // The Find and Replace dialog needs plates that ACT without closing it
+    // (Find Next / Replace / Replace All). addButton() always closes, so the
+    // kit gains an action plate.
+    void an_action_plate_acts_without_closing_the_modal();
+
     // About
     void about_shows_the_display_name_and_one_ok_plate();
     void the_about_text_is_not_empty();
@@ -465,6 +470,31 @@ void TstTvModal::a_press_and_release_on_a_modal_plate_reverts_it()
     QVERIFY2(!(corner.green() > 0xAA && corner.red() > 0x20),
              qPrintable(QStringLiteral("the plate is still shifted after release - its corner is %1")
                             .arg(rgb(corner))));
+}
+
+void TstTvModal::an_action_plate_acts_without_closing_the_modal()
+{
+    TvModal m;
+    m.resize(460, 260);
+    m.addButton(QStringLiteral("Cancel"), TvModal::Reject);
+    QPushButton* action = m.addActionButton(QStringLiteral("Find Next"));
+    QVERIFY2(action, "addActionButton returned no plate");
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    auto* closer = m.findChild<QPushButton*>(QStringLiteral("tvModalButton"));
+    QVERIFY(closer);
+
+    QSignalSpy finished(&m, &TvModal::finished);
+    QSignalSpy acted(action, &QPushButton::clicked);
+
+    QTest::mouseClick(action, Qt::LeftButton);
+    QCOMPARE(acted.count(), 1);
+    QCOMPARE(finished.count(), 0);   // the action plate does NOT close the modal
+
+    QTest::mouseClick(closer, Qt::LeftButton);
+    QCOMPARE(finished.count(), 1);   // ...while a role plate still does
+    QCOMPARE(finished.at(0).at(0).toInt(), int(TvModal::Reject));
 }
 
 // Help > About used to be a host-themed QMessageBox above the CRT scene.

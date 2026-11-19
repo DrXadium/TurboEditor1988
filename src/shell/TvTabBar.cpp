@@ -12,6 +12,8 @@ namespace {
 const QColor kPanelGray(0xAA, 0xAA, 0xAA);
 const QColor kFieldBlue(0x00, 0x00, 0xAA);
 const QColor kInk(Qt::white);
+// A disabled chip's label: visible on the blue field, clearly dimmer than white.
+const QColor kInkDim(0x55, 0x55, 0x55);
 const QColor kBlack(Qt::black);
 const int kStartX = 2;
 } // namespace
@@ -38,11 +40,25 @@ void TvTabBar::addTab(const QString& text)
 {
     m_tabs.append(text);
     m_rects.append(QRect());
+    m_enabled.append(true);
     if (m_current < 0)
         m_current = 0;      // the first tab is current, silently
     layoutChips();
     updateGeometry();
     update();
+}
+
+void TvTabBar::setTabEnabled(int index, bool on)
+{
+    if (index < 0 || index >= m_enabled.size() || m_enabled.at(index) == on)
+        return;
+    m_enabled[index] = on;
+    update();
+}
+
+bool TvTabBar::isTabEnabled(int index) const
+{
+    return index >= 0 && index < m_enabled.size() && m_enabled.at(index);
 }
 
 void TvTabBar::setCurrentIndex(int index)
@@ -112,7 +128,7 @@ void TvTabBar::paintEvent(QPaintEvent*)
         } else {
             p.fillRect(QRect(r.left(), r.bottom(), r.width(), 1), kBlack);
         }
-        p.setPen(active ? kBlack : kInk);
+        p.setPen(!isTabEnabled(i) ? kInkDim : (active ? kBlack : kInk));
         p.drawText(r, Qt::AlignCenter, m_tabs.at(i));
     }
 }
@@ -125,6 +141,12 @@ void TvTabBar::mousePressEvent(QMouseEvent* ev)
     }
     for (int i = 0; i < m_rects.size(); ++i) {
         if (m_rects.at(i).contains(ev->pos())) {
+            if (!isTabEnabled(i)) {
+                // Clicked a chip that is not available (no selection, say):
+                // swallow it and keep the current scope.
+                ev->accept();
+                return;
+            }
             setCurrentIndex(i);
             ev->accept();
             return;

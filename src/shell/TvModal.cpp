@@ -96,6 +96,24 @@ void TvModal::addButton(const QString& text, int role)
     updateGeometry();
 }
 
+QPushButton* TvModal::addActionButton(const QString& text)
+{
+    auto* button = new TvPlate(text, this);
+    // A distinct name: role plates all share "tvModalButton", and tests (plus
+    // the dialogs that own action plates) need to tell them apart.
+    button->setObjectName(QStringLiteral("tvModalAction"));
+    button->setInk(Qt::white);
+    button->setBackdrop(kPanelGray);
+    button->setShadowOffset(kButtonShadow);
+    button->setCursor(Qt::ArrowCursor);
+    // No role wiring on purpose: the caller connects clicked(), so the modal
+    // stays open and the button can act again.
+    m_buttons.append({button, -1, QRect()});
+    layoutChildren();
+    updateGeometry();
+    return button;
+}
+
 QRect TvModal::buttonRect(int index) const
 {
     if (index < 0 || index >= m_buttons.size())

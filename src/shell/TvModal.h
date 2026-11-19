@@ -41,6 +41,12 @@ public:
     // index 0 is the rightmost plate. Accept/Reject close the modal; any other
     // role closes it with that role.
     void addButton(const QString& text, int role);
+
+    // A plate that ACTS instead of closing: laid out exactly like the others
+    // (right to left, same width rules) but not wired to accept()/reject(). The
+    // caller connects clicked(). Find Next / Replace / Replace All need this -
+    // they act on the document and keep the dialog open.
+    QPushButton* addActionButton(const QString& text);
     int buttonCount() const { return m_buttons.size(); }
     QRect buttonRect(int index) const;
 

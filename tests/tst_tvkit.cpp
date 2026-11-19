@@ -89,6 +89,7 @@ private slots:
     void the_stepper_cells_have_no_black_outline();
     void the_stepper_cells_draw_their_arrows();
     void pressing_a_stepper_highlights_it_and_release_reverts_without_a_shadow();
+    void a_disabled_chip_ignores_clicks_and_paints_dimmed();
     void the_spin_field_has_no_white_border();
 
     // TvTabBar
@@ -550,6 +551,42 @@ void TstTvKit::pressing_a_stepper_highlights_it_and_release_reverts_without_a_sh
              qPrintable(QStringLiteral("the vacated corner did not refill - %1,%2,%3")
                             .arg(cornerBack.red()).arg(cornerBack.green())
                             .arg(cornerBack.blue())));
+}
+
+// The Find and Replace dialog's scope row is a TvTabBar whose "Selection" chip
+// must be unavailable when nothing is selected: a disabled chip ignores clicks
+// and paints dimmed, so it cannot be mistaken for a live choice.
+void TstTvKit::a_disabled_chip_ignores_clicks_and_paints_dimmed()
+{
+    TvTabBar bar;
+    bar.addTab(QStringLiteral("Current document"));
+    bar.addTab(QStringLiteral("All documents"));
+    bar.addTab(QStringLiteral("Selection"));
+    bar.setCurrentIndex(0);
+    bar.setTabEnabled(2, false);
+    QVERIFY(!bar.isTabEnabled(2));
+    QVERIFY(bar.isTabEnabled(0));
+    bar.resize(bar.sizeHint());
+    bar.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&bar));
+
+    const QRect disabled = bar.tabRect(2);
+    const QRect enabled = bar.tabRect(1);
+    QVERIFY(!disabled.isNull() && !enabled.isNull());
+
+    QTest::mouseClick(&bar, Qt::LeftButton, Qt::NoModifier, disabled.center());
+    QCOMPARE(bar.currentIndex(), 0);   // the disabled chip ignored the click
+
+    const QImage img = bar.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    const int enabledInk = countColorIn(img, QColor(Qt::white), 20, enabled);
+    QVERIFY2(enabledInk > 10,
+             qPrintable(QStringLiteral("the enabled chip has no white label ink (%1 px) - "
+                                       "the fixture is broken")
+                            .arg(enabledInk)));
+    const int disabledInk = countColorIn(img, QColor(Qt::white), 20, disabled);
+    QVERIFY2(disabledInk == 0,
+             qPrintable(QStringLiteral("the disabled chip still paints white ink (%1 px)")
+                            .arg(disabledInk)));
 }
 
 // Reported live: the blue boxes should not have white borders. The field is a

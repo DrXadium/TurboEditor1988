@@ -21,6 +21,11 @@ public:
     int currentIndex() const { return m_current; }
     QRect tabRect(int index) const;
 
+    // A disabled chip cannot be selected and paints dimmed. The Find and
+    // Replace dialog's "Selection" scope uses this when nothing is selected.
+    void setTabEnabled(int index, bool on);
+    bool isTabEnabled(int index) const;
+
     QSize sizeHint() const override;
 
 signals:
@@ -38,5 +43,6 @@ private:
 
     QList<QString> m_tabs;
     QList<QRect> m_rects;
+    QList<bool> m_enabled;
     int m_current = -1;
 };
