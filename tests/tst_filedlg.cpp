@@ -651,6 +651,43 @@ private slots:
         delete dock;
     }
 
+    // Refactor guard (house-style round, Task 1): the frame drawing moves into
+    // TvFrame::drawDoubleFrame, so pin what it must keep producing. Green
+    // before AND after the extraction - a red here means the frame was already
+    // broken and the refactor must not start.
+    void the_frame_is_a_white_double_line_box_with_a_centred_title()
+    {
+        TvFileDock dock;
+        dock.setTitle(QStringLiteral("Save File As"));
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect f = dock.frameRect();
+        const int cw = dock.cellWidth();
+        const int ch = dock.cellHeight();
+        QVERIFY2(cw > 0 && ch > 0, "the dock has no character cell");
+
+        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                              QRect(f.left(), f.top(), f.width(), ch)) > 100,
+                 "the top row carries no white frame ink");
+        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                              QRect(f.left(), f.bottom() - ch + 1, f.width(), ch)) > 100,
+                 "the bottom row carries no white frame ink");
+        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                              QRect(f.left(), f.top(), cw, f.height())) > 100,
+                 "the left column carries no white frame ink");
+        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                              QRect(f.right() - cw + 1, f.top(), cw, f.height())) > 100,
+                 "the right column carries no white frame ink");
+
+        // The too-small guard inside the frame drawing is unreachable through
+        // the dock (it enforces a minimum size), so it is covered directly on
+        // TvFrame::drawDoubleFrame in tst_tvkit.
+    }
+
     // Reported live: "there's no indication anything worked". The shell window
     // is never active, so a QLineEdit never draws a caret - the click has to
     // show itself. Clicking a field highlights its content and draws a yellow

@@ -92,6 +92,10 @@ public:
     QRect nameDropRect() const { return m_nameDropRect; }
     QRect typeDropRect() const { return m_typeDropRect; }
     QRect frameRect() const { return m_frameRect; }
+    // The character cell the dock lays everything out on (exposed for tests
+    // and for anything that has to line up with the frame).
+    int cellWidth() const { return cellW(); }
+    int cellHeight() const { return cellH(); }
     // The field the user last clicked (null until then). Exposed because the
     // focus mark is the only feedback a never-activated window can give.
     QWidget* activeField() const { return m_activeField; }

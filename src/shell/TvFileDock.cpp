@@ -596,49 +596,14 @@ void TvFileDock::paintEvent(QPaintEvent*)
     // plate covers the overlap and only the offset L survives.
     for (const QRect& plate : {m_okRect, m_cancelRect, m_helpRect})
         if (!plate.isNull())
-            p.fillRect(plate.translated(kButtonShadow, kButtonShadow), kBlack);
+            TvFrame::drawPlateShadow(p, plate, kButtonShadow);
 
-    // White DOUBLE-line frame, drawn with the CP437 glyphs so it tiles.
-    const QRect f = m_frameRect;
-    if (f.width() < 4 * cw || f.height() < 3 * ch)
+    // White double-line frame with the title in the top row (shared with
+    // every other TV modal - see TvFrame::drawDoubleFrame).
+    if (!TvFrame::drawDoubleFrame(p, m_frameRect,
+                                  m_title.isEmpty() ? QStringLiteral("File") : m_title,
+                                  cw, ch))
         return;
-    // Top row: \u2554 \u2550 title \u2550 \u2557
-    TvFrame::glyph(p, QRect(f.left(), f.top(), cw, ch), QChar(0x2554), kWhite);
-    TvFrame::glyph(p, QRect(f.right() - cw + 1, f.top(), cw, ch), QChar(0x2557), kWhite);
-    const QString title = m_title.isEmpty() ? QStringLiteral("File") : m_title;
-    int titleCells = (fm.horizontalAdvance(title) + cw - 1) / cw;
-    titleCells = qMin(titleCells, qMax(1, f.width() / cw - 8));
-    const int titleW = (titleCells + 2) * cw;
-    int titleX = f.left() + ((f.width() - titleW) / 2 / cw) * cw;
-    if (titleX < f.left() + cw)
-        titleX = f.left() + cw;
-    if (titleX > f.left() + cw)
-        TvFrame::tileH(p, QRect(f.left() + cw, f.top(), titleX - f.left() - cw, ch),
-                       cw, QChar(0x2550), kWhite);
-    {
-        QFont tf = font();
-        tf.setStyleStrategy(QFont::NoAntialias);
-        p.save();
-        p.setFont(tf);
-        p.setPen(kWhite);
-        p.drawText(QRect(titleX, f.top(), titleW, ch), Qt::AlignCenter, title);
-        p.restore();
-    }
-    const int afterTitle = titleX + titleW;
-    if (afterTitle < f.right() - cw)
-        TvFrame::tileH(p, QRect(afterTitle, f.top(), f.right() - cw - afterTitle + 1, ch),
-                       cw, QChar(0x2550), kWhite);
-
-    // Bottom row: \u255a \u2550 \u255d
-    TvFrame::glyph(p, QRect(f.left(), f.bottom() - ch + 1, cw, ch), QChar(0x255A), kWhite);
-    TvFrame::glyph(p, QRect(f.right() - cw + 1, f.bottom() - ch + 1, cw, ch), QChar(0x255D), kWhite);
-    TvFrame::tileH(p, QRect(f.left() + cw, f.bottom() - ch + 1,
-                            f.width() - 2 * cw, ch), cw, QChar(0x2550), kWhite);
-    // Side columns: \u2551
-    TvFrame::tileV(p, QRect(f.left(), f.top() + ch, cw, f.height() - 2 * ch), ch,
-                   QChar(0x2551), kWhite);
-    TvFrame::tileV(p, QRect(f.right() - cw + 1, f.top() + ch, cw, f.height() - 2 * ch), ch,
-                   QChar(0x2551), kWhite);
 
     // Yellow labels.
     QFont inkFont = font();

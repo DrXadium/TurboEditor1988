@@ -2,8 +2,10 @@
 #pragma once
 #include <QColor>
 #include <QFont>
+#include <QFontMetrics>
 #include <QPainter>
 #include <QRect>
+#include <QString>
 
 // Turbo Vision double-line frame rules, drawn at CHARACTER-CELL scale.
 //
@@ -110,6 +112,72 @@ inline void tileV(QPainter& p, const QRect& band, int cellH, QChar ch, const QCo
     for (int y = band.top(); y <= band.bottom(); y += cellH)
         glyph(p, QRect(band.left(), y, band.width(), cellH), ch, ink);
     p.restore();
+}
+
+// The whole TV modal frame: \u2554 \u2550 title \u2550 \u2557 across the top,
+// \u2551 down both sides, \u255a \u2550 \u255d along the bottom, all in white.
+// The title is centred on a cell boundary and clamped so the corner cells are
+// never eaten; it is drawn in the painter's current font.
+//
+// Returns false and draws NOTHING when `f` cannot hold a 4x3-cell box: a
+// partial box reads as a broken border, which is worse than none.
+inline bool drawDoubleFrame(QPainter& p, const QRect& f, const QString& title,
+                            int cellW, int cellH)
+{
+    if (cellW <= 0 || cellH <= 0 || f.width() < 4 * cellW || f.height() < 3 * cellH)
+        return false;
+    const QColor ink(Qt::white);
+    const QFontMetrics fm(p.font());
+
+    // Top row: \u2554 \u2550 title \u2550 \u2557
+    glyph(p, QRect(f.left(), f.top(), cellW, cellH), QChar(0x2554), ink);
+    glyph(p, QRect(f.right() - cellW + 1, f.top(), cellW, cellH), QChar(0x2557), ink);
+    int titleCells = (fm.horizontalAdvance(title) + cellW - 1) / cellW;
+    titleCells = qMin(titleCells, qMax(1, f.width() / cellW - 8));
+    const int titleW = (titleCells + 2) * cellW;
+    int titleX = f.left() + ((f.width() - titleW) / 2 / cellW) * cellW;
+    if (titleX < f.left() + cellW)
+        titleX = f.left() + cellW;
+    if (titleX > f.left() + cellW)
+        tileH(p, QRect(f.left() + cellW, f.top(), titleX - f.left() - cellW, cellH),
+              cellW, QChar(0x2550), ink);
+    {
+        QFont tf = p.font();
+        tf.setStyleStrategy(QFont::NoAntialias);
+        p.save();
+        p.setFont(tf);
+        p.setPen(ink);
+        p.drawText(QRect(titleX, f.top(), titleW, cellH), Qt::AlignCenter, title);
+        p.restore();
+    }
+    const int afterTitle = titleX + titleW;
+    if (afterTitle < f.right() - cellW)
+        tileH(p, QRect(afterTitle, f.top(), f.right() - cellW - afterTitle + 1, cellH),
+              cellW, QChar(0x2550), ink);
+
+    // Bottom row: \u255a \u2550 \u255d
+    glyph(p, QRect(f.left(), f.bottom() - cellH + 1, cellW, cellH), QChar(0x255A), ink);
+    glyph(p, QRect(f.right() - cellW + 1, f.bottom() - cellH + 1, cellW, cellH),
+          QChar(0x255D), ink);
+    tileH(p, QRect(f.left() + cellW, f.bottom() - cellH + 1, f.width() - 2 * cellW, cellH),
+          cellW, QChar(0x2550), ink);
+
+    // Side columns: \u2551
+    tileV(p, QRect(f.left(), f.top() + cellH, cellW, f.height() - 2 * cellH), cellH,
+          QChar(0x2551), ink);
+    tileV(p, QRect(f.right() - cellW + 1, f.top() + cellH, cellW, f.height() - 2 * cellH),
+          cellH, QChar(0x2551), ink);
+    return true;
+}
+
+// The hard black block shadow behind a plate (button, dropdown cell): the
+// caller paints it FIRST and then the plate over it, so only the offset L
+// survives on the right and bottom.
+inline void drawPlateShadow(QPainter& p, const QRect& plate, int offset)
+{
+    if (plate.isNull() || offset <= 0)
+        return;
+    p.fillRect(plate.translated(offset, offset), Qt::black);
 }
 
 } // namespace TvFrame
