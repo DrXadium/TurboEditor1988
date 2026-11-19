@@ -117,6 +117,14 @@ private slots:
     void the_status_reports_the_match_count();
     void the_status_reports_not_found_and_bad_pattern();
     void return_in_the_find_field_runs_find_next();
+
+    // Task 6: Replace and Replace All.
+    void replace_swaps_the_current_match_and_advances();
+    void replace_all_reports_the_count();
+    void replace_all_across_documents_reports_documents();
+    void one_replace_all_is_one_undo_step();
+    void an_empty_replacement_deletes_the_matches();
+    void the_selection_scope_uses_the_range_captured_at_open();
 };
 
 void TstFindDlg::initTestCase()
@@ -567,6 +575,130 @@ void TstFindDlg::return_in_the_find_field_runs_find_next()
     QTest::keyClick(dlg.findField(), Qt::Key_Return);
     QCOMPARE(tabs.activeView()->cursorPosition().column(), 8);
     QVERIFY2(dlg.isVisible(), "Return closed the dialog - TV behaviour is to stay open");
+}
+
+// ---- Task 6: Replace and Replace All ------------------------------------
+
+void TstFindDlg::replace_swaps_the_current_match_and_advances()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("one"));
+    dlg.replaceField()->setText(QStringLiteral("1"));
+    dlg.findNext();
+    dlg.replaceOne();
+
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("1 two one"));
+    QCOMPARE(selectedText(tabs), QStringLiteral("one"));   // the next hit is selected
+}
+
+void TstFindDlg::replace_all_reports_the_count()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("a a a"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("a"));
+    dlg.replaceField()->setText(QStringLiteral("b"));
+    dlg.replaceAll();
+
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("b b b"));
+    QCOMPARE(dlg.statusText(), QStringLiteral("Replaced 3"));
+}
+
+void TstFindDlg::replace_all_across_documents_reports_documents()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("a a"));
+    tabs.newDocument();
+    tabs.activeDocument()->setText(QStringLiteral("a"));
+    tabs.setActiveIndex(0);
+
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.setScope(FindReplaceDialog::Scope::AllDocuments);
+    dlg.findField()->setText(QStringLiteral("a"));
+    dlg.replaceField()->setText(QStringLiteral("b"));
+    dlg.replaceAll();
+
+    QCOMPARE(tabs.documents().at(0)->text(), QStringLiteral("b b"));
+    QCOMPARE(tabs.documents().at(1)->text(), QStringLiteral("b"));
+    QCOMPARE(dlg.statusText(), QStringLiteral("Replaced 3 in 2 documents"));
+}
+
+// This KTextEditor build has no undo API, so the manager keeps its own snapshot
+// stack: one replace-all must be ONE snapshot, or the user cannot undo it.
+void TstFindDlg::one_replace_all_is_one_undo_step()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("a a a"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("a"));
+    dlg.replaceField()->setText(QStringLiteral("b"));
+    dlg.replaceAll();
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("b b b"));
+
+    tabs.undo();
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("a a a"));
+}
+
+void TstFindDlg::an_empty_replacement_deletes_the_matches()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("a-b-a"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("a"));
+    dlg.replaceField()->setText(QString());
+    dlg.replaceAll();
+
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("-b-"));
+    QCOMPARE(dlg.statusText(), QStringLiteral("Replaced 2"));
+}
+
+// Moved from Task 4: it needs replaceAll() to exist. The Selection scope must
+// search the range captured when the dialog opened, NOT the selection Find Next
+// just made - otherwise picking Selection after a Find Next silently searches
+// the hit.
+void TstFindDlg::the_selection_scope_uses_the_range_captured_at_open()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("abc abc"));
+    KTextEditor::View* view = tabs.activeView();
+    view->setSelection(KTextEditor::Range(0, 0, 0, 3));   // first "abc"
+
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+    QVERIFY2(dlg.scopeBar()->isTabEnabled(2),
+             "a selection at open did not enable the Selection chip");
+
+    dlg.setScope(FindReplaceDialog::Scope::Selection);
+    dlg.findField()->setText(QStringLiteral("abc"));
+    dlg.replaceField()->setText(QStringLiteral("X"));
+    dlg.findNext();   // selects the hit inside the captured range...
+    dlg.replaceAll(); // ...which must still be the FIRST abc
+
+    QCOMPARE(tabs.activeDocument()->text(), QStringLiteral("X abc"));
 }
 
 QTEST_MAIN(TstFindDlg)

@@ -475,6 +475,77 @@ void FindReplaceDialog::findNextInAllDocuments(const QString& pattern,
     setStatus(countText(total));
 }
 
-void FindReplaceDialog::replaceOne() {}
+void FindReplaceDialog::replaceOne()
+{
+    const QString pattern = m_findField->text();
+    if (pattern.isEmpty() || !m_tabs)
+        return;
+    KTextEditor::Document* doc = m_tabs->activeDocument();
+    KTextEditor::View* view = m_tabs->activeView();
+    if (!doc || !view || !view->selection())
+        return;
+    const FindReplace::Options opts = options();
+    if (!FindReplace::isValid(pattern, opts))
+        return;
+    const KTextEditor::Range range = view->selectionRange();
+    const int start = offsetAt(doc->text(), range.start());
+    const int end = offsetAt(doc->text(), range.end());
+    const QString replacement = m_replaceField->text();
+    doc->replaceText(range, replacement);
+    s_lastPattern = pattern;
+    // Advance to the next hit after the replacement.
+    const QString text = doc->text();
+    const int nextFrom = start + replacement.length();
+    const QList<FindReplace::Hit> hits =
+        selectable(FindReplace::findAll(text.mid(nextFrom), pattern, opts));
+    if (!hits.isEmpty()) {
+        const int hitStart = nextFrom + hits.first().offset;
+        selectHit(view, text, hitStart, hits.first().length);
+    }
+    setStatus(tr("Replaced 1"));
+}
 
-void FindReplaceDialog::replaceAll() {}
+void FindReplaceDialog::replaceAll()
+{
+    const QString pattern = m_findField->text();
+    if (pattern.isEmpty() || !m_tabs)
+        return;
+    const FindReplace::Options opts = options();
+    if (!FindReplace::isValid(pattern, opts)) {
+        setStatus(tr("Bad pattern"));
+        return;
+    }
+    s_lastPattern = pattern;
+    const QString replacement = m_replaceField->text();
+    const Scope scope = this->scope();
+    QList<KTextEditor::Document*> docs;
+    if (scope == Scope::AllDocuments) {
+        docs = m_tabs->documents();
+    } else {
+        KTextEditor::Document* doc = m_tabs->activeDocument();
+        if (doc)
+            docs.append(doc);
+    }
+    int total = 0;
+    int docsChanged = 0;
+    for (KTextEditor::Document* doc : docs) {
+        const QString original = doc->text();
+        const KTextEditor::Range searchRange =
+            (scope == Scope::Selection && m_capturedSelection.isValid())
+                ? m_capturedSelection
+                : KTextEditor::Range(KTextEditor::Cursor(0, 0), doc->documentEnd());
+        const QString region = doc->text(searchRange);
+        const QList<FindReplace::Hit> hits = FindReplace::findAll(region, pattern, opts);
+        if (hits.isEmpty())
+            continue;
+        int replaced = 0;
+        const QString newText = FindReplace::applyAll(region, pattern, replacement, opts, &replaced);
+        doc->replaceText(searchRange, newText);
+        total += replaced;
+        ++docsChanged;
+    }
+    if (scope == Scope::AllDocuments && docsChanged > 1)
+        setStatus(tr("Replaced %1 in %2 documents").arg(total).arg(docsChanged));
+    else
+        setStatus(tr("Replaced %1").arg(total));
+}
