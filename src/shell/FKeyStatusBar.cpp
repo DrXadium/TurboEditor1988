@@ -36,7 +36,9 @@ FKeyStatusBar::FKeyStatusBar(QWidget* parent) : QStatusBar(parent)
     // Spec 7: flat solid gray row across the full width — no resize grip
     // (its default blue handle broke the flat fill at the right edge).
     setSizeGripEnabled(false);
-    setFKeys(QStringLiteral("F2 Save  F3 Open  F5 Zoom  F6 Next  F10 Menu"));
+    // Seed a zeroed count line so the bar is never blank; the composition
+    // root overwrites it with real counts.
+    setCounts(0, 0);
 }
 
 void FKeyStatusBar::ensureLabel()
@@ -52,9 +54,12 @@ void FKeyStatusBar::ensureLabel()
     // Transparent label background: the app-wide QWidget rule gives labels
     // a window-blue base that would otherwise paint over the gray bar.
     lab->setStyleSheet(QStringLiteral("QLabel { background: transparent; }"));
-    // Left margin so the first F-key sits near column 12 (spec 7: x≈8..20),
+    // Left margin so the line's first ink sits near column 12 (spec 7: x≈8..24),
     // not flush against the window edge.
     lab->setContentsMargins(12, 0, 0, 0);
+    // The stretch-1 slot is far wider than the line: without a left alignment
+    // the count would float centered, not start at column 12.
+    lab->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     addWidget(lab, 1);
 }
 
@@ -62,13 +67,31 @@ void FKeyStatusBar::refreshLabel()
 {
     ensureLabel();
     QLabel* lab = findChild<QLabel*>(QStringLiteral("fkeyLabel"));
-    if (lab)
-        lab->setText(tvRich(displayedText()));
+    if (!lab)
+        return;
+    const QString text = displayedText();
+    // The count line arrives as explicit rich HTML (labels black, values
+    // red); tvRich() would re-wrap it and only knows how to RED key names.
+    // The context hint is plain text and still needs that treatment.
+    lab->setText(text.startsWith(QLatin1Char('<')) ? text : tvRich(text));
 }
 
-void FKeyStatusBar::setFKeys(const QString& text)
+// The count line, exactly as the spec pins it: black label, red value, two
+// spaces between the two pairs (echoing the old F-key rhythm).
+QString FKeyStatusBar::countLine(qint64 words, qint64 chars)
 {
-    m_text = text;
+    const QString black = QStringLiteral("<span style=\"color:#000000;\">");
+    const QString red = QStringLiteral("<span style=\"color:#AA0000;\">");
+    const QString close = QStringLiteral("</span>");
+    return black + QObject::tr("Word Count:") + close + QLatin1Char(' ') + red
+           + QString::number(words) + close + QStringLiteral("  ") + black
+           + QObject::tr("Character Count:") + close + QLatin1Char(' ') + red
+           + QString::number(chars) + close;
+}
+
+void FKeyStatusBar::setCounts(qint64 words, qint64 chars)
+{
+    m_text = countLine(words, chars);
     refreshLabel();
 }
 

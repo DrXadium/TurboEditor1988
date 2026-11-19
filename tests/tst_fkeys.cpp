@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Task 12: Turbo Vision status-line F-key wiring contract.
-// The status line claims "F2 Save  F3 Open  F5 Zoom  F6 Next  F10 Menu";
-// prove the app wires those shortcuts to real actions. (Wiring lives in
-// main.cpp's composition root, so this test builds a ShellWindow + MenuBar,
-// replicates the shortcut attachment, and asserts the contract holds for the
-// action structure the menubar exposes.)
+// Status-line contract (2026-11-19): the left line is a whole-document
+// word/character count, NOT the old F-key reminder. The bar must render the
+// counts with black labels and red values, and must never show an F-key.
 #include <QtTest>
 #include <QAction>
 #include <QKeySequence>
 #include <QImage>
+#include <QRegularExpression>
+#include <QLabel>
+#include <QSet>
+#include <QTextDocument>
+#include <QTextLayout>
+#include <QTextBlock>
+#include <QApplication>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/FKeyStatusBar.h"
@@ -17,20 +21,82 @@ class TstFKeys : public QObject
 {
     Q_OBJECT
 private slots:
-    void status_line_lists_tv_function_keys() {
+    // The whole reason the line exists: word count then character count,
+    // labels black (#000000), values red (#AA0000), no F-key reminder.
+    // Strip the span tags so assertions read the line a human sees.
+    static QString plain(const QString& html)
+    {
+        QString s = html;
+        s.remove(QRegularExpression(QStringLiteral("<[^>]+>")));
+        return s.simplified();
+    }
+
+    void count_line_shows_word_and_character_counts_with_ink()
+    {
         ShellWindow w;
         FKeyStatusBar* bar = w.fkeyStatusBar();
         QVERIFY(bar);
-        const QString text = bar->fkeys();
-        for (const char* key : { "F2", "F3", "F5", "F6", "F10" }) {
-            QVERIFY2(text.contains(QString::fromLatin1(key)),
-                     qPrintable(QStringLiteral("status line missing %1: %2")
-                                    .arg(key).arg(text)));
-        }
-        QVERIFY(text.contains(QStringLiteral("Save")));
-        QVERIFY(text.contains(QStringLiteral("Menu")));
-        // Spec 7 exact format (two spaces between items, no yellow).
-        QCOMPARE(text, QStringLiteral("F2 Save  F3 Open  F5 Zoom  F6 Next  F10 Menu"));
+        bar->setCounts(3, 14);
+        const QString text = plain(bar->displayedText());
+        QVERIFY2(text.contains(QStringLiteral("Word Count: 3")),
+                 qPrintable(QStringLiteral("no word count: %1").arg(text)));
+        QVERIFY2(text.contains(QStringLiteral("Character Count: 14")),
+                 qPrintable(QStringLiteral("no character count: %1").arg(text)));
+        QVERIFY2(!text.contains(QStringLiteral("F2")) && !text.contains(QStringLiteral("F10")),
+                 qPrintable(QStringLiteral("F-key reminder survived: %1").arg(text)));
+
+        w.resize(700, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        const QImage img = bar->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        int red = 0, black = 0, yellow = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (qAbs(c.red() - 0xAA) < 40 && c.green() < 50 && c.blue() < 50) ++red;
+                if (c.red() < 40 && c.green() < 40 && c.blue() < 40) ++black;
+                if (qAbs(c.red() - 0xFF) <= 30 && qAbs(c.green() - 0xFF) <= 30
+                    && qAbs(c.blue() - 0x55) <= 40) ++yellow;
+            }
+        QVERIFY2(red >= 3, qPrintable(QStringLiteral("no red count values (%1 px)").arg(red)));
+        QVERIFY2(black >= 10, qPrintable(QStringLiteral("no black labels (%1 px)").arg(black)));
+        QVERIFY2(yellow == 0, qPrintable(QStringLiteral("yellow px: %1").arg(yellow)));
+    }
+
+    // An empty (or whitespace-only) document is 0 words and 0 characters: the
+    // line must still render, never collapse or crash.
+    void empty_document_counts_zero_words_and_characters()
+    {
+        ShellWindow w;
+        FKeyStatusBar* bar = w.fkeyStatusBar();
+        QVERIFY(bar);
+        bar->setCounts(0, 0);
+        const QString text = plain(bar->displayedText());
+        QVERIFY2(text.contains(QStringLiteral("Word Count: 0")),
+                 qPrintable(QStringLiteral("zero word count missing: %1").arg(text)));
+        QVERIFY2(text.contains(QStringLiteral("Character Count: 0")),
+                 qPrintable(QStringLiteral("zero character count missing: %1").arg(text)));
+        w.resize(700, 400);
+        w.show();
+        QCoreApplication::processEvents();
+        QVERIFY(!bar->grab().isNull());
+    }
+
+    // Tab switch contract: the composition root re-points the counts, so the
+    // line must show the LAST numbers it was given, not the first document's.
+    void counts_follow_a_repointed_document()
+    {
+        ShellWindow w;
+        FKeyStatusBar* bar = w.fkeyStatusBar();
+        QVERIFY(bar);
+        bar->setCounts(2, 7);          // doc A: "aaa bbb"
+        QVERIFY2(plain(bar->displayedText()).contains(QStringLiteral("Word Count: 2")),
+                 "doc A counts not shown");
+        bar->setCounts(1, 1);          // doc B: "x"
+        QVERIFY2(plain(bar->displayedText()).contains(QStringLiteral("Word Count: 1")),
+                 qPrintable(QStringLiteral("re-point failed: %1").arg(bar->displayedText())));
+        QVERIFY2(plain(bar->displayedText()).contains(QStringLiteral("Character Count: 1")),
+                 qPrintable(QStringLiteral("char re-point failed: %1").arg(bar->displayedText())));
     }
 
     // TV-revision spec 7: the status line is a FLAT solid #AAAAAA row across
@@ -90,6 +156,12 @@ private slots:
 
     // TV-revision spec 7: the line starts near column 12 (first red key F2 at
     // x in [8,20]).
+    // The count line still STARTS near column 12: the BLACK "Word Count:"
+    // label's first TRUE-BLACK pixel is the line's left edge, and the first
+    // RED pixel (the word-count value) must follow AFTER that label, not at
+    // the line start (the old F-key's red key name sat at x=8..20 - retired).
+    // Scans the WHOLE label band: a single mid-row scan misses the glyph body
+    // depending on the 16px VGA font grid, reporting only faint antialias.
     void fkey_line_starts_near_column_12() {
         ShellWindow w;
         w.resize(700, 400);
@@ -97,19 +169,25 @@ private slots:
         QCoreApplication::processEvents();
         FKeyStatusBar* bar = w.fkeyStatusBar();
         QVERIFY(bar);
-        const QImage img = bar->grab().toImage();
-        int firstRedX = -1;
-        const int midY = img.height() / 2;
+        bar->setCounts(3, 14);
+        QCoreApplication::processEvents();
+        const QImage img = bar->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        int firstBlackX = -1, firstRedX = -1;
         for (int x = 0; x < img.width(); ++x) {
-            const QColor c = img.pixelColor(x, midY);
-            if (c.red() > 150 && c.green() < 90 && c.blue() < 90) {
-                firstRedX = x;
-                break;
+            for (int y = 3; y < img.height() - 3; ++y) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() < 30 && c.green() < 30 && c.blue() < 30 && firstBlackX < 0)
+                    firstBlackX = x;
+                if (c.red() > 160 && c.green() < 70 && c.blue() < 70 && firstRedX < 0)
+                    firstRedX = x;
             }
         }
-        QVERIFY2(firstRedX >= 8 && firstRedX <= 20,
-                 qPrintable(QStringLiteral("first red F-key at x=%1, expected 8..20")
-                                .arg(firstRedX)));
+        QVERIFY2(firstBlackX >= 8 && firstBlackX <= 24,
+                 qPrintable(QStringLiteral("count line first black at x=%1, expected 8..24")
+                                .arg(firstBlackX)));
+        QVERIFY2(firstRedX > firstBlackX,
+                 qPrintable(QStringLiteral("red value (%1) not after the black label (%2)")
+                                .arg(firstRedX).arg(firstBlackX)));
     }
 
     void menu_actions_accept_fkey_shortcuts() {
@@ -199,10 +277,41 @@ private slots:
 
         bar.clearContextHint();
         QVERIFY(!bar.contextHintActive());
-        QVERIFY2(bar.displayedText().contains(QStringLiteral("F2 Save")),
-                 qPrintable(QStringLiteral("status line did not restore: %1")
+        // Restores the COUNT line, not the retired F-key reminder.
+        QVERIFY2(plain(bar.displayedText()).contains(QStringLiteral("Word Count")),
+                 qPrintable(QStringLiteral("count line did not restore: %1")
                                 .arg(bar.displayedText())));
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 };
 
 int main(int argc, char** argv)

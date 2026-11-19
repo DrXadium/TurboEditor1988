@@ -887,8 +887,10 @@ private slots:
 
         view->hide();
         QCoreApplication::processEvents();
-        QVERIFY2(bar->displayedText().contains(QStringLiteral("F2 Save")),
-                 qPrintable(QStringLiteral("status line did not return to F-keys: %1")
+        // The dropdown closed: the hint steps aside and the COUNT line is
+        // restored (the F-key reminder was retired 2026-11-19).
+        QVERIFY2(bar->displayedText().contains(QStringLiteral("Word Count")),
+                 qPrintable(QStringLiteral("status line did not return to the count line: %1")
                                 .arg(bar->displayedText())));
         b.unregisterPopup(view);
     }
