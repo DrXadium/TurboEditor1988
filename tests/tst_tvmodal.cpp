@@ -102,6 +102,11 @@ private slots:
     void cancel_restores_every_setting();
     void ok_keeps_the_changes();
     void escape_cancels_like_the_button();
+
+    // Reported live (2026-11-19) through the find dialog: a modal measured
+    // itself with the platform font, not the polished one, and came out
+    // short.
+    void a_modal_is_measured_with_the_polished_font();
 };
 
 // The chrome the file dock established, on a bare modal: gray panel inside a
@@ -627,6 +632,43 @@ void TstTvModal::escape_cancels_like_the_button()
 
     QTest::keyClick(bright->editor(), Qt::Key_Escape);
     QCOMPARE(s.brightness(), 0.7);
+}
+
+// Reported live (2026-11-19): the Find and Replace dialog's option row was
+// clipped. Root cause: TvModal measured its chrome with the widget's font
+// BEFORE polish, so cellHeight() was the platform font's 12 px while every
+// child already wore the app-wide QSS 16 px face - the dialog came out 16 px
+// short of the body it had to hold. A modal must measure with the font its
+// children actually use.
+void TstTvModal::a_modal_is_measured_with_the_polished_font()
+{
+    // A font size the platform default cannot be mistaken for.
+    const QString old = qApp->styleSheet();
+    qApp->setStyleSheet(QStringLiteral("QWidget { font-size: 33px; }"));
+
+    TvModal m;
+    auto* body = new QWidget;
+    body->setObjectName(QStringLiteral("probeBody"));
+    auto* line = new QLabel(QStringLiteral("one text line"), body);
+    line->adjustSize();
+    const int lineH = line->sizeHint().height();
+    body->setFixedHeight(3 * lineH);
+    m.setBody(body);
+
+    const int childCell = line->fontMetrics().height();
+    QVERIFY2(m.cellHeight() == childCell,
+             qPrintable(QStringLiteral("the modal measures a %1 px cell but its children use %2")
+                            .arg(m.cellHeight()).arg(childCell)));
+
+    // ...and the body therefore gets the height it asked for.
+    m.resize(m.sizeHint());
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+    QVERIFY2(body->height() >= body->sizeHint().height(),
+             qPrintable(QStringLiteral("body got %1 px, needs %2")
+                            .arg(body->height()).arg(body->sizeHint().height())));
+
+    qApp->setStyleSheet(old);
 }
 
 QTEST_MAIN(TstTvModal)

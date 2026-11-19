@@ -131,6 +131,10 @@ private slots:
     void the_selection_scope_uses_the_range_captured_at_open();
     void replace_leaves_a_non_matching_selection_alone();
     void return_on_the_dialog_itself_runs_find_next();
+
+    // Reported live (2026-11-19): "the find / replace dialog has a visual
+    // glitch in the center where options are not fully visible".
+    void the_option_row_is_not_squeezed();
 };
 
 void TstFindDlg::initTestCase()
@@ -752,6 +756,48 @@ void TstFindDlg::return_on_the_dialog_itself_runs_find_next()
 
     QVERIFY2(dlg.isVisible(), "Return on the dialog closed it");
     QCOMPARE(selectedText(tabs), QStringLiteral("one"));
+}
+
+// Reported live (2026-11-19): the three option boxes came out 4 px tall - their
+// text clipped to a sliver - because the grid had 16 px less height than it
+// needed and dumped the whole deficit on the one row that can collapse to zero.
+// The dialog must be laid out at the size exec() would give it (the FIRST
+// sizeHint(), before anything else asks for one) and every option must then
+// stand at its full height, inside the body.
+void TstFindDlg::the_option_row_is_not_squeezed()
+{
+    EditorTabManager tabs;
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    QWidget* body = dlg.findChild<QWidget*>(QStringLiteral("findBody"));
+    QVERIFY2(body, "no body widget");
+
+    int i = 0;
+    for (TvCheckBox* box : {dlg.caseBox(), dlg.wholeWordsBox(), dlg.regexBox()}) {
+        const QSize need = box->sizeHint();
+        const QRect r(box->mapTo(body, QPoint(0, 0)), box->size());
+        QVERIFY2(r.height() >= need.height(),
+                 qPrintable(QStringLiteral("option %1 is %2 px tall, needs %3 - the row was squeezed")
+                                .arg(i).arg(r.height()).arg(need.height())));
+        QVERIFY2(r.width() >= need.width(),
+                 qPrintable(QStringLiteral("option %1 is %2 px wide, needs %3 - the row was squeezed")
+                                .arg(i).arg(r.width()).arg(need.width())));
+        QVERIFY2(body->rect().contains(r),
+                 qPrintable(QStringLiteral("option %1 at %2,%3 %4x%5 escapes the body")
+                                .arg(i).arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height())));
+        ++i;
+    }
+
+    // The rows below it must keep their own height too: the deficit was taken
+    // out of the option row, but a short dialog would next eat the status line.
+    QVERIFY2(dlg.scopeBar()->height() >= dlg.scopeBar()->sizeHint().height(),
+             "the scope chips were squeezed");
+    QLabel* status = dlg.findChild<QLabel*>(QStringLiteral("findStatus"));
+    QVERIFY2(status, "no status label");
+    QVERIFY2(status->height() >= status->sizeHint().height(), "the status line was squeezed");
 }
 
 QTEST_MAIN(TstFindDlg)

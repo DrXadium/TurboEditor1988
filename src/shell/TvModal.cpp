@@ -40,6 +40,15 @@ TvModal::TvModal(QWidget* parent)
 {
     setAutoFillBackground(false);   // paintEvent owns the panel
     setFocusPolicy(Qt::StrongFocus);
+
+    // Every metric below - cellWidth(), cellHeight(), sizeHint(), the plate row
+    // and the body's rect - comes from fontMetrics(), and a widget only wears
+    // the app-wide QSS font (16 px VGA) once it has been polished. Measured
+    // before that it reports the platform font (12 px cells), so the modal came
+    // out one text line short of the body it had to hold and the body's grid
+    // dumped the whole deficit on its only collapsible row: the find dialog's
+    // option boxes were 4 px tall instead of 20. Polish here, once.
+    ensurePolished();
 }
 
 void TvModal::setTitle(const QString& title)
