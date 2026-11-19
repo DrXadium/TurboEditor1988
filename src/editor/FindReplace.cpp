@@ -50,6 +50,11 @@ QList<Hit> findAll(const QString& text, const QString& pattern, const Options& o
     return hits;
 }
 
+bool isValid(const QString& pattern, const Options& options)
+{
+    return usable(compile(pattern, options));
+}
+
 KTextEditor::Cursor cursorAt(const QString& text, int offset)
 {
     const int clamped = qBound(0, offset, int(text.size()));

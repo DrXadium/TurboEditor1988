@@ -67,6 +67,12 @@ private slots:
         o.regex = true;
         QVERIFY2(findAll(QStringLiteral("abc"), QStringLiteral("["), o).isEmpty(),
                  "an unparsable pattern must report nothing, not crash");
+        // The dialog has to tell "no hits" from "you typed nonsense".
+        QVERIFY2(!isValid(QStringLiteral("["), o), "an unparsable pattern reported valid");
+        QVERIFY2(isValid(QStringLiteral("a.c"), o), "a good regex reported invalid");
+        QVERIFY2(!isValid(QString(), o), "an empty pattern reported valid");
+        QVERIFY2(isValid(QStringLiteral("["), Options{}),
+                 "a plain-text pattern was parsed as a regex");
         // ...and replace-all must hand the text back untouched.
         int count = -1;
         QCOMPARE(applyAll(QStringLiteral("abc"), QStringLiteral("["), QStringLiteral("x"), o, &count),

@@ -16,6 +16,8 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QWidget>
+#include <ktexteditor/document.h>
+#include <ktexteditor/view.h>
 
 #include "src/editor/FindReplaceDialog.h"
 #include "src/editor/EditorTabManager.h"
@@ -107,6 +109,14 @@ private slots:
     void the_selection_chip_needs_a_selection();
     void an_empty_pattern_disables_the_action_buttons();
     void the_dialog_opens_on_the_find_field_with_the_last_pattern();
+
+    // Task 5: Find Next across the three scopes.
+    void find_next_selects_the_first_match();
+    void find_next_wraps_to_the_top();
+    void find_next_across_all_documents_switches_tab();
+    void the_status_reports_the_match_count();
+    void the_status_reports_not_found_and_bad_pattern();
+    void return_in_the_find_field_runs_find_next();
 };
 
 void TstFindDlg::initTestCase()
@@ -421,6 +431,142 @@ void TstFindDlg::the_dialog_opens_on_the_find_field_with_the_last_pattern()
              "setInitialField(1) did not move to the Replace with field");
     QVERIFY2(!ringIsYellow(after, dlg.findField(), &dlg),
              "setInitialField(1) left the Find what field marked active");
+}
+
+// ---- Task 5: Find Next -------------------------------------------------
+
+namespace {
+
+// A manager with exactly one document holding `text`.
+void seedDocument(EditorTabManager& tabs, const QString& text)
+{
+    if (tabs.tabCount() == 0)
+        tabs.newDocument();   // the manager starts with one untitled doc anyway
+    tabs.activeDocument()->setText(text);
+}
+
+QString selectedText(EditorTabManager& tabs)
+{
+    KTextEditor::View* view = tabs.activeView();
+    if (!view || !view->selection())
+        return QString();
+    return tabs.activeDocument()->text(view->selectionRange());
+}
+
+} // namespace
+
+void TstFindDlg::find_next_selects_the_first_match()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("one"));
+    dlg.findNext();
+
+    QCOMPARE(selectedText(tabs), QStringLiteral("one"));
+    QCOMPARE(tabs.activeView()->cursorPosition().line(), 0);
+    QCOMPARE(tabs.activeView()->cursorPosition().column(), 0);
+}
+
+void TstFindDlg::find_next_wraps_to_the_top()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("one"));
+    dlg.findNext();
+    dlg.findNext();
+    QCOMPARE(tabs.activeView()->cursorPosition().column(), 8);   // the second one
+
+    dlg.findNext();                                              // wraps
+    QCOMPARE(tabs.activeView()->cursorPosition().column(), 0);
+    QCOMPARE(selectedText(tabs), QStringLiteral("one"));
+}
+
+void TstFindDlg::find_next_across_all_documents_switches_tab()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("alpha"));
+    tabs.newDocument();
+    tabs.activeDocument()->setText(QStringLiteral("beta needle"));
+    QCOMPARE(tabs.tabCount(), 2);
+    tabs.setActiveIndex(0);
+
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.setScope(FindReplaceDialog::Scope::AllDocuments);
+    dlg.findField()->setText(QStringLiteral("needle"));
+    dlg.findNext();
+
+    QCOMPARE(tabs.activeIndex(), 1);
+    QCOMPARE(selectedText(tabs), QStringLiteral("needle"));
+}
+
+void TstFindDlg::the_status_reports_the_match_count()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("one"));
+    dlg.findNext();
+    QCOMPARE(dlg.statusText(), QStringLiteral("2 matches"));
+
+    dlg.findField()->setText(QStringLiteral("two"));
+    dlg.findNext();
+    QCOMPARE(dlg.statusText(), QStringLiteral("1 match"));
+}
+
+void TstFindDlg::the_status_reports_not_found_and_bad_pattern()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("zzz"));
+    dlg.findNext();
+    QCOMPARE(dlg.statusText(), QStringLiteral("Not found"));
+
+    dlg.regexBox()->setChecked(true);
+    dlg.findField()->setText(QStringLiteral("["));
+    dlg.findNext();
+    QCOMPARE(dlg.statusText(), QStringLiteral("Bad pattern"));
+}
+
+void TstFindDlg::return_in_the_find_field_runs_find_next()
+{
+    EditorTabManager tabs;
+    seedDocument(tabs, QStringLiteral("one two one"));
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    dlg.findField()->setText(QStringLiteral("one"));
+    QTest::keyClick(dlg.findField(), Qt::Key_Return);
+    QCOMPARE(selectedText(tabs), QStringLiteral("one"));
+    QCOMPARE(tabs.activeView()->cursorPosition().column(), 0);
+
+    QTest::keyClick(dlg.findField(), Qt::Key_Return);
+    QCOMPARE(tabs.activeView()->cursorPosition().column(), 8);
+    QVERIFY2(dlg.isVisible(), "Return closed the dialog - TV behaviour is to stay open");
 }
 
 QTEST_MAIN(TstFindDlg)

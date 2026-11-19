@@ -15,6 +15,7 @@
 #include <QPaintEvent>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
 
 namespace {
@@ -29,6 +30,8 @@ const int kFieldMinWidth = 220;
 const char* kFieldQss =
     "QLineEdit { background-color: #0000AA; color: #FFFFFF;"
     " border: none; padding: 0px 3px; }";
+
+} // namespace
 
 // A TV field cell. The QLineEdit sits inset by kRing inside it, and the cell
 // paints the ring itself: the shell is never an active window, so a QLineEdit
@@ -87,6 +90,8 @@ private:
     bool m_active = false;
 };
 
+namespace {
+
 // Row labels: the dialog's yellow ink on the gray panel.
 QLabel* tvLabel(const QString& text)
 {
@@ -105,6 +110,27 @@ FieldCell* makeField(QLineEdit*& edit, const char* name, QWidget* parent)
     edit->setAutoFillBackground(true);
     cell->setEdit(edit);
     return cell;
+}
+
+// Offset of a KTextEditor cursor in the document's text. FindReplace works in
+// offsets (that is what QRegularExpression reports), KTextEditor in line/column.
+int offsetAt(const QString& text, const KTextEditor::Cursor& cursor)
+{
+    int line = 0;
+    int offset = 0;
+    while (line < cursor.line()) {
+        const int newline = text.indexOf(QLatin1Char('\n'), offset);
+        if (newline < 0)
+            return text.size();
+        offset = newline + 1;
+        ++line;
+    }
+    return qBound(0, offset + cursor.column(), int(text.size()));
+}
+
+QString countText(int n)
+{
+    return n == 1 ? QObject::tr("1 match") : QObject::tr("%1 matches").arg(n);
 }
 
 } // namespace
@@ -258,11 +284,10 @@ QString FindReplaceDialog::lastPattern()
 
 void FindReplaceDialog::setActiveField(QLineEdit* field)
 {
-    for (QWidget* cell : {m_findCell, m_replaceCell}) {
-        auto* cellWidget = static_cast<FieldCell*>(cell);
-        if (cellWidget)
-            cellWidget->setActive(cellWidget->edit() == field);
-    }
+    if (!field)
+        return;
+    m_findCell->setActive(m_findField == field);
+    m_replaceCell->setActive(m_replaceField == field);
 }
 
 bool FindReplaceDialog::eventFilter(QObject* watched, QEvent* ev)
@@ -297,9 +322,158 @@ bool FindReplaceDialog::eventFilter(QObject* watched, QEvent* ev)
     return TvModal::eventFilter(watched, ev);
 }
 
-// Bodies land in Tasks 5 and 6; the plates exist so the chrome can be reviewed
-// first.
-void FindReplaceDialog::findNext() {}
+namespace {
+
+void selectHit(KTextEditor::View* view, const QString& text, int offset, int length)
+{
+    const KTextEditor::Cursor start = FindReplace::cursorAt(text, offset);
+    view->setSelection(KTextEditor::Range(start, FindReplace::cursorAt(text, offset + length)));
+    view->setCursorPosition(start);
+}
+
+// Find Next has nothing to show for a zero-length hit ("^" matches everywhere
+// and nowhere), so those are dropped from the walk but still replaced.
+QList<FindReplace::Hit> selectable(const QList<FindReplace::Hit>& hits)
+{
+    QList<FindReplace::Hit> out;
+    for (const FindReplace::Hit& hit : hits)
+        if (hit.length > 0)
+            out.append(hit);
+    return out;
+}
+
+int firstAtOrAfter(const QList<FindReplace::Hit>& hits, int from)
+{
+    for (int i = 0; i < hits.size(); ++i)
+        if (hits.at(i).offset >= from)
+            return i;
+    return -1;
+}
+
+} // namespace
+
+void FindReplaceDialog::setStatus(const QString& text)
+{
+    if (m_status)
+        m_status->setText(text);
+}
+
+void FindReplaceDialog::findNext()
+{
+    const QString pattern = m_findField->text();
+    if (pattern.isEmpty() || !m_tabs)
+        return;
+
+    const FindReplace::Options opts = options();
+    if (!FindReplace::isValid(pattern, opts)) {
+        setStatus(tr("Bad pattern"));
+        return;
+    }
+    s_lastPattern = pattern;
+
+    if (scope() == Scope::AllDocuments) {
+        findNextInAllDocuments(pattern, opts);
+        return;
+    }
+
+    KTextEditor::Document* doc = m_tabs->activeDocument();
+    KTextEditor::View* view = m_tabs->activeView();
+    if (!doc || !view) {
+        setStatus(tr("Not found"));
+        return;
+    }
+
+    const QString text = doc->text();
+    int regionStart = 0;
+    int regionEnd = text.size();
+    if (scope() == Scope::Selection && m_capturedSelection.isValid()) {
+        regionStart = offsetAt(text, m_capturedSelection.start());
+        regionEnd = offsetAt(text, m_capturedSelection.end());
+    }
+    const QString region = text.mid(regionStart, qMax(0, regionEnd - regionStart));
+
+    const QList<FindReplace::Hit> hits = selectable(FindReplace::findAll(region, pattern, opts));
+    if (hits.isEmpty()) {
+        setStatus(tr("Not found"));
+        return;
+    }
+
+    // Continue AFTER whatever is selected, so repeated Find Next walks the
+    // document instead of re-selecting the hit it just made.
+    int from = 0;
+    if (view->selection()) {
+        const int end = offsetAt(text, view->selectionRange().end());
+        if (end >= regionStart && end <= regionEnd)
+            from = end - regionStart;
+    } else {
+        const int cursor = offsetAt(text, view->cursorPosition());
+        if (cursor > regionStart && cursor <= regionEnd)
+            from = cursor - regionStart;
+    }
+
+    const int index = FindReplace::nextHitIndex(hits, from);
+    selectHit(view, text, regionStart + hits.at(index).offset, hits.at(index).length);
+    setStatus(countText(hits.size()));
+}
+
+void FindReplaceDialog::findNextInAllDocuments(const QString& pattern,
+                                               const FindReplace::Options& opts)
+{
+    const QList<KTextEditor::Document*> docs = m_tabs->documents();
+    if (docs.isEmpty()) {
+        setStatus(tr("Not found"));
+        return;
+    }
+    const int active = qBound(0, m_tabs->activeIndex(), int(docs.size()) - 1);
+
+    QList<QList<FindReplace::Hit>> perDocument;
+    int total = 0;
+    for (KTextEditor::Document* doc : docs) {
+        perDocument.append(selectable(FindReplace::findAll(doc->text(), pattern, opts)));
+        total += perDocument.last().size();
+    }
+    if (total == 0) {
+        setStatus(tr("Not found"));
+        return;
+    }
+
+    // The active document from the cursor onwards, then each tab in turn.
+    KTextEditor::View* view = m_tabs->activeView();
+    int from = 0;
+    if (view) {
+        const QString text = docs.at(active)->text();
+        from = view->selection() ? offsetAt(text, view->selectionRange().end())
+                                 : offsetAt(text, view->cursorPosition());
+    }
+    int here = firstAtOrAfter(perDocument.at(active), from);
+    int chosen = active;
+    if (here < 0) {
+        // Nothing after the cursor in the active tab: walk the rest in order,
+        // and only if THEY are empty wrap to the top of the active one.
+        here = 0;
+        chosen = -1;
+        for (int step = 1; step < docs.size(); ++step) {
+            const int index = (active + step) % int(docs.size());
+            if (!perDocument.at(index).isEmpty()) {
+                chosen = index;
+                break;
+            }
+        }
+        if (chosen < 0)
+            chosen = active;   // wrap
+    }
+    if (chosen != m_tabs->activeIndex())
+        m_tabs->setActiveIndex(chosen);
+
+    KTextEditor::View* target = m_tabs->activeView();
+    if (!target) {
+        setStatus(tr("Not found"));
+        return;
+    }
+    const QList<FindReplace::Hit>& hits = perDocument.at(chosen);
+    selectHit(target, docs.at(chosen)->text(), hits.at(here).offset, hits.at(here).length);
+    setStatus(countText(total));
+}
 
 void FindReplaceDialog::replaceOne() {}
 

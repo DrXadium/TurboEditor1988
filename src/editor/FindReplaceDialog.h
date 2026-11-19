@@ -7,6 +7,10 @@
 #include <ktexteditor/range.h>
 #include <ktexteditor/view.h>
 
+// Defined in FindReplaceDialog.cpp; the dialog's members point at the field
+// cells it builds there.
+class FieldCell;
+
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -62,12 +66,14 @@ protected:
 
 private:
     void setActiveField(QLineEdit* field);
+    void setStatus(const QString& text);
+    void findNextInAllDocuments(const QString& pattern, const FindReplace::Options& options);
 
     EditorTabManager* m_tabs = nullptr;
     QLineEdit* m_findField = nullptr;
     QLineEdit* m_replaceField = nullptr;
-    QWidget* m_findCell = nullptr;
-    QWidget* m_replaceCell = nullptr;
+    FieldCell* m_findCell = nullptr;
+    FieldCell* m_replaceCell = nullptr;
     TvCheckBox* m_caseBox = nullptr;
     TvCheckBox* m_wholeWordsBox = nullptr;
     TvCheckBox* m_regexBox = nullptr;

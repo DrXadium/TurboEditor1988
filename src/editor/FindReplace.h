@@ -28,6 +28,11 @@ struct Hit {
 // An empty or unparsable pattern yields no hits; it never throws.
 QList<Hit> findAll(const QString& text, const QString& pattern, const Options& options);
 
+// Whether the pattern can be searched at all: non-empty, and a legal regex when
+// `regex` is on. The dialog needs this to tell "no hits" from "you typed
+// nonsense" - both of which come back from findAll as an empty list.
+bool isValid(const QString& pattern, const Options& options);
+
 // Offset -> KTextEditor cursor, so a hit can become a Range.
 KTextEditor::Cursor cursorAt(const QString& text, int offset);
 

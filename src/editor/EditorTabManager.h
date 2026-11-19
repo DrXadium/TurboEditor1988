@@ -47,6 +47,10 @@ public:
     QUrl viewFileUrl(int index) const;
     QPoint viewCursorPosition(int index) const;
 
+    // Every open document, in tab order. Find and Replace's "All documents"
+    // scope walks these; the list is not copied for a single-document search.
+    QList<KTextEditor::Document*> documents() const { return m_docs; }
+
     // Zoom: +1 in / -1 out / 0 reset, applied to the active view's "font"
     // config key (KTextEditor::View::configValue/setConfigValue). Zooms in
     // pixel units when the font is pixel-based (setFontSize), points otherwise.
