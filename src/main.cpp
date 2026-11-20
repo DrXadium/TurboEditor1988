@@ -538,6 +538,8 @@ int main(int argc, char** argv)
            [&tabs] { tabs.changeCase(EditorTabManager::Upper); });
         on(act("actionEditLower"),
            [&tabs] { tabs.changeCase(EditorTabManager::Lower); });
+        on(act("actionEditTitle"),
+           [&tabs] { tabs.changeCase(EditorTabManager::Title); });
         on(act("actionEditSort"), [&tabs] { tabs.sortLines(); });
         if (QAction* spell = act("actionEditSpellcheck"))
             QObject::connect(spell, &QAction::triggered, spell, [&tabs, spell](bool) {

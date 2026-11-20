@@ -76,6 +76,7 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     edit->addSeparator();
     added(edit, QStringLiteral("&UPPERCASE"), QStringLiteral("actionEditUpper"));
     added(edit, QStringLiteral("&lowercase"), QStringLiteral("actionEditLower"));
+    added(edit, QStringLiteral("&Title Case"), QStringLiteral("actionEditTitle"));
     added(edit, QStringLiteral("&Sort Lines"), QStringLiteral("actionEditSort"));
     edit->addSeparator();
     QAction* spell = added(edit, QStringLiteral("Check Spelling &On-the-fly"),

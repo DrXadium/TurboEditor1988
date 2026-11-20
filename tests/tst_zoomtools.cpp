@@ -183,6 +183,18 @@ private slots:
         QVERIFY2(up > base, "Ctrl+= action did not zoom in");
     }
 
+    void title_case_capitalises_each_word() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("the QUICK brown fox"));
+        v->setSelection(KTextEditor::Range(0, 0, 0, 19));
+        QVERIFY(v->selection());
+        m.changeCase(EditorTabManager::Title);
+        QCOMPARE(v->document()->text(), QStringLiteral("The Quick Brown Fox"));
+    }
+
     void word_wrap_defaults_on() {
         EditorTabManager m;
         m.newDocument();

@@ -316,6 +316,28 @@ private slots:
                                 .arg(undoAt).arg(cutAt)));
     }
 
+    // 2026-11-19: Title Case sits directly under lowercase.
+    void edit_menu_offers_title_case_below_lowercase() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QAction* lower = mb->findChild<QAction*>(QStringLiteral("actionEditLower"));
+        QAction* title = mb->findChild<QAction*>(QStringLiteral("actionEditTitle"));
+        QVERIFY(lower);
+        QVERIFY2(title, "actionEditTitle missing");
+        QVERIFY2(title->text().contains(QStringLiteral("Title Case")),
+                 qPrintable(title->text()));
+
+        QMenu* editMenu = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("Edit")))
+                editMenu = top->menu();
+        QVERIFY(editMenu);
+        const QList<QAction*> items = editMenu->actions();
+        QCOMPARE(items.indexOf(title), items.indexOf(lower) + 1);
+    }
+
     // Task 10: menu entries the composition root wires to real features exist
     // under stable objectNames, and toggles are checkable.
     void menu_entries_expose_wiring_targets() {
@@ -330,6 +352,7 @@ private slots:
             QStringLiteral("actionEditCut"),   QStringLiteral("actionEditCopy"),
             QStringLiteral("actionEditPaste"),
             QStringLiteral("actionEditUpper"), QStringLiteral("actionEditLower"),
+            QStringLiteral("actionEditTitle"),
             QStringLiteral("actionEditSort"),  QStringLiteral("actionEditSpellcheck"),
             QStringLiteral("actionSearchFind"),
             QStringLiteral("actionSearchFindNext"),
