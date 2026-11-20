@@ -269,7 +269,7 @@ private:
     // restoring text (Document::setText emits textChanged).
     bool m_applyingHistory = false;
     // Colouring of bracket pairs for the ACTIVE view (owns its MovingRanges).
-    class BracketWiring* m_brackets = nullptr;
+    class ColourWiring* m_brackets = nullptr;
     bool m_bracketsOn = true;
     static constexpr int kMaxHistory = 200;
 };

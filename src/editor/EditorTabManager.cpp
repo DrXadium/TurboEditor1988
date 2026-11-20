@@ -7,7 +7,7 @@
 #include "EditorTabManager.h"
 #include "FindReplaceDialog.h"
 #include "LineAffixDialog.h"
-#include "BracketWiring.h"
+#include "ColourWiring.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -72,7 +72,7 @@ EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
     m_container->setObjectName(QStringLiteral("editorStack"));
     // Coloured Brackets (2026-11-20): one wiring instance follows the active
     // view; it owns its own MovingRanges and re-points in trackActiveCursor().
-    m_brackets = new BracketWiring(this);
+    m_brackets = new ColourWiring(this);
     // External-change detection (2026-11-20): Kate has no watcher of its own, so
     // this one is the only thing that can notice a file changing underneath us.
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this,

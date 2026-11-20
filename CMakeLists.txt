@@ -146,8 +146,10 @@ add_library(crt-editor STATIC
   src/editor/StatusSelectors.h
   src/editor/BracketColorizer.cpp
   src/editor/BracketColorizer.h
-  src/editor/BracketWiring.cpp
-  src/editor/BracketWiring.h
+  src/editor/StringColorizer.cpp
+  src/editor/StringColorizer.h
+  src/editor/ColourWiring.cpp
+  src/editor/ColourWiring.h
   src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -182,6 +184,11 @@ add_test(NAME tst_brackets COMMAND tst_brackets)
 add_executable(tst_bracketrender tests/tst_bracketrender.cpp)
 target_link_libraries(tst_bracketrender PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_bracketrender COMMAND tst_bracketrender)
+
+# 2026-11-20: string colouring independent of the syntax mode (pure scanning).
+add_executable(tst_strings tests/tst_strings.cpp)
+target_link_libraries(tst_strings PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_strings COMMAND tst_strings)
 
 # 2026-11-20: pure file-change decision logic for the external-change prompt.
 add_executable(tst_filechange tests/tst_filechange.cpp)

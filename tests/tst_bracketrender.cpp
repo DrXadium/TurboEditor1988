@@ -5,8 +5,9 @@
 #include <QtTest>
 #include <QApplication>
 #include <QImage>
-#include "src/editor/BracketWiring.h"
+#include "src/editor/ColourWiring.h"
 #include "src/editor/BracketColorizer.h"
+#include "src/editor/StringColorizer.h"
 #include <ktexteditor/view.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/editor.h>
@@ -25,6 +26,19 @@ int countColor(const QImage& img, const QColor& want, int tol)
                 ++n;
         }
     return n;
+}
+
+// KTextEditor caches each line's attribute layout, so a grab taken right after
+// the ranges change can still show the OLD colours (measured: the signal said 0
+// spans while the image still had 161 green pixels). Re-setting the text forces
+// a FULL relayout - nudging one line is not enough, because only that line's
+// cache is dropped and the coloured lines keep their stale attributes.
+void forceRelayout(KTextEditor::View* view)
+{
+    KTextEditor::Document* doc = view->document();
+    doc->setText(doc->text());
+    view->repaint();
+    QCoreApplication::sendPostedEvents();
 }
 } // namespace
 
@@ -49,9 +63,9 @@ private slots:
         view->show();
         QCoreApplication::processEvents();
 
-        BracketWiring wiring;
+        ColourWiring wiring;
         wiring.setView(view);
-        QSignalSpy spy(&wiring, &BracketWiring::painted);
+        QSignalSpy spy(&wiring, &ColourWiring::painted);
         wiring.repaint();
         QVERIFY2(spy.count() >= 1, "repaint never signalled");
         QVERIFY2(spy.last().at(0).toInt() >= 2,
@@ -74,12 +88,15 @@ private slots:
 
         // Off -> no coloured pixels remain (the ranges are dropped).
         wiring.setEnabled(false);
-        QCoreApplication::processEvents();
+        forceRelayout(view);          // the view caches line attributes
         const QImage off = view->grab().toImage();
         int totalOff = 0;
         for (const QColor& c : palette)
+            // Tight tolerance on purpose: at 60 some unrelated theme colour falls
+            // inside a palette colour's cube (~149 px of false positives), so a
+            // loose match could never reach zero.
             totalOff += countColor(off, c, 12);
-        QVERIFY2(totalOff < total,
+        QVERIFY2(totalOff == 0,
                  qPrintable(QStringLiteral("disabling did not remove colours (%1 -> %2)")
                                 .arg(total).arg(totalOff)));
         wiring.setEnabled(true);
@@ -97,7 +114,7 @@ private slots:
         view->show();
         QCoreApplication::processEvents();
 
-        BracketWiring wiring;
+        ColourWiring wiring;
         wiring.setView(view);
         wiring.repaint();
 
@@ -112,6 +129,83 @@ private slots:
         QVERIFY2(distinct >= 2,
                  qPrintable(QStringLiteral("only %1 distinct bracket colours on screen")
                                 .arg(distinct)));
+        wiring.setView(nullptr);
+        delete doc;
+    }
+
+    // 2026-11-20: string colouring independent of the syntax mode. The whole
+    // point is a document the theme cannot colour: mode None (a .txt, an
+    // extension-less file, a fresh untitled tab). Before the string pass this
+    // document painted ZERO green; the span pass must paint the quoted text.
+    void quoted_text_paints_on_a_document_with_no_syntax_mode()
+    {
+        auto* ed = KTextEditor::Editor::instance();
+        auto* doc = ed->createDocument(this);
+        doc->setHighlightingMode(QStringLiteral("None"));   // the key condition
+        doc->setText(QStringLiteral("a = \"alpha\"\nb = 'beta'\n"));
+        auto* view = doc->createView(nullptr);
+        view->resize(500, 300);
+        view->show();
+        QCoreApplication::processEvents();
+
+        const QColor green = StringColorizer::defaultColor();
+
+        // Baseline: nothing coloured before the pass runs.
+        const QImage before = view->grab().toImage();
+        const int beforePx = countColor(before, green, 60);
+
+        ColourWiring wiring;
+        wiring.setView(view);
+        QSignalSpy spy(&wiring, &ColourWiring::stringsPainted);
+        wiring.repaint();
+        QVERIFY2(spy.count() >= 1, "string pass never signalled");
+        QCOMPARE(spy.last().at(0).toInt(), 2);   // two quoted spans
+
+        view->repaint();                          // synchronous paint pass
+        QCoreApplication::sendPostedEvents();
+        const QImage after = view->grab().toImage();
+        const int afterPx = countColor(after, green, 60);
+
+        QVERIFY2(afterPx > beforePx + 20,
+                 qPrintable(QStringLiteral("quoted text did not paint green "
+                                           "(before %1 px, after %2 px)")
+                                .arg(beforePx).arg(afterPx)));
+
+        // Turning the string pass off drops those ranges again.
+        wiring.setStringsEnabled(false);
+        forceRelayout(view);          // the view caches line attributes
+        QCOMPARE(spy.last().at(0).toInt(), 0);
+        const int offPx = countColor(view->grab().toImage(), green, 60);
+        QVERIFY2(offPx <= beforePx + 5,
+                 qPrintable(QStringLiteral("strings still painted after disabling "
+                                           "(%1 px vs baseline %2)")
+                                .arg(offPx).arg(beforePx)));
+
+        wiring.setView(nullptr);
+        delete doc;
+    }
+
+    // A bracket inside a quoted span must stay string-coloured, not get a
+    // bracket colour: in a mode-None document nothing else tells us it is text.
+    void a_bracket_inside_a_quoted_span_gets_no_bracket_colour()
+    {
+        auto* ed = KTextEditor::Editor::instance();
+        auto* doc = ed->createDocument(this);
+        doc->setHighlightingMode(QStringLiteral("None"));
+        doc->setText(QStringLiteral("s = \"{a}\"\n"));   // only a quoted pair
+        auto* view = doc->createView(nullptr);
+        view->resize(500, 300);
+        view->show();
+        QCoreApplication::processEvents();
+
+        ColourWiring wiring;
+        wiring.setView(view);
+        QSignalSpy strings(&wiring, &ColourWiring::stringsPainted);
+        QSignalSpy pairs(&wiring, &ColourWiring::painted);
+        wiring.repaint();
+        QCOMPARE(strings.last().at(0).toInt(), 1);   // the quoted span
+        QCOMPARE(pairs.last().at(0).toInt(), 0);     // no bracket pair
+
         wiring.setView(nullptr);
         delete doc;
     }
