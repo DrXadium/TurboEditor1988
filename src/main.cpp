@@ -571,6 +571,15 @@ int main(int argc, char** argv)
                 if (auto* v = tabs.activeView())
                     v->setConfigValue(QStringLiteral("folding-bar"), fold->isChecked());
             });
+        if (QAction* wrap = act("actionViewWordWrap")) {
+            QObject::connect(wrap, &QAction::triggered, wrap, [&tabs, wrap](bool) {
+                tabs.setWordWrap(wrap->isChecked());
+            });
+            // Wrap is per view, so the check must follow the tab on screen or
+            // the menu lies after every switch.
+            QObject::connect(&tabs, &EditorTabManager::activeViewChanged, wrap,
+                             [&tabs, wrap] { wrap->setChecked(tabs.wordWrap()); });
+        }
 
         // Session -> SessionManager (reuses collectSessionEntries/restoreEntries)
         on(act("actionSessionSave"),
@@ -816,26 +825,35 @@ int main(int argc, char** argv)
         });
     }
 
-    // Dev aid (unset in normal runs): CRT_KATE_VIEWMENU=1 opens the REAL
-    // View dropdown (MenuBar's BorlandMenu) over the shell before a capture,
-    // proving the spec-6 dropdown + drop shadow composite end-to-end and that
-    // opening a real menu does not crash (the rev1 menu-click regression).
-    if (qEnvironmentVariableIsSet("CRT_KATE_VIEWMENU")) {
-        QTimer::singleShot(700, &app, [&shell]() {
+    // Dev aid (unset in normal runs): opens the REAL dropdown with this title
+    // over the shell before a capture, proving the dropdown + drop shadow
+    // composite end-to-end and that opening a real menu does not crash (the
+    // rev1 menu-click regression). CRT_KATE_VIEWMENU=1 is the historical
+    // spelling for View; CRT_KATE_MENUBAR=<title> opens any menu (2026-11-19,
+    // used to capture the Edit menu's new line-tools group).
+    const QByteArray menubarTitle = qgetenv("CRT_KATE_MENUBAR");
+    const bool viewMenuAid = qEnvironmentVariableIsSet("CRT_KATE_VIEWMENU");
+    if (viewMenuAid || !menubarTitle.isEmpty()) {
+        const QString title = !menubarTitle.isEmpty()
+            ? QString::fromUtf8(menubarTitle)
+            : QStringLiteral("View");
+        QTimer::singleShot(700, &app, [&shell, title]() {
             if (auto* mb = qobject_cast<MenuBar*>(shell.menuBar())) {
-                if (QMenu* view = mb->menu(QStringLiteral("View"))) {
+                if (QMenu* menu = mb->menu(title)) {
                     // Behave like a real click: mark the bar title selected (so
                     // it paints its green plate) and highlight the first item
                     // (so the dropdown paints its green selection bar).
+                    int x = 40;
                     for (QAction* a : mb->actions())
-                        if (a->menu() == view) {
+                        if (a->menu() == menu) {
                             mb->setActiveAction(a);
+                            x = mb->actionGeometry(a).x();
                             break;
                         }
-                    view->move(shell.pos() + QPoint(320, 60));
-                    view->show();
-                    if (!view->actions().isEmpty())
-                        view->setActiveAction(view->actions().first());
+                    menu->move(shell.pos() + QPoint(x, 60));
+                    menu->show();
+                    if (!menu->actions().isEmpty())
+                        menu->setActiveAction(menu->actions().first());
                 }
             }
         });

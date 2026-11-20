@@ -372,6 +372,28 @@ private slots:
                     ->text().endsWith(QStringLiteral("...")));
     }
 
+    // 2026-11-19: Word Wrap sits at the end of the View menu, checkable, and
+    // ON by default (the view default applied in applyTvStyle).
+    void view_menu_offers_a_checked_word_wrap_toggle() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QAction* wrap = mb->findChild<QAction*>(QStringLiteral("actionViewWordWrap"));
+        QVERIFY2(wrap, "actionViewWordWrap missing");
+        QVERIFY(wrap->isCheckable());
+        QVERIFY2(wrap->isChecked(), "word wrap must default to on");
+        QVERIFY(wrap->text().contains(QStringLiteral("Word Wrap")));
+        QVERIFY2(!wrap->menu(), "Word Wrap must be a toggle, not a submenu");
+
+        QMenu* viewMenu = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("View")))
+                viewMenu = top->menu();
+        QVERIFY(viewMenu);
+        QCOMPARE(viewMenu->actions().last(), wrap);
+    }
+
     // Task 10: menu entries the composition root wires to real features exist
     // under stable objectNames, and toggles are checkable.
     void menu_entries_expose_wiring_targets() {
@@ -397,6 +419,7 @@ private slots:
             QStringLiteral("actionViewZoomIn"), QStringLiteral("actionViewZoomOut"),
             QStringLiteral("actionViewZoomReset"),
             QStringLiteral("actionViewMinimap"), QStringLiteral("actionViewFoldBar"),
+            QStringLiteral("actionViewWordWrap"),
             QStringLiteral("actionSessionSave"), QStringLiteral("actionSessionRestore"),
             QStringLiteral("actionSettingsConfigure"),
             QStringLiteral("actionHelpAbout"),

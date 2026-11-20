@@ -9,6 +9,7 @@
 #include <QTextStream>
 #include <QUrl>
 #include <QAction>
+#include <QScrollBar>
 #include <QWidget>
 #include <ktexteditor/editor.h>
 #include <ktexteditor/view.h>
@@ -212,6 +213,41 @@ private slots:
         m.setWordWrap(true);
         QVERIFY(m.wordWrap());
         QCOMPARE(v->configValue(QStringLiteral("dynamic-word-wrap")).toBool(), true);
+    }
+
+    void word_wrap_makes_a_long_line_occupy_more_rows() {
+        // The config value is only half the story: the view must actually lay
+        // the line out wrapped. With one 4000-character line in a 480 px view,
+        // wrapping turns one row into many, which the vertical scrollbar's
+        // range reports. This is the repaint/relayout proof.
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->resize(480, 320);
+        v->show();
+        v->document()->setText(QString(4000, QLatin1Char('x')));
+        QApplication::processEvents();
+
+        auto verticalMax = [v]() {
+            for (QScrollBar* b : v->findChildren<QScrollBar*>())
+                if (b->orientation() == Qt::Vertical)
+                    return b->maximum();
+            return -1;
+        };
+
+        m.setWordWrap(false);
+        QApplication::processEvents();
+        const int unwrapped = verticalMax();
+
+        m.setWordWrap(true);
+        QApplication::processEvents();
+        const int wrapped = verticalMax();
+
+        QVERIFY2(unwrapped >= 0 && wrapped >= 0, "view has no vertical scrollbar");
+        QVERIFY2(wrapped > unwrapped,
+                 qPrintable(QStringLiteral("wrap did not relayout: rows %1 -> %2")
+                                .arg(unwrapped).arg(wrapped)));
     }
 
     void word_wrap_key_is_registered() {

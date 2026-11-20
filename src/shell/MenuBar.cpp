@@ -121,6 +121,13 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     foldBar->setCheckable(true);
     foldBar->setChecked(true);
     foldBar->setStatusTip(QStringLiteral("Toggle the code folding bar"));
+    // 2026-11-19: wrap is per view and ON by default (applyTvStyle). The check
+    // follows the active tab, re-synced in the composition root.
+    QAction* wrap = added(view, QStringLiteral("&Word Wrap"),
+                          QStringLiteral("actionViewWordWrap"));
+    wrap->setCheckable(true);
+    wrap->setChecked(true);
+    wrap->setStatusTip(QStringLiteral("Wrap long lines to the window width"));
 
     QMenu* session = addMenu(QStringLiteral("Se&ssion"));
     added(session, QStringLiteral("&Save Session..."), QStringLiteral("actionSessionSave"));
