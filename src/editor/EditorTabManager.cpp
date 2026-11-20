@@ -17,6 +17,7 @@
 #include <KSyntaxHighlighting/Theme>
 #include <QFileInfo>
 #include <QAction>
+#include <QMenu>
 #include <KActionCollection>
 #include <QWidget>
 #include <QInputDialog>
@@ -73,6 +74,9 @@ EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
     // Coloured Brackets (2026-11-20): one wiring instance follows the active
     // view; it owns its own MovingRanges and re-points in trackActiveCursor().
     m_brackets = new ColourWiring(this);
+    // Block commands for the right-click menu (2026-11-20): created once, then
+    // re-synced from the caret so the menu always describes the block under it.
+    buildBlockActions();
     // External-change detection (2026-11-20): Kate has no watcher of its own, so
     // this one is the only thing that can notice a file changing underneath us.
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this,
@@ -438,6 +442,7 @@ void EditorTabManager::newDocument()
     syncTabs();
     applyTvStyle(view);
     installKeyRouting(view);
+    attachBlockMenu(view);
     trackActiveCursor();
 }
 
@@ -457,6 +462,7 @@ void EditorTabManager::openFile(const QUrl& url)
     syncTabs();
     applyTvStyle(view);
     installKeyRouting(view);
+    attachBlockMenu(view);
     trackActiveCursor();
     armWatch(doc);
 }
@@ -1040,6 +1046,185 @@ void EditorTabManager::toggleCurrentNode()
 {
     if (QAction* a = viewAction(activeView(), "folding_toggle_current"))
         a->trigger();
+}
+
+// ---- Block commands (2026-11-20) ------------------------------------------
+//
+// The right-click menu acts on the block whose OPENING line holds the caret.
+// Kate has no public fold-region API, so BlockFinder computes the extent, and
+// because Kate offers only a TOGGLE action, collapse/expand check the folded
+// state first - otherwise a second "Collapse Block" would re-open the block.
+
+BlockFinder::Block EditorTabManager::currentBlock() const
+{
+    BlockFinder::Block none;
+    KTextEditor::View* v = activeView();
+    if (!v || !v->document())
+        return none;
+    KTextEditor::Document* doc = v->document();
+
+    QVector<QString> lines;
+    lines.reserve(doc->lines());
+    for (int i = 0; i < doc->lines(); ++i)
+        lines.append(doc->line(i));
+
+    // Same rule the colour passes use: text the highlighter owns (a string or a
+    // comment) is not structure, so a '{' there opens nothing.
+    const auto skip = [doc](int line, int col) {
+        const auto st = doc->defaultStyleAt(KTextEditor::Cursor(line, col));
+        return st == KSyntaxHighlighting::Theme::TextStyle::Comment
+               || st == KSyntaxHighlighting::Theme::TextStyle::String
+               || st == KSyntaxHighlighting::Theme::TextStyle::Char;
+    };
+
+    return BlockFinder::findBlockStartingAt(lines, v->cursorPosition().line(), skip);
+}
+
+bool EditorTabManager::canActOnBlock() const
+{
+    return currentBlock().valid;
+}
+
+bool EditorTabManager::currentBlockIsFolded() const
+{
+    KTextEditor::View* v = activeView();
+    const BlockFinder::Block b = currentBlock();
+    if (!v || !b.valid || b.endLine <= b.startLine)
+        return false;
+    // A folded block hides the line after its opener.
+    return !v->isLineVisible(b.startLine + 1);
+}
+
+void EditorTabManager::collapseBlock()
+{
+    if (!canActOnBlock() || currentBlockIsFolded())
+        return;
+    if (QAction* a = viewAction(activeView(), "folding_toggle_current"))
+        a->trigger();
+    refreshBlockActions();
+    applyBlockHighlight();
+}
+
+void EditorTabManager::expandBlock()
+{
+    if (!canActOnBlock() || !currentBlockIsFolded())
+        return;
+    if (QAction* a = viewAction(activeView(), "folding_toggle_current"))
+        a->trigger();
+    refreshBlockActions();
+    applyBlockHighlight();
+}
+
+void EditorTabManager::clearBlockHighlightRange()
+{
+    delete m_blockHighlightRange;
+    m_blockHighlightRange = nullptr;
+}
+
+void EditorTabManager::setBlockHighlight(bool on)
+{
+    if (m_blockHighlight == on) {
+        if (on)
+            applyBlockHighlight();      // still follow the caret
+        return;
+    }
+    m_blockHighlight = on;
+    if (m_ctxHighlightBlock)
+        m_ctxHighlightBlock->setChecked(on);
+    applyBlockHighlight();
+}
+
+void EditorTabManager::applyBlockHighlight()
+{
+    clearBlockHighlightRange();
+    KTextEditor::View* v = activeView();
+    if (!m_blockHighlight || !v || !v->document())
+        return;
+    const BlockFinder::Block b = currentBlock();
+    if (!b.valid)
+        return;
+
+    // Whole lines, so the band reads as one block rather than stopping mid-line.
+    const int lastLine = qMin(b.endLine, v->document()->lines() - 1);
+    const int lastLen = v->document()->line(lastLine).size();
+    auto attr = KTextEditor::Attribute::Ptr(new KTextEditor::Attribute);
+    // DOS red on DOS yellow: the palette the rest of the editor uses.
+    attr->setBackground(QColor(QStringLiteral("#aa0000")));
+    attr->setForeground(QColor(QStringLiteral("#ffff55")));
+    auto* r = v->document()->newMovingRange(
+        KTextEditor::Range(b.startLine, 0, lastLine, lastLen));
+    r->setAttribute(attr);
+    m_blockHighlightRange = r;
+    v->repaint();
+}
+
+void EditorTabManager::buildBlockActions()
+{
+    if (m_ctxCollapseBlock)
+        return;
+    m_ctxCollapseBlock = new QAction(tr("Collapse Block"), this);
+    m_ctxCollapseBlock->setObjectName(QStringLiteral("actionCtxCollapseBlock"));
+    connect(m_ctxCollapseBlock, &QAction::triggered, this, [this] { collapseBlock(); });
+
+    m_ctxExpandBlock = new QAction(tr("Expand Block"), this);
+    m_ctxExpandBlock->setObjectName(QStringLiteral("actionCtxExpandBlock"));
+    connect(m_ctxExpandBlock, &QAction::triggered, this, [this] { expandBlock(); });
+
+    m_ctxHighlightBlock = new QAction(tr("Highlight Block"), this);
+    m_ctxHighlightBlock->setObjectName(QStringLiteral("actionCtxHighlightBlock"));
+    m_ctxHighlightBlock->setCheckable(true);
+    connect(m_ctxHighlightBlock, &QAction::toggled, this,
+            [this](bool on) { setBlockHighlight(on); });
+}
+
+void EditorTabManager::refreshBlockActions()
+{
+    buildBlockActions();
+    const bool onBlock = canActOnBlock();
+    const bool folded = onBlock && currentBlockIsFolded();
+    // Greyed out rather than hidden, so the menu keeps a stable shape - the same
+    // convention the View menu uses for its folding commands.
+    m_ctxCollapseBlock->setEnabled(onBlock && !folded);
+    m_ctxExpandBlock->setEnabled(onBlock && folded);
+    m_ctxHighlightBlock->setEnabled(onBlock);
+}
+
+QAction* EditorTabManager::contextBlockAction(const QString& name) const
+{
+    if (name == QLatin1String("actionCtxCollapseBlock"))
+        return m_ctxCollapseBlock;
+    if (name == QLatin1String("actionCtxExpandBlock"))
+        return m_ctxExpandBlock;
+    if (name == QLatin1String("actionCtxHighlightBlock"))
+        return m_ctxHighlightBlock;
+    return nullptr;
+}
+
+void EditorTabManager::attachBlockMenu(KTextEditor::View* view)
+{
+    if (!view)
+        return;
+    // Kate builds its own right-click menu; this appends our block commands to
+    // it rather than replacing anything.
+    connect(view, &KTextEditor::View::contextMenuAboutToShow, this,
+            [this](KTextEditor::View* v, QMenu* menu) {
+                if (!menu || v != activeView())
+                    return;
+                refreshBlockActions();
+                menu->addSeparator();
+                menu->addAction(m_ctxCollapseBlock);
+                menu->addAction(m_ctxExpandBlock);
+                menu->addAction(m_ctxHighlightBlock);
+            });
+    // The menu state and the highlight band both follow the caret.
+    connect(view, &KTextEditor::View::cursorPositionChanged, this,
+            [this](KTextEditor::View* v, KTextEditor::Cursor) {
+                if (v != activeView())
+                    return;
+                refreshBlockActions();
+                if (m_blockHighlight)
+                    applyBlockHighlight();
+            });
 }
 
 bool EditorTabManager::canFold() const

@@ -392,6 +392,25 @@ int main(int argc, char** argv)
     if (!sessions.lastSession().isEmpty() && sessions.restoreSession(sessions.lastSession()))
         restoreEntries(sessions.entries());
 
+    // Dev aid (unset in normal runs): CRT_KATE_BLOCKPROBE=1 parks the caret on the
+    // first line that OPENS a block and switches the block highlight on, so a
+    // capture can prove the red band paints. Same family as CRT_KATE_SYNTAX and
+    // CRT_KATE_FILEDLG: a way to reach a state a screenshot cannot click its way
+    // into.
+    if (qEnvironmentVariableIsSet("CRT_KATE_BLOCKPROBE")) {
+        QTimer::singleShot(3000, &app, [&tabs] {
+            KTextEditor::View* v = tabs.activeView();
+            if (!v || !v->document())
+                return;
+            for (int line = 0; line < v->document()->lines(); ++line) {
+                v->setCursorPosition(KTextEditor::Cursor(line, 0));
+                if (tabs.canActOnBlock())
+                    break;
+            }
+            tabs.setBlockHighlight(true);
+        });
+    }
+
     ContentBridge bridge;
     bridge.setShellWindow(&shell);
     // The spell popout registers itself with the bridge when the section is

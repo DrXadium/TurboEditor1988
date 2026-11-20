@@ -147,6 +147,7 @@ add_library(crt-editor STATIC
   src/editor/BracketColorizer.cpp
   src/editor/BracketColorizer.h
   src/editor/StringColorizer.cpp
+  src/editor/BlockFinder.cpp
   src/editor/StringColorizer.h
   src/editor/ColourWiring.cpp
   src/editor/ColourWiring.h
@@ -207,6 +208,16 @@ target_link_libraries(tst_theme PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::T
 target_compile_definitions(tst_theme PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME tst_theme COMMAND tst_theme)
+
+# 2026-11-20: the block matcher behind the context menu's Collapse/Expand Block.
+add_executable(tst_blockfinder tests/tst_blockfinder.cpp)
+target_link_libraries(tst_blockfinder PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_blockfinder COMMAND tst_blockfinder)
+
+# 2026-11-20: the block commands + context-menu actions.
+add_executable(tst_blockmenu tests/tst_blockmenu.cpp)
+target_link_libraries(tst_blockmenu PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_blockmenu COMMAND tst_blockmenu)
 
 # 2026-11-20: pure file-change decision logic for the external-change prompt.
 add_executable(tst_filechange tests/tst_filechange.cpp)

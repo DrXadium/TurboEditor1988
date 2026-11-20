@@ -12,8 +12,9 @@
 // HistoryEntry holds a Cursor by value, so the definition is needed here.
 #include <ktexteditor/cursor.h>
 #include "FileChangeTracker.h"
+#include "BlockFinder.h"
 
-namespace KTextEditor { class Document; class View; }
+namespace KTextEditor { class Document; class View; class MovingRange; }
 
 // Owns the KTextEditor documents/views behind the Borland TabStrip.
 // One KTextEditor::Document per tab; the active document's view is the editor.
@@ -115,6 +116,28 @@ public:
     // the actions do nothing). There is no API to ask for fold regions, so the
     // mode is the honest proxy - the menu greys the commands out when false.
     bool canFold() const;
+
+    // Block commands for the right-click menu (2026-11-20). "On a block" means
+    // the caret is on the line that OPENS it - Kate's folding-marker rule - and
+    // the extent comes from BlockFinder because Kate has no public fold-region
+    // API. Kate offers only folding_toggle_current, so collapse/expand check the
+    // folded state first (via View::isLineVisible) to stay idempotent.
+    BlockFinder::Block currentBlock() const;
+    bool canActOnBlock() const;
+    bool currentBlockIsFolded() const;
+    void collapseBlock();
+    void expandBlock();
+
+    // The red-on-yellow band over the current block. Off by default; the user
+    // toggles it from the right-click menu. Cleared when the caret leaves the
+    // block or the tab changes, so it never highlights a stale region.
+    void setBlockHighlight(bool on);
+    bool blockHighlight() const { return m_blockHighlight; }
+
+    // One of actionCtxCollapseBlock / actionCtxExpandBlock /
+    // actionCtxHighlightBlock, created with the views and kept in sync with the
+    // caret. Null when the name is unknown.
+    QAction* contextBlockAction(const QString& name) const;
 
     // Restore a saved set of files (2026-11-20). Opens each URL and then DROPS
     // the pristine untitled tab the constructor created, because openFile()
@@ -293,5 +316,17 @@ private:
     // Colouring of bracket pairs for the ACTIVE view (owns its MovingRanges).
     class ColourWiring* m_brackets = nullptr;
     bool m_bracketsOn = true;
+    // Block commands (2026-11-20): the three context-menu actions, the highlight
+    // toggle, and the MovingRange that paints the band (owned by the document).
+    QAction* m_ctxCollapseBlock = nullptr;
+    QAction* m_ctxExpandBlock = nullptr;
+    QAction* m_ctxHighlightBlock = nullptr;
+    bool m_blockHighlight = false;
+    KTextEditor::MovingRange* m_blockHighlightRange = nullptr;
+    void buildBlockActions();
+    void refreshBlockActions();
+    void applyBlockHighlight();
+    void clearBlockHighlightRange();
+    void attachBlockMenu(KTextEditor::View* view);
     static constexpr int kMaxHistory = 200;
 };
