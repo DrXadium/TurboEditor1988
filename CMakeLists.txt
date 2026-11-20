@@ -142,6 +142,11 @@ add_executable(tst_zoomtools tests/tst_zoomtools.cpp)
 target_link_libraries(tst_zoomtools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
 
+# 2026-11-19: Edit-menu line tools + Word Wrap.
+add_executable(tst_linetools tests/tst_linetools.cpp)
+target_link_libraries(tst_linetools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_linetools COMMAND tst_linetools)
+
 # TV-revision Task 1 test: flat blue field, yellow text, lavender selection.
 add_executable(tst_tveditor tests/tst_tveditor.cpp)
 target_link_libraries(tst_tveditor PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

@@ -24,6 +24,7 @@
 #include <QEvent>
 #include <QScrollBar>
 #include <QLineEdit>
+#include <QRegularExpression>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFile>
@@ -806,6 +807,46 @@ void EditorTabManager::sortLines()
     if (trailing)
         out += QLatin1Char('\n');
     doc->setText(out);
+}
+
+QString EditorTabManager::affixLines(const QString& text, const QString& affix, bool atEnd)
+{
+    if (affix.isEmpty())
+        return text;
+    QStringList lines = text.split(QLatin1Char('\n'));
+    // The segment after a trailing newline is not a line: it gets no affix.
+    const int count = text.endsWith(QLatin1Char('\n')) ? lines.size() - 1
+                                                       : lines.size();
+    for (int i = 0; i < count; ++i) {
+        QString& line = lines[i];
+        // A CRLF's \r belongs to the terminator: the affix goes before it.
+        QString cr;
+        if (line.endsWith(QLatin1Char('\r'))) {
+            cr = QLatin1Char('\r');
+            line.chop(1);
+        }
+        line = atEnd ? line + affix + cr : affix + line + cr;
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString EditorTabManager::removeLineBreaksText(const QString& text)
+{
+    if (text.isEmpty())
+        return text;
+    static const QRegularExpression breaks(QStringLiteral("(?:\\r\\n|\\r|\\n)+"));
+    QString out = text;
+    out.replace(breaks, QStringLiteral(" "));
+    // A break at either edge must not leave the space it turned into behind.
+    const QChar first = text.at(0);
+    if ((first == QLatin1Char('\n') || first == QLatin1Char('\r'))
+        && out.startsWith(QLatin1Char(' ')))
+        out.remove(0, 1);
+    const QChar last = text.at(text.size() - 1);
+    if ((last == QLatin1Char('\n') || last == QLatin1Char('\r'))
+        && out.endsWith(QLatin1Char(' ')))
+        out.chop(1);
+    return out;
 }
 
 bool EditorTabManager::wordWrap() const

@@ -76,6 +76,14 @@ public:
     bool wordWrap() const;
     void setWordWrap(bool on);
 
+    // Pure line transforms behind the Edit menu's line tools (2026-11-19).
+    // affixLines() inserts `affix` at the start or end of every line; a CRLF's
+    // \r stays with the terminator, and the empty segment after a trailing \n
+    // is not a line. removeLineBreaksText() turns each run of breaks into one
+    // space and leaves no stray space where the text began or ended with one.
+    static QString affixLines(const QString& text, const QString& affix, bool atEnd);
+    static QString removeLineBreaksText(const QString& text);
+
     // Standard clipboard editing (Edit menu + Ctrl+X/C/V). This KTextEditor
     // build ships no ClipboardInterface and no action hooks, so these are
     // implemented over Document::text/removeText/insertText and QClipboard.
