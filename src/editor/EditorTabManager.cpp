@@ -29,8 +29,11 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFile>
+#include <QFileSystemWatcher>
 #include <QMutex>
 #include <QMutexLocker>
+#include "ReloadDialog.h"
+#include "src/shell/TvModal.h"
 
 // Register the bundled TV face so the editor can actually resolve it. The font
 // lives in fonts/fonts.qrc (linked into libcrt-shell), and resources in a
@@ -66,6 +69,22 @@ EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
 {
     m_container = new QStackedWidget;
     m_container->setObjectName(QStringLiteral("editorStack"));
+    // External-change detection (2026-11-20): Kate has no watcher of its own, so
+    // this one is the only thing that can notice a file changing underneath us.
+    connect(&m_watcher, &QFileSystemWatcher::fileChanged, this,
+            [this](const QString& path) { onWatchedPathChanged(path); });
+    // A rename-replace drops the file from the watcher without a second
+    // fileChanged, so the directory is watched too: it tells us the path came
+    // back and lets onWatchedPathChanged re-arm it.
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this,
+            [this](const QString& dir) {
+                const QStringList paths = m_watchedDoc.keys();   // snapshot: a
+                // close inside the loop mutates the hash.
+                for (const QString& path : paths) {
+                    if (QFileInfo(path).absolutePath() == dir)
+                        onWatchedPathChanged(path);
+                }
+            });
     // Ensure a first tab exists so activeView() is meaningful immediately.
     if (m_docs.isEmpty())
         newDocument();
@@ -428,6 +447,7 @@ void EditorTabManager::openFile(const QUrl& url)
     applyTvStyle(view);
     installKeyRouting(view);
     trackActiveCursor();
+    armWatch(doc);
 }
 
 void EditorTabManager::setActiveIndex(int index)
@@ -449,6 +469,7 @@ void EditorTabManager::closeTab(int index)
         return;
     KTextEditor::Document* doc = m_docs.takeAt(index);
     KTextEditor::View* view = m_views.takeAt(index);
+    disarmWatch(doc);
     if (view) {
         m_container->removeWidget(view);
         view->deleteLater();
@@ -1071,7 +1092,13 @@ void EditorTabManager::installActions(QWidget* host)
 bool EditorTabManager::saveActive()
 {
     KTextEditor::Document* d = activeDocument();
-    return d && d->documentSave();
+    if (!d || !d->documentSave())
+        return false;
+    // Our own write fires the watcher; move the baseline now so the echo is
+    // silent. Watcher events arrive later through the event loop, so this
+    // always wins the race.
+    armWatch(d);
+    return true;
 }
 
 bool EditorTabManager::saveActiveAs()
@@ -1083,7 +1110,145 @@ bool EditorTabManager::saveActiveAs()
 bool EditorTabManager::saveActiveAs(const QUrl& url)
 {
     KTextEditor::Document* d = activeDocument();
-    return d && !url.isEmpty() && d->saveAs(url);
+    if (!d || url.isEmpty() || !d->saveAs(url))
+        return false;
+    // Save-as may have moved the document: armWatch drops the old path.
+    armWatch(d);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// External changes (2026-11-20)
+//
+// Kate has no file watcher in this build - libKF6TextEditor contains no
+// QFileSystemWatcher, and modifiedOnDisk stayed silent when a file was
+// rewritten underneath an open document - so the watch and the decision live
+// here. FileChangeTracker decides, ReloadDialog asks, documentReload() acts.
+// ---------------------------------------------------------------------------
+
+void EditorTabManager::armWatch(KTextEditor::Document* doc)
+{
+    if (!doc)
+        return;
+    const QString path = doc->url().toLocalFile();
+    if (path.isEmpty())
+        return;   // untitled or remote: nothing to watch
+
+    // Save-as can move a document; stop watching the path it left.
+    const QStringList watched = m_watchedDoc.keys();
+    for (const QString& old : watched) {
+        if (old != path && m_watchedDoc.value(old) == doc) {
+            if (m_watcher.files().contains(old))
+                m_watcher.removePath(old);
+            m_tracker.forget(old);
+            m_watchedDoc.remove(old);
+        }
+    }
+
+    // The baseline is the file as it is NOW. That is what keeps our own save
+    // silent, and what a reload or a Keep-then-Save re-arms.
+    m_tracker.setBaseline(path, FileSignature::fromPath(path));
+    if (!m_watcher.files().contains(path))
+        m_watcher.addPath(path);
+    m_watchedDoc.insert(path, doc);
+
+    // Watch the directory too: a temp-file rename drops the path from the
+    // watcher, and only the directory tells us the file came back.
+    const QString dir = QFileInfo(path).absolutePath();
+    if (!dir.isEmpty() && !m_watcher.directories().contains(dir))
+        m_watcher.addPath(dir);
+}
+
+void EditorTabManager::disarmWatch(KTextEditor::Document* doc)
+{
+    if (!doc)
+        return;
+    const QString path = doc->url().toLocalFile();
+    if (path.isEmpty())
+        return;
+    if (m_watcher.files().contains(path))
+        m_watcher.removePath(path);
+    m_tracker.forget(path);
+    m_watchedDoc.remove(path);
+}
+
+void EditorTabManager::onWatchedPathChanged(const QString& path)
+{
+    KTextEditor::Document* doc = m_watchedDoc.value(path);
+    if (!doc)
+        return;
+
+    const FileChange change = m_tracker.takeAction(path, FileSignature::fromPath(path));
+
+    // Qt drops a path that disappeared (a delete, or a rename-replace). Re-arm
+    // whenever the file is back, so the NEXT change is still seen; while it is
+    // gone, a save re-arms it because armWatch runs on every save.
+    if (!m_watcher.files().contains(path) && QFile::exists(path))
+        m_watcher.addPath(path);
+
+    if (change == FileChange::None)
+        return;
+
+    emit externalChangeDetected(change, path);
+
+    // One prompt at a time: an event that arrives while a dialog is up was
+    // already consumed by the baseline above, so prompting again would only
+    // stack a dialog on a dialog.
+    if (m_externalPromptOpen)
+        return;
+
+    int role = TvModal::Reject;
+    m_externalPromptOpen = true;
+    if (m_externalHandler) {
+        role = m_externalHandler(change, path);
+    } else {
+        // Heap-allocated: TvModal::exec reparents the modal to the anchor, and
+        // a stack modal under a stack anchor is the known double-free.
+        auto* dlg = new ReloadDialog(change == FileChange::Deleted
+                                         ? ReloadDialog::Mode::Deleted
+                                         : ReloadDialog::Mode::Modified,
+                                     path);
+        role = TvModal::exec(m_dialogAnchor ? m_dialogAnchor : activeView(), dlg);
+        dlg->deleteLater();
+    }
+    m_externalPromptOpen = false;
+
+    if (change == FileChange::Modified) {
+        if (role == TvModal::Accept)
+            reloadDocument(doc);
+        return;
+    }
+    // Deleted: Keep leaves the buffer open and saveable; Close drops the tab.
+    if (role != TvModal::Accept) {
+        const int index = m_docs.indexOf(doc);
+        if (index >= 0)
+            closeTab(index);
+    }
+}
+
+void EditorTabManager::reloadDocument(KTextEditor::Document* doc)
+{
+    if (!doc || doc->url().isEmpty())
+        return;
+
+    // documentReload() replaces the text and emits textChanged; without the
+    // guard the pre-reload buffer would be pushed as an undo step.
+    m_applyingHistory = true;
+    const bool ok = doc->documentReload();
+    m_applyingHistory = false;
+    if (!ok)
+        return;
+
+    // The reloaded text is the new truth. Re-seed the snapshot stack so Undo
+    // cannot resurrect the buffer the user chose to discard.
+    QList<HistoryEntry>& hist = historyFor(doc);
+    hist.clear();
+    hist.append({ doc->text(), KTextEditor::Cursor(0, 0) });
+    historyIndexFor(doc) = 0;
+    notifyHistory();
+
+    // A reload is not a change: re-baseline so the echo stays quiet.
+    armWatch(doc);
 }
 
 void EditorTabManager::findReplace(QWidget* anchor, int whichField)

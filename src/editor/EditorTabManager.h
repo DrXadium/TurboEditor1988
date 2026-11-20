@@ -7,8 +7,11 @@
 #include <QHash>
 #include <QKeySequence>
 #include <QStackedWidget>
+#include <QFileSystemWatcher>
+#include <functional>
 // HistoryEntry holds a Cursor by value, so the definition is needed here.
 #include <ktexteditor/cursor.h>
+#include "FileChangeTracker.h"
 
 namespace KTextEditor { class Document; class View; }
 
@@ -152,6 +155,24 @@ public:
     void findReplace(QWidget* anchor, int whichField);
     void findNext();
 
+    // External-change prompt (2026-11-20). Kate's own modifiedOnDisk never
+    // fires in this build (its library carries no file watcher), so this class
+    // owns one: every open local file is watched, and a real change or deletion
+    // opens a ReloadDialog over the anchor the composition root supplied.
+    // setExternalChangeHandler is the test seam: it answers with a TvModal role
+    // instead of opening the modal.
+    using ExternalChangeHandler = std::function<int(FileChange, const QString&)>;
+    void setDialogAnchor(QWidget* anchor) { m_dialogAnchor = anchor; }
+    void setExternalChangeHandler(ExternalChangeHandler handler)
+    {
+        m_externalHandler = std::move(handler);
+    }
+    // Reload from disk WITHOUT leaving an undo step that would restore the
+    // buffer the user chose to discard: the custom history is re-seeded to the
+    // reloaded text.
+    void reloadDocument(KTextEditor::Document* doc);
+    bool isWatchingPath(const QString& path) const { return m_watchedDoc.contains(path); }
+
     // Installs zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0) and text-tool actions
     // (change case, sort) as children of \p host (typically the ShellWindow).
     void installActions(QWidget* host);
@@ -178,6 +199,8 @@ signals:
     // Emitted whenever the active document's history changes, so the Edit menu
     // can enable/disable Undo and Redo.
     void historyChanged(bool canUndo, bool canRedo);
+    // Emitted before the prompt is answered, for observers and tests.
+    void externalChangeDetected(FileChange kind, const QString& path);
 
 private:
     KTextEditor::Document* createDoc();
@@ -193,6 +216,12 @@ private:
     // handler never sees the chord once the embedded QWidget owns focus, and
     // this KTextEditor build drops it, so the view needs its own path in.
     void installKeyRouting(KTextEditor::View* view);
+    // Watch a document's local file: baseline its signature, add the path (and
+    // its directory, so an atomic replace is still seen) to the watcher. Also
+    // the own-save re-baseline, so our own write never prompts.
+    void armWatch(KTextEditor::Document* doc);
+    void disarmWatch(KTextEditor::Document* doc);
+    void onWatchedPathChanged(const QString& path);
 
     // One undo step: the whole document text plus where the caret sat.
     struct HistoryEntry {
@@ -217,6 +246,13 @@ private:
 
     QHash<KTextEditor::Document*, QList<HistoryEntry>> m_history;
     QHash<KTextEditor::Document*, int> m_historyIndex;
+    QFileSystemWatcher m_watcher;
+    FileChangeTracker m_tracker;
+    ExternalChangeHandler m_externalHandler;
+    QWidget* m_dialogAnchor = nullptr;
+    bool m_externalPromptOpen = false;
+    // path -> document, so a watcher event can find its buffer after a tab move.
+    QHash<QString, KTextEditor::Document*> m_watchedDoc;
     // Guards against the history handler re-entering while undo/redo is
     // restoring text (Document::setText emits textChanged).
     bool m_applyingHistory = false;

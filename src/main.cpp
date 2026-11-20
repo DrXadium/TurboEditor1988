@@ -87,6 +87,9 @@ int main(int argc, char** argv)
     EditorTabManager tabs;
     shell.setEditorWidget(tabs.containerWidget());
     tabs.installActions(&shell);
+    // External-change prompts (2026-11-20) are house modals over the shell, so
+    // they composite inside the CRT pass like Find and the file dock.
+    tabs.setDialogAnchor(&shell);
     // Editor key commands (arrows, Backspace, Delete, PageUp/PageDown...) are
     // QActions in KTextEditor's action collection, which is NOT parented into
     // the widget tree and so is unreachable from the bridge's widget walk.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include <QHash>
+#include <QMetaType>
 #include <QString>
 
 // What the caller should do about a watched path. None means "nothing to say".
@@ -43,3 +44,6 @@ public:
 private:
     QHash<QString, FileSignature> m_baseline;
 };
+
+// So the signal and QSignalSpy can carry it.
+Q_DECLARE_METATYPE(FileChange)

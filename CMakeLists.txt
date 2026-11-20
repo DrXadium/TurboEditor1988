@@ -177,6 +177,11 @@ add_executable(tst_reloaddlg tests/tst_reloaddlg.cpp)
 target_link_libraries(tst_reloaddlg PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_reloaddlg COMMAND tst_reloaddlg)
 
+# 2026-11-20: the external-change watcher wiring (real files, real watcher).
+add_executable(tst_reload tests/tst_reload.cpp)
+target_link_libraries(tst_reload PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_reload COMMAND tst_reload)
+
 # 2026-11-19: Edit-menu line tools + Word Wrap.
 add_executable(tst_linetools tests/tst_linetools.cpp)
 target_link_libraries(tst_linetools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
