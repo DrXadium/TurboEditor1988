@@ -16,8 +16,11 @@
 #include <QSignalSpy>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TvFileDock.h"
+#include "src/shell/TvLineEdit.h"
 #include "src/bridge/ContentBridge.h"
 #include <QLineEdit>
+#include <QWheelEvent>
+#include <QApplication>
 
 namespace {
 // Count pixels within tol of want.
@@ -835,9 +838,11 @@ private slots:
     }
 
     // Reported live: "there's no indication anything worked". The shell window
-    // is never active, so a QLineEdit never draws a caret - the click has to
-    // show itself. Clicking a field highlights its content and draws a yellow
-    // frame around it; clicking another moves both.
+    // is never active, so a plain QLineEdit never draws a caret - the click has
+    // to show itself. Clicking a field draws a yellow frame around it and puts
+    // the block caret where you clicked (2026-11-20: it used to select the whole
+    // content instead, which made it impossible to edit part of a path);
+    // clicking another field moves both.
     void clicking_a_field_marks_it_active()
     {
         TvFileDock dock;
@@ -853,8 +858,10 @@ private slots:
 
         QTest::mouseClick(path, Qt::LeftButton, Qt::NoModifier, path->rect().center());
         QCOMPARE(dock.activeField(), static_cast<QWidget*>(path));
-        QVERIFY2(path->selectedText() == path->text(),
-                 qPrintable(QStringLiteral("clicking did not highlight the content (selected=%1)")
+        // A click places the caret; it must NOT select the whole string, or a
+        // second click could never edit part of it.
+        QVERIFY2(path->selectedText().isEmpty(),
+                 qPrintable(QStringLiteral("clicking selected the whole field (selected=%1)")
                                 .arg(path->selectedText())));
 
         const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
@@ -931,6 +938,215 @@ private slots:
 
         dock->reject();
         QCoreApplication::processEvents();
+    }
+
+    // ---- 2026-11-20: typing, caret and scrolling in the dock --------------
+    // User report: "the text highlights when i initially select the field but
+    // the highlight doesn't leave when i click on it again to edit part of the
+    // string". Every click used to consume the release and selectAll(), so a
+    // second click could never place the caret inside the text.
+    void clicking_a_field_places_the_caret_instead_of_selecting_everything()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        auto* path = dock->findChild<QLineEdit*>(QStringLiteral("tvFileDockPath"));
+        QVERIFY(path);
+        path->setText(QStringLiteral("/home/user/projects"));
+        path->setCursorPosition(0);
+        path->deselect();
+
+        // Click a few characters into the string.
+        const int clickX = path->rect().left()
+                           + path->fontMetrics().horizontalAdvance(QStringLiteral("/home"));
+        const QPoint local(clickX, path->rect().center().y());
+        const QPoint shellPt = path->mapTo(&shell, local);
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(path->selectedText().isEmpty(),
+                 qPrintable(QStringLiteral("click left the whole field selected: '%1'")
+                                .arg(path->selectedText())));
+        QVERIFY2(path->cursorPosition() > 0
+                     && path->cursorPosition() < path->text().size(),
+                 qPrintable(QStringLiteral("caret was not placed inside the text (pos=%1 of %2)")
+                                .arg(path->cursorPosition()).arg(path->text().size())));
+    }
+
+    // Typing after that click must EDIT the string, not replace it - the exact
+    // behaviour the select-all workaround destroyed.
+    void typing_after_clicking_mid_string_edits_in_place()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        auto* path = dock->findChild<QLineEdit*>(QStringLiteral("tvFileDockPath"));
+        QVERIFY(path);
+        path->setText(QStringLiteral("abcdef"));
+        // Click three characters in - the real gesture the user described.
+        const int clickX = path->rect().left()
+                           + path->fontMetrics().horizontalAdvance(QStringLiteral("abc"));
+        const QPoint shellPt = path->mapTo(&shell,
+                                           QPoint(clickX, path->rect().center().y()));
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+        QCOMPARE(path->selectedText(), QString());
+        QCOMPARE(path->cursorPosition(), 3);
+
+        bridge.forwardKeyEvent(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier,
+                               QStringLiteral("x"));
+        QCoreApplication::processEvents();
+
+        QCOMPARE(path->text(), QStringLiteral("abcxdef"));
+    }
+
+    // "I can't see where the mouse cursor is in the input line": the field
+    // paints a DOS block caret at the insertion point.
+    void field_paints_a_block_caret_at_the_insertion_point()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        auto* path = qobject_cast<TvLineEdit*>(
+            dock->findChild<QLineEdit*>(QStringLiteral("tvFileDockPath")));
+        QVERIFY2(path, "the path field is not a TvLineEdit");
+        QVERIFY(path->caretRect().isEmpty());      // not focused: no caret
+
+        const QPoint shellPt = path->mapTo(&shell, path->rect().center());
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+
+        QVERIFY(path->holdsKeyFocus());
+        const QRect caret = path->caretRect();
+        QVERIFY2(!caret.isEmpty(), "focused field reports no caret cell");
+        QVERIFY2(path->rect().contains(caret.topLeft()),
+                 "caret cell lies outside the field");
+        QVERIFY2(caret.width() >= 2,
+                 qPrintable(QStringLiteral("caret is %1 px wide - not a block")
+                                .arg(caret.width())));
+
+        // ...and it is actually INK on screen. Blink off so the probe is
+        // deterministic (the app leaves it blinking; tests must not race it).
+        path->setCaretBlinkEnabled(false);
+        path->setCaretColors(QColor(0xFF, 0xFF, 0xFF), QColor(0x00, 0x00, 0xAA));
+        const QImage img = path->grab().toImage();
+        int white = 0;
+        for (int y = caret.top(); y <= caret.bottom() && y < img.height(); ++y)
+            for (int x = caret.left(); x <= caret.right() && x < img.width(); ++x)
+                if (isWhite(img.pixelColor(x, y)))
+                    ++white;
+        QVERIFY2(white >= 4,
+                 qPrintable(QStringLiteral("no block caret painted (%1 white px in the cell)")
+                                .arg(white)));
+    }
+
+    // "the horizontal scroll does not work in the file list": the strip is a
+    // real draggable thumb and its track pages.
+    void strip_drag_scrolls_the_list()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (int i = 0; i < 40; ++i)
+            QFile(QDir(dir.path()).absoluteFilePath(
+                      QStringLiteral("file_%1_with_a_fairly_long_name.txt").arg(i, 2, 10, QLatin1Char('0'))))
+                .open(QIODevice::WriteOnly);
+
+        TvFileDock dock;
+        dock.resize(700, 500);
+        dock.show();
+        dock.setDirectory(dir.path());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(dock.scrollOffset() == 0, "list does not start at the top");
+        const QRect thumb = dock.stripRect();
+        QVERIFY2(!thumb.isEmpty(), "no scroll strip");
+
+        // Press on the thumb, drag to the far right, release.
+        const QRect grab(thumb.left() + 2, thumb.center().y(), 6, 2);
+        QMouseEvent press(QEvent::MouseButtonPress, grab.center(), dock.mapToGlobal(grab.center()),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &press);
+        const QPoint far(thumb.right() - 1, thumb.center().y());
+        QMouseEvent move(QEvent::MouseMove, far, dock.mapToGlobal(far),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, far, dock.mapToGlobal(far),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &release);
+        QCoreApplication::processEvents();
+
+        QVERIFY2(dock.scrollOffset() > 0,
+                 "dragging the strip did not scroll the list");
+    }
+
+    void shift_wheel_scrolls_long_names_sideways()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile(QDir(dir.path()).absoluteFilePath(
+                  QStringLiteral("a_name_long_enough_to_be_clipped_by_the_column.txt")))
+            .open(QIODevice::WriteOnly);
+
+        TvFileDock dock;
+        dock.resize(700, 500);
+        dock.show();
+        dock.setDirectory(dir.path());
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.horizontalOffset() == 0, "names start scrolled");
+
+        const QPoint local(60, dock.listRect().center().y());
+        QWheelEvent shiftWheel(QPointF(local), QPointF(dock.mapToGlobal(local)),
+                               QPoint(0, 0), QPoint(0, -120), Qt::NoButton,
+                               Qt::ShiftModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&dock, &shiftWheel);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.horizontalOffset() > 0,
+                 "Shift+wheel did not scroll the names sideways");
+
+        // A plain wheel must still scroll the LIST, not the names.
+        dock.setHorizontalOffset(0);
+        QWheelEvent plainWheel(QPointF(local), QPointF(dock.mapToGlobal(local)),
+                               QPoint(0, 0), QPoint(0, -120), Qt::NoButton,
+                               Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&dock, &plainWheel);
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.horizontalOffset(), 0);
     }
 };
 

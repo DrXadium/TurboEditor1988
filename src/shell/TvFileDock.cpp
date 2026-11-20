@@ -3,6 +3,8 @@
 #include "TvFrame.h"
 #include "TabListMenu.h"
 #include "TvPlate.h"
+#include "TvLineEdit.h"
+#include "ShellWindow.h"
 #include <QAction>
 #include <QMenu>
 #include <QLineEdit>
@@ -50,23 +52,28 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_DeleteOnClose, false);
 
-    m_edit = new QLineEdit(this);
+    // The fields are TvLineEdit, not QLineEdit: the shell is never an active
+    // window, so Qt paints no caret in a plain QLineEdit (see TvLineEdit.h).
+    m_edit = new TvLineEdit(this);
     m_edit->setObjectName(QStringLiteral("tvFileDockEdit"));
     m_edit->setAutoFillBackground(true);
     m_edit->installEventFilter(this);
 
     // Path bar (top): where the Files box is looking.
-    m_pathEdit = new QLineEdit(this);
+    m_pathEdit = new TvLineEdit(this);
     m_pathEdit->setObjectName(QStringLiteral("tvFileDockPath"));
     m_pathEdit->setAutoFillBackground(true);
     m_pathEdit->installEventFilter(this);
 
     // File-type box (bottom): free text, seeded with the era default.
-    m_typeEdit = new QLineEdit(this);
+    m_typeEdit = new TvLineEdit(this);
     m_typeEdit->setObjectName(QStringLiteral("tvFileDockType"));
     m_typeEdit->setAutoFillBackground(true);
     m_typeEdit->installEventFilter(this);
     m_typeEdit->setText(typePresets().first());
+    // DOS block caret: white cell on the blue entry field (borland.qss).
+    for (TvLineEdit* f : { m_edit, m_pathEdit, m_typeEdit })
+        f->setCaretColors(kWhite, kBlue);
     connect(m_typeEdit, &QLineEdit::textChanged, this,
             [this](const QString& text) { setFilter(text); });
 
@@ -410,6 +417,23 @@ void TvFileDock::resizeEvent(QResizeEvent* ev)
     layoutChildren();
 }
 
+void TvFileDock::showEvent(QShowEvent* ev)
+{
+    QWidget::showEvent(ev);
+    // The dock owns the keyboard while it is up, so the bridge stops offering
+    // the keystroke to the menu and the editor behind it.
+    if (auto* shell = qobject_cast<ShellWindow*>(window()))
+        shell->setKeyboardOwner(this);
+}
+
+void TvFileDock::hideEvent(QHideEvent* ev)
+{
+    if (auto* shell = qobject_cast<ShellWindow*>(window()))
+        if (shell->keyboardOwner() == this)
+            shell->setKeyboardOwner(nullptr);
+    QWidget::hideEvent(ev);
+}
+
 void TvFileDock::changeEvent(QEvent* ev)
 {
     QWidget::changeEvent(ev);
@@ -497,6 +521,59 @@ int TvFileDock::visibleRows() const
     if (rowH <= 0)
         return 1;
     return qMax(1, (m_listRect.height() - kScrollStrip) / rowH);
+}
+
+QRect TvFileDock::stripRect() const
+{
+    if (m_listRect.isEmpty())
+        return QRect();
+    return QRect(m_listRect.left(), m_listRect.bottom() - kScrollStrip + 1,
+                 m_listRect.width(), kScrollStrip);
+}
+
+QRect TvFileDock::stripThumbRect() const
+{
+    const QRect track = stripRect();
+    if (track.isEmpty() || m_files.isEmpty())
+        return QRect();
+    const int perCol = visibleRows();
+    const int total = qMax(1, m_files.size());
+    const int thumbW = qMax(8, track.width() * qMin(total, 2 * perCol) / total);
+    const int maxScroll = qMax(1, total - 2 * perCol);
+    const int x = track.left()
+                  + (track.width() - thumbW) * qBound(0, m_scroll, maxScroll) / maxScroll;
+    return QRect(x, track.top() + 1, thumbW, qMax(2, kScrollStrip - 2));
+}
+
+int TvFileDock::maxHorizontalOffset() const
+{
+    const int colW = qMax(0, m_listRect.width() / 2 - 4);
+    if (colW <= 0)
+        return 0;
+    int widest = 0;
+    for (const QString& name : m_files)
+        widest = qMax(widest, fontMetrics().horizontalAdvance(name));
+    return qMax(0, widest + 4 - colW);
+}
+
+void TvFileDock::setHorizontalOffset(int px)
+{
+    const int next = qBound(0, px, maxHorizontalOffset());
+    if (next == m_hOffset)
+        return;
+    m_hOffset = next;
+    update();
+}
+
+void TvFileDock::scrollByPage(int pages)
+{
+    const int perCol = visibleRows();
+    const int maxScroll = qMax(0, m_files.size() - 2 * perCol);
+    const int next = qBound(0, m_scroll + pages * perCol, maxScroll);
+    if (next != m_scroll) {
+        m_scroll = next;
+        update();
+    }
 }
 
 int TvFileDock::rowIndex(int column, int row) const
@@ -675,24 +752,24 @@ void TvFileDock::paintEvent(QPaintEvent*)
         p.save();
         p.setFont(inkFont);
         // TV list language: black names on the cyan field, the selected row
-        // inverted to white on blue.
+        // inverted to white on blue. Long names are read by scrolling the
+        // offset (Shift+wheel), so the text starts left of the row when one is
+        // set and the row clip keeps the neighbour column clean.
         p.setPen(sel ? kWhite : kBlack);
-        p.drawText(r.adjusted(2, 0, -2, 0), Qt::AlignLeft | Qt::AlignVCenter, m_files.at(i));
+        p.drawText(r.adjusted(2 - m_hOffset, 0, -2, 0),
+                   Qt::AlignLeft | Qt::AlignVCenter, m_files.at(i));
         p.restore();
     }
     p.restore();
 
     // Scroll strip: teal track with a green thumb sized to the visible share.
-    p.fillRect(QRect(m_listRect.left(), stripTop, m_listRect.width(), kScrollStrip), kTeal);
-    if (!m_files.isEmpty()) {
-        const int perCol = visibleRows();
-        const int total = qMax(1, m_files.size());
-        const int thumbW = qMax(8, m_listRect.width() * qMin(total, 2 * perCol) / total);
-        const int maxScroll = qMax(1, total - 2 * perCol);
-        const int x = m_listRect.left()
-                      + (m_listRect.width() - thumbW) * m_scroll / maxScroll;
-        p.fillRect(QRect(x, stripTop + 1, thumbW, kScrollStrip - 2), kGreen);
-    }
+    // The thumb is draggable and the track pages on click (2026-11-20) - it used
+    // to be a painted indicator with no hit handling at all, which is why the
+    // user reported "the horizontal scroll does not work in the file list".
+    p.fillRect(stripRect(), kTeal);
+    const QRect thumb = stripThumbRect();
+    if (!thumb.isEmpty())
+        p.fillRect(thumb, m_draggingStrip ? kGreenBright : kGreen);
 
     // ---- Bottom path status row: blue field, white path, right-aligned count --
     p.fillRect(m_statusRect, kBlue);
@@ -736,6 +813,20 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
         update();
         return;
     }
+    // The strip under the Files box is a real scroll control now: pressing the
+    // thumb grabs it, pressing the track pages toward the click.
+    if (stripRect().contains(pos)) {
+        const QRect thumb = stripThumbRect();
+        if (thumb.contains(pos)) {
+            m_draggingStrip = true;
+            m_stripGrabDx = pos.x() - thumb.left();
+        } else {
+            scrollByPage(pos.x() < thumb.left() ? -1 : +1);
+        }
+        setFocus(Qt::MouseFocusReason);
+        update();
+        return;
+    }
     if (m_listRect.contains(pos)) {
         const int idx = rowAt(pos);
         if (idx >= 0) {
@@ -749,8 +840,32 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
     QWidget::mousePressEvent(ev);
 }
 
+void TvFileDock::mouseMoveEvent(QMouseEvent* ev)
+{
+    if (!m_draggingStrip) {
+        QWidget::mouseMoveEvent(ev);
+        return;
+    }
+    const QRect track = stripRect();
+    const QRect thumb = stripThumbRect();
+    const int span = qMax(1, track.width() - thumb.width());
+    const int perCol = visibleRows();
+    const int maxScroll = qMax(0, m_files.size() - 2 * perCol);
+    const int x = qBound(0, ev->pos().x() - m_stripGrabDx - track.left(), span);
+    const int next = (x * maxScroll + span / 2) / span;
+    if (next != m_scroll) {
+        m_scroll = next;
+        update();
+    }
+    ev->accept();
+}
+
 void TvFileDock::mouseReleaseEvent(QMouseEvent* ev)
 {
+    if (m_draggingStrip) {
+        m_draggingStrip = false;
+        update();
+    }
     const DropCell held = m_pressedDrop;
     if (held != DropCell::None) {
         // Come back up BEFORE the menu opens: the menu runs its own event
@@ -785,6 +900,20 @@ void TvFileDock::mouseDoubleClickEvent(QMouseEvent* ev)
 
 void TvFileDock::wheelEvent(QWheelEvent* ev)
 {
+    // Sideways first: Shift+wheel (and a real horizontal wheel) scrolls long
+    // names. The two-column list has no horizontal scrollbar of its own, and
+    // clipped names were the other half of "the horizontal scroll does not
+    // work in the file list".
+    const int dx = ev->angleDelta().x();
+    const bool sideways = (ev->modifiers() & Qt::ShiftModifier) || (dx != 0);
+    if (sideways) {
+        const int delta = dx != 0 ? -dx : -ev->angleDelta().y();
+        if (delta != 0) {
+            setHorizontalOffset(m_hOffset + (delta > 0 ? 12 : -12));
+            ev->accept();
+            return;
+        }
+    }
     const int perCol = visibleRows();
     const int step = ev->angleDelta().y() > 0 ? -perCol : perCol;
     const int maxScroll = qMax(0, m_files.size() - 2 * perCol);
@@ -826,16 +955,12 @@ bool TvFileDock::eventFilter(QObject* watched, QEvent* ev)
         update();
         return false;               // the field still places its own caret
     }
-    if (isField && ev->type() == QEvent::MouseButtonRelease) {
-        // Highlight the content: with no active window the caret never blinks,
-        // so the selection is the visible proof that the click landed. Consume
-        // the release so the field cannot immediately clear it again.
-        auto* edit = static_cast<QLineEdit*>(watched);
-        m_activeField = edit;
-        edit->selectAll();
-        update();
-        return true;
-    }
+    // 2026-11-20: the release is NOT consumed any more. It used to call
+    // selectAll() so the selection could stand in for a caret, but that made a
+    // second click re-select the whole string - you could never drop the caret
+    // to edit part of it, and the highlight never cleared. TvLineEdit now draws
+    // the caret, so plain editing behaviour is correct: click places the caret,
+    // drag selects, Ctrl+A selects all.
     if (watched == m_edit && ev->type() == QEvent::KeyPress) {
         auto* kev = static_cast<QKeyEvent*>(ev);
         if (kev->key() == Qt::Key_Escape) {

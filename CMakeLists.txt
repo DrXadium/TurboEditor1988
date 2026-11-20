@@ -58,6 +58,7 @@ add_library(crt-shell STATIC
   src/shell/BottomBand.cpp
   src/shell/BottomBand.h
   src/shell/TvFileDock.cpp
+  src/shell/TvLineEdit.cpp
   src/shell/TvModal.cpp
   src/shell/TvModal.h
   src/shell/FieldCell.cpp
@@ -73,6 +74,7 @@ add_library(crt-shell STATIC
   src/shell/AboutModal.cpp
   src/shell/AboutModal.h
   src/shell/TvFileDock.h
+  src/shell/TvLineEdit.h
   src/shell/RecentFilesStore.cpp
   src/shell/RecentFilesStore.h
   src/shell/ScrollBarInstaller.cpp

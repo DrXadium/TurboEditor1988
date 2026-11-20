@@ -767,6 +767,23 @@ void ShellWindow::paintEvent(QPaintEvent* ev)
     QMainWindow::paintEvent(ev);
 }
 
+void ShellWindow::setKeyboardOwner(QWidget* owner)
+{
+    // A stale owner is worse than none: a deleted dock would leave the app
+    // unable to type into the editor at all.
+    if (owner && !qobject_cast<QWidget*>(owner))
+        owner = nullptr;
+    m_keyboardOwner = owner;
+}
+
+bool ShellWindow::keyboardIsOwned() const
+{
+    // Ownership lasts only while the owner is on screen. Hiding is the normal
+    // end of a dock or modal, and hideEvent also clears it - this is the
+    // belt-and-braces check for an owner destroyed without a hide.
+    return m_keyboardOwner && m_keyboardOwner->isVisible();
+}
+
 QWidget* ShellWindow::keyFocusWidget() const
 {
     // focusWidget() is authoritative when it resolves; otherwise fall back to

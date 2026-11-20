@@ -96,6 +96,14 @@ public:
     bool isEditorArea(QWidget* w) const;
     // Focus target for forwarded keys: the editor if one is set, else the shell.
     QWidget* keyFocusWidget() const;
+    // Keyboard ownership. While a visible owner is set (the file dock, a house
+    // modal), ContentBridge delivers the key to the focused widget and stops:
+    // no menu shortcut, no editor shortcut. Without this, Ctrl+S saved the
+    // document, Ctrl+X cut it and Ctrl+F opened Find BEHIND the open dialog.
+    // Cleared by the owner itself when it hides.
+    void setKeyboardOwner(QWidget* owner);
+    QWidget* keyboardOwner() const { return m_keyboardOwner; }
+    bool keyboardIsOwned() const;
     // Editor shortcut fallback. The bridge cannot reach KTextEditor's editing
     // actions: crt-shell does not link KTextEditor, and Kate keeps those
     // actions in a KActionCollection that is NOT parented into the widget tree.
@@ -134,6 +142,7 @@ private:
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     QWidget* m_editor = nullptr;             // current editor widget (focus default)
+    QWidget* m_keyboardOwner = nullptr;      // dock/modal that owns the keyboard
     std::function<bool(const QKeySequence&)> m_editorShortcut;
     std::function<SpellWord(const QPoint&)> m_spellResolver;
     QString m_spellLang;

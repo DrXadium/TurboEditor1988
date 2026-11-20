@@ -315,6 +315,17 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
     QApplication::sendEvent(target, ev);
     delete ev;
 
+    // A dock or modal that owns the keyboard keeps the WHOLE keystroke. Without
+    // this the event was also offered to the menu's actions and to the editor's
+    // action collection, so with File > Open on screen Ctrl+S saved the
+    // document, Ctrl+X cut it and Ctrl+F opened Find behind the dialog. The
+    // owner's own widgets (line edits, lists) have already handled the key
+    // above; nothing else may see it.
+    if (m_shell->keyboardIsOwned()) {
+        update();       // the field repaint must reach the CRT texture
+        return;
+    }
+
     // With no active window Qt's shortcut map never runs, so dispatch the
     // matching action directly. The menu's own actions win (Ctrl+X/C/V, F5...);
     // otherwise the focused widget's actions get their turn. That second step

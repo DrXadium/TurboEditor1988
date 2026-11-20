@@ -13,6 +13,7 @@
 #include "src/shell/ShellWindow.h"
 #include "src/shell/MenuBar.h"
 #include "src/shell/TabStrip.h"
+#include "src/shell/TvFileDock.h"
 #include "src/bridge/ContentBridge.h"
 #include "src/editor/EditorTabManager.h"
 #include <ktexteditor/view.h>
@@ -451,6 +452,106 @@ private slots:
         b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::NoButton,
                             Qt::NoButton, Qt::NoModifier, c.x(), c.y());
         QCoreApplication::processEvents();
+    }
+
+    // User report 2026-11-20: "if I type in the file path input box it also
+    // types in the editor". The dock is a child of the same shell as the
+    // editor, so a forwarded key must land in the focused field and NOWHERE
+    // else - the document behind the dock must not change.
+    void typing_in_the_file_dock_does_not_reach_the_editor() {
+        ShellWindow w;
+        w.resize(900, 700);
+        EditorTabManager tabs;              // one document + view
+        w.setEditorWidget(tabs.containerWidget());
+        w.show();
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QCoreApplication::processEvents();
+        tabs.containerWidget()->grab();     // geometry without a real screen
+
+        TvFileDock* dock = TvFileDock::openOn(&w, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        auto* path = dock->findChild<QLineEdit*>(QStringLiteral("tvFileDockPath"));
+        QVERIFY2(path, "no path edit in the dock");
+        const QPoint pt = path->mapTo(&w, path->rect().center());
+        b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                            Qt::LeftButton, Qt::NoModifier, pt.x(), pt.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(w.focusWidget() == path, "click did not focus the path field");
+
+        KTextEditor::Document* doc = tabs.activeDocument();
+        QVERIFY2(doc, "no active document");
+        doc->setText(QString());
+        const QString before = doc->text();
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
+                          QStringLiteral("a"));
+        QCoreApplication::processEvents();
+
+        QVERIFY2(path->text().contains(QLatin1Char('a')),
+                 qPrintable(QStringLiteral("typing did not reach the path field (text=%1)")
+                                .arg(path->text())));
+        QVERIFY2(doc->text() == before,
+                 qPrintable(QStringLiteral("typing in the dock also changed the document (text=%1)")
+                                .arg(doc->text())));
+
+        dock->reject();
+        QCoreApplication::processEvents();
+    }
+
+    // While a dock owns the keyboard, NO app-level shortcut may fire behind it:
+    // before 2026-11-20, Ctrl+S opened Kate's NATIVE save dialog behind File >
+    // Open (measured: the watchdog caught the stack at
+    // DocumentPrivate::getSaveFileUrl -> QDialog::exec), and Ctrl+X cut it.
+    //
+    // The chord must be one KTextEditor does NOT bind: Qt's own shortcut map
+    // still runs for a focused-but-unowned window, so a KTextEditor-bound chord
+    // would open its native dialog regardless of the shell handler and this
+    // test would hang instead of asserting. Ctrl+Alt+Shift+K is unbound.
+    void dock_owns_the_keyboard_while_it_is_open() {
+        ShellWindow w;
+        w.resize(900, 700);
+        EditorTabManager tabs;
+        w.setEditorWidget(tabs.containerWidget());
+        w.show();
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        int editorShortcutCalls = 0;
+        w.setEditorShortcutHandler([&editorShortcutCalls](const QKeySequence&) {
+            ++editorShortcutCalls;
+            return true;
+        });
+        QCoreApplication::processEvents();
+        tabs.containerWidget()->grab();
+
+        TvFileDock* dock = TvFileDock::openOn(&w, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+        QVERIFY2(w.keyboardIsOwned(), "opening the dock did not claim the keyboard");
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_K,
+                          Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier,
+                          QString());
+        QCoreApplication::processEvents();
+        QCOMPARE(editorShortcutCalls, 0);
+
+        dock->reject();
+        QCoreApplication::processEvents();
+        QVERIFY2(!w.keyboardIsOwned(), "closing the dock left the keyboard claimed");
+
+        // ...and with the dock gone the same chord reaches the app again.
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_K,
+                          Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier,
+                          QString());
+        QCoreApplication::processEvents();
+        QCOMPARE(editorShortcutCalls, 1);
     }
 };
 

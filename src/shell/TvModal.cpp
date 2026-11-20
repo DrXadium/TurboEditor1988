@@ -2,6 +2,7 @@
 #include "TvModal.h"
 #include "TvFrame.h"
 #include "TvPlate.h"
+#include "ShellWindow.h"
 
 #include <QEventLoop>
 #include <QFontMetrics>
@@ -265,7 +266,15 @@ int TvModal::exec(QWidget* anchor, TvModal* modal)
     modal->show();
     modal->raise();
     modal->setFocus(Qt::OtherFocusReason);
+    // The modal owns the keyboard for its whole run: no menu shortcut, no
+    // editor shortcut may fire behind it (2026-11-20, same rule as the file
+    // dock). Cleared below, whatever role ended the loop.
+    auto* shell = qobject_cast<ShellWindow*>(anchor);
+    if (shell)
+        shell->setKeyboardOwner(modal);
     loop.exec();
+    if (shell && shell->keyboardOwner() == modal)
+        shell->setKeyboardOwner(nullptr);
     modal->hide();
     return result;
 }
