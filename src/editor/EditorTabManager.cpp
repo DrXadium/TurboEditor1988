@@ -964,7 +964,20 @@ void EditorTabManager::setWordWrap(bool on)
 namespace {
 QAction* viewAction(KTextEditor::View* v, const char* name)
 {
-    return v ? v->findChild<QAction*>(QString::fromLatin1(name)) : nullptr;
+    if (!v)
+        return nullptr;
+    const QString n = QString::fromLatin1(name);
+    // Ask the view's action collection FIRST. Measured: the folding actions
+    // (folding_toplevel, folding_expandtoplevel, folding_toggle_current) live
+    // ONLY there - findChild<QAction*> returns null for them, so a findChild-only
+    // lookup silently turned every folding command into a no-op. The collection
+    // lookup also works for the view toggles, and the child search stays as a
+    // fallback for anything parented to the view rather than the collection.
+    if (KActionCollection* ac = v->actionCollection()) {
+        if (QAction* a = ac->action(n))
+            return a;
+    }
+    return v->findChild<QAction*>(n);
 }
 
 // Kate's whitespace actions toggle on trigger(): the checked flag flips on
@@ -1006,6 +1019,65 @@ void EditorTabManager::setColouredBrackets(bool on)
 bool EditorTabManager::colouredBrackets() const
 {
     return m_bracketsOn;
+}
+
+void EditorTabManager::collapseAll()
+{
+    // folding_toplevel is Kate's "Fold Toplevel Nodes": the outermost blocks
+    // only. There is no API to walk the folding tree, so deeper levels are not
+    // reachable from a command (probed: 10 visible lines -> 4).
+    if (QAction* a = viewAction(activeView(), "folding_toplevel"))
+        a->trigger();
+}
+
+void EditorTabManager::expandAll()
+{
+    if (QAction* a = viewAction(activeView(), "folding_expandtoplevel"))
+        a->trigger();
+}
+
+void EditorTabManager::toggleCurrentNode()
+{
+    if (QAction* a = viewAction(activeView(), "folding_toggle_current"))
+        a->trigger();
+}
+
+bool EditorTabManager::canFold() const
+{
+    KTextEditor::View* v = activeView();
+    if (!v)
+        return false;
+    KTextEditor::Document* doc = v->document();
+    if (!doc)
+        return false;
+    const QString mode = doc->highlightingMode();
+    return !mode.isEmpty() && mode != QLatin1String("None");
+}
+
+void EditorTabManager::replaceWithFiles(const QVector<QUrl>& urls, int activeIndex)
+{
+    if (urls.isEmpty())
+        return;
+
+    // openFile() APPENDS, so remember what was already there.
+    const int placeholders = m_docs.size();
+    for (const QUrl& url : urls)
+        openFile(url);
+
+    // Drop the placeholders, newest first so the indices stay valid. Only a
+    // pristine untitled document qualifies: an empty buffer with no URL that the
+    // user has not modified. Anything else is real work and stays open.
+    for (int i = placeholders - 1; i >= 0; --i) {
+        KTextEditor::Document* doc = m_docs.value(i);
+        if (!doc)
+            continue;
+        if (doc->url().isEmpty() && doc->text().isEmpty() && !doc->isModified())
+            closeTab(i);
+    }
+
+    if (m_docs.isEmpty())
+        return;                      // closeTab leaves a fresh tab in that case
+    setActiveIndex(qBound(0, activeIndex, int(m_docs.size()) - 1));
 }
 
 void EditorTabManager::affixActiveLines(const QString& affix, bool atEnd)

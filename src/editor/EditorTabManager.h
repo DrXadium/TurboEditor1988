@@ -102,6 +102,28 @@ public:
     bool colouredBrackets() const;
     void setColouredBrackets(bool on);
 
+    // View > Collapse All / Expand All / Toggle Current Node (2026-11-20): the
+    // folding ("nesting") commands. Kate exposes these as per-view ACTIONS and
+    // nothing else - there is no folding class in the 6.30 headers - so these
+    // drive folding_toplevel / folding_expandtoplevel / folding_toggle_current.
+    // Measured: the actions really fold (10 visible lines -> 4 -> 10) and the
+    // state is per VIEW, so "per tab" is automatic.
+    void collapseAll();
+    void expandAll();
+    void toggleCurrentNode();
+    // A document with no syntax mode has no folding regions at all (measured:
+    // the actions do nothing). There is no API to ask for fold regions, so the
+    // mode is the honest proxy - the menu greys the commands out when false.
+    bool canFold() const;
+
+    // Restore a saved set of files (2026-11-20). Opens each URL and then DROPS
+    // the pristine untitled tab the constructor created, because openFile()
+    // appends: without this the restored file lands in tab 1 while activeIndex 0
+    // selects the empty placeholder, which is exactly how launch-time restore
+    // used to come up blank. A tab the user has typed into is NOT a placeholder
+    // and is never closed. `activeIndex` is clamped.
+    void replaceWithFiles(const QVector<QUrl>& urls, int activeIndex);
+
     // Pure line transforms behind the Edit menu's line tools (2026-11-19).
     // affixLines() inserts `affix` at the start or end of every line; a CRLF's
     // \r stays with the terminator, and the empty segment after a trailing \n

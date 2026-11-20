@@ -126,6 +126,20 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     foldBar->setCheckable(true);
     foldBar->setChecked(true);
     foldBar->setStatusTip(QStringLiteral("Toggle the code folding bar"));
+    // 2026-11-20: the folding ("nesting") commands. Each drives Kate's own
+    // per-view action; folding state is per VIEW, so they are per tab for free.
+    // Collapse All is Kate's "Fold Toplevel Nodes" - outermost blocks only, as
+    // there is no API to walk the folding tree. Expand All is the default state.
+    // Greyed out (in the composition root) when the document cannot fold.
+    QAction* collapse = added(view, QStringLiteral("&Collapse All"),
+                              QStringLiteral("actionViewCollapseAll"));
+    collapse->setStatusTip(QStringLiteral("Fold the outermost blocks"));
+    QAction* expand = added(view, QStringLiteral("E&xpand All"),
+                            QStringLiteral("actionViewExpandAll"));
+    expand->setStatusTip(QStringLiteral("Unfold every block"));
+    QAction* toggleNode = added(view, QStringLiteral("Toggle C&urrent Block"),
+                                QStringLiteral("actionViewToggleNode"));
+    toggleNode->setStatusTip(QStringLiteral("Fold or unfold the block at the cursor"));
     // 2026-11-19: wrap is per view and ON by default (applyTvStyle). The check
     // follows the active tab, re-synced in the composition root.
     QAction* wrap = added(view, QStringLiteral("&Word Wrap"),

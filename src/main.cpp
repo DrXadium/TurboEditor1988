@@ -371,18 +371,23 @@ int main(int argc, char** argv)
     // Opens a restored entry set (files, active tab, cursor) - shared by the
     // launch-time restore AND the Session > Restore Last menu.
     auto restoreEntries = [&tabs](const QVector<SessionManager::Entry>& entries) {
-        for (const auto& e : entries)
-            tabs.openFile(e.fileUrl);
-        if (!entries.isEmpty()) {
-            int want = 0;
-            for (int i = 0; i < entries.size(); ++i)
-                if (entries[i].activeIndex >= 0 && entries[i].activeIndex < entries.size())
-                    want = entries[i].activeIndex;
-            tabs.setActiveIndex(want);
-            const auto& active = entries[want];
-            if (KTextEditor::View* v = tabs.activeView())
-                v->setCursorPosition(KTextEditor::Cursor(active.line, active.column));
+        if (entries.isEmpty())
+            return;
+        // replaceWithFiles, NOT a loop of openFile: openFile appends, and the
+        // manager already holds an empty untitled tab, so appending left the
+        // restored file in tab 1 while activeIndex 0 selected the blank
+        // placeholder - the launch-time restore came up empty (2026-11-20).
+        QVector<QUrl> urls;
+        int want = 0;
+        for (int i = 0; i < entries.size(); ++i) {
+            urls.append(entries[i].fileUrl);
+            if (entries[i].activeIndex >= 0 && entries[i].activeIndex < entries.size())
+                want = entries[i].activeIndex;
         }
+        tabs.replaceWithFiles(urls, want);
+        if (KTextEditor::View* v = tabs.activeView())
+            v->setCursorPosition(
+                KTextEditor::Cursor(entries[want].line, entries[want].column));
     };
     if (!sessions.lastSession().isEmpty() && sessions.restoreSession(sessions.lastSession()))
         restoreEntries(sessions.entries());
@@ -604,6 +609,28 @@ int main(int argc, char** argv)
                              [&tabs, cb](bool on) { tabs.setColouredBrackets(on); });
             QObject::connect(&tabs, &EditorTabManager::activeViewChanged, cb,
                              [&tabs, cb] { cb->setChecked(tabs.colouredBrackets()); });
+        }
+        // Folding ("nesting") commands: Collapse All / Expand All / Toggle Block.
+        // A document with no syntax mode has no folding regions (measured: the
+        // actions do nothing), so the three items are greyed out rather than
+        // offering a command that cannot work. Re-synced on every tab change.
+        on(act("actionViewCollapseAll"), [&tabs] { tabs.collapseAll(); });
+        on(act("actionViewExpandAll"), [&tabs] { tabs.expandAll(); });
+        on(act("actionViewToggleNode"), [&tabs] { tabs.toggleCurrentNode(); });
+        {
+            const QList<QAction*> foldItems{ act("actionViewCollapseAll"),
+                                             act("actionViewExpandAll"),
+                                             act("actionViewToggleNode") };
+            auto syncFoldable = [&tabs, foldItems] {
+                const bool can = tabs.canFold();
+                for (QAction* a : foldItems) {
+                    if (a)
+                        a->setEnabled(can);
+                }
+            };
+            syncFoldable();
+            QObject::connect(&tabs, &EditorTabManager::activeViewChanged,
+                             &shell, [syncFoldable] { syncFoldable(); });
         }
 
         // View > Go... : the dialog needs the document's line count for its

@@ -190,6 +190,16 @@ add_executable(tst_strings tests/tst_strings.cpp)
 target_link_libraries(tst_strings PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_strings COMMAND tst_strings)
 
+# 2026-11-20: the folding ("nesting") menu - Collapse All / Expand All / Toggle.
+add_executable(tst_folding tests/tst_folding.cpp)
+target_link_libraries(tst_folding PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_folding COMMAND tst_folding)
+
+# 2026-11-20: session restore must replace the empty placeholder tab.
+add_executable(tst_restore tests/tst_restore.cpp)
+target_link_libraries(tst_restore PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_restore COMMAND tst_restore)
+
 # 2026-11-20: pure file-change decision logic for the external-change prompt.
 add_executable(tst_filechange tests/tst_filechange.cpp)
 target_link_libraries(tst_filechange PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
