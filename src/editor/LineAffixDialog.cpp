@@ -109,4 +109,8 @@ void LineAffixDialog::refreshFieldEnabled()
         return;
     const bool owned = wantsRemove() || (m_box && m_box->isChecked());
     m_field->setEnabled(!owned);
+    // The cell paints off the edit's enabled state, but nothing repaints it for
+    // us (Qt has no QWidget::enabledChanged), so ask for a paint here.
+    if (m_cell)
+        m_cell->refresh();
 }

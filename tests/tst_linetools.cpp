@@ -14,6 +14,7 @@
 
 #include "src/editor/EditorTabManager.h"
 #include "src/editor/LineAffixDialog.h"
+#include "src/shell/FieldCell.h"
 #include "src/shell/TvCheckBox.h"
 
 class TstLineTools : public QObject
@@ -285,6 +286,62 @@ private slots:
 
         d.lineBreakBox()->setChecked(false);      // now nothing owns the field
         QVERIFY(d.field()->isEnabled());
+    }
+
+    // ---- the disabled-field dim (2026-11-19) -------------------------------
+
+    // A disabled field must not look typeable. FieldCell painted the same blue
+    // body regardless of isEnabled(), so remove-mode looked live while ignoring
+    // input. The enabled colour is #0000AA (tst_finddlg owns it); the dim is
+    // strictly darker and only appears when disabled.
+    void disabled_field_cell_is_visually_darker() {
+        LineAffixDialog d(LineAffixDialog::Mode::Start);
+        d.resize(d.sizeHint());
+        d.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&d));
+        QLineEdit* field = d.field();
+        QVERIFY(field);
+        QWidget* cell = field->parentWidget();
+        QVERIFY(cell);
+        // The cell's geometry() is in its PARENT (body) coordinates, but grab()
+        // is dialog-relative, so map it - same as tst_finddlg's inDialog().
+        const QRect r(cell->mapTo(&d, QPoint(0, 0)), cell->size());
+        QVERIFY(r.width() > 4 && r.height() > 4);
+
+        // Sample the CELL's own painted band, not its center: the edit is inset
+        // to fill the cell minus a 2 px ring, so the center lands on the edit
+        // (whose #0000AA comes from styleAsTvField and never changes). Force the
+        // ring off first so the top band is body blue, not focus yellow.
+        // FieldCell has no Q_OBJECT (a plain QWidget subclass), so no
+        // qobject_cast; the cell is the edit's direct parent widget.
+        auto* fc = static_cast<FieldCell*>(cell);
+        QVERIFY(fc);
+        fc->setActive(false);
+        const int sx = r.left() + r.width() / 2;
+        const int sy = r.top();
+
+        const QColor on = d.grab().toImage().pixelColor(sx, sy);
+        QVERIFY2(on == QColor(0x00, 0x00, 0xAA),
+                 qPrintable(QStringLiteral("enabled body is %1,%2,%3 - tst_finddlg owns this colour")
+                                .arg(on.red()).arg(on.green()).arg(on.blue())));
+
+        d.removeBox()->setChecked(true);          // field becomes disabled
+        const QColor off = d.grab().toImage().pixelColor(sx, sy);
+        // #0000AA -> #000055 dims the BLUE channel, so test luminance, not
+        // red/green (both stay 0 here and would make "darker" read false).
+        const auto lum = [](const QColor& c) {
+            return c.red() + c.green() + c.blue();
+        };
+        QVERIFY2(off != on,
+                 qPrintable(QStringLiteral("disabled cell unchanged: %1,%2,%3")
+                                .arg(off.red()).arg(off.green()).arg(off.blue())));
+        QVERIFY2(lum(off) < lum(on),
+                 qPrintable(QStringLiteral("dim is not darker: enabled %1,%2,%3 vs disabled %4,%5,%6")
+                                .arg(on.red()).arg(on.green()).arg(on.blue())
+                                .arg(off.red()).arg(off.green()).arg(off.blue())));
+
+        d.removeBox()->setChecked(false);         // back on: colour must restore
+        QCOMPARE(d.grab().toImage().pixelColor(sx, sy), on);
     }
 
     void remove_checkbox_round_trip_leaves_line_break_alone_if_it_was_off() {

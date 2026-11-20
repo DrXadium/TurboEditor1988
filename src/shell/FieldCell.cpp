@@ -9,6 +9,8 @@
 namespace {
 
 const QColor kFieldBlue(0x00, 0x00, 0xAA);
+// Disabled body: half the blue, so a dead field reads as dead (#000055).
+const QColor kFieldDimBlue(0x00, 0x00, 0x55);
 const QColor kYellow(0xFF, 0xFF, 0x55);
 const int kRing = 2;
 const int kFieldMinWidth = 220;
@@ -44,9 +46,24 @@ void FieldCell::setActive(bool on)
     update();
 }
 
+void FieldCell::refresh()
+{
+    update();
+}
+
 void FieldCell::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
+    // Key off the EDIT's state, not the cell's: disabling a child does not
+    // disable its parent, so cell->isEnabled() stays true when the edit dies.
+    // A dead edit must not read as typeable: darker body, no focus ring (the
+    // ring says "you are typing here", a lie once the edit is dead). Enabled
+    // keeps the exact #0000AA - tst_finddlg owns it.
+    const bool dead = !isEnabled() || (m_edit && !m_edit->isEnabled());
+    if (dead) {
+        p.fillRect(rect(), kFieldDimBlue);
+        return;
+    }
     p.fillRect(rect(), kFieldBlue);
     if (m_active) {
         // Four hard 2 px bands: exact pixels, no pen-join surprises.

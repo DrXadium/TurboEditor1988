@@ -23,6 +23,10 @@ public:
     QLineEdit* edit() const { return m_edit; }
     bool isActive() const { return m_active; }
     void setActive(bool on);
+    // Repaint after the edit's enabled state changed. Qt has no
+    // QWidget::enabledChanged, so whoever flips the edit calls this; without it
+    // the cell keeps its last paint and a dead field looks live.
+    void refresh();
 
 protected:
     void paintEvent(QPaintEvent*) override;
