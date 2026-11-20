@@ -7,11 +7,14 @@
 // TDD: written before affixLines/removeLineBreaksText exist.
 #include <QtTest>
 #include <QApplication>
+#include <QLineEdit>
 
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
 
 #include "src/editor/EditorTabManager.h"
+#include "src/editor/LineAffixDialog.h"
+#include "src/shell/TvCheckBox.h"
 
 class TstLineTools : public QObject
 {
@@ -91,6 +94,49 @@ private slots:
 
     void remove_breaks_on_empty_is_empty() {
         QCOMPARE(EditorTabManager::removeLineBreaksText(QString()), QString());
+    }
+
+    // ---- the affix dialog -------------------------------------------------
+
+    void end_dialog_has_a_field_and_an_unchecked_break_box() {
+        LineAffixDialog d(LineAffixDialog::Mode::End);
+        d.resize(d.sizeHint());
+        d.show();
+        QVERIFY(d.field());
+        QVERIFY(d.lineBreakBox());
+        QVERIFY(!d.lineBreakBox()->isChecked());
+        QVERIFY(d.field()->isEnabled());
+    }
+
+    void break_box_disables_the_field() {
+        LineAffixDialog d(LineAffixDialog::Mode::End);
+        d.resize(d.sizeHint());
+        d.show();
+        d.lineBreakBox()->setChecked(true);
+        QVERIFY(d.wantsLineBreak());
+        QVERIFY2(!d.field()->isEnabled(),
+                 "a line-break affix must ignore the typed text, so the field goes disabled");
+        d.lineBreakBox()->setChecked(false);
+        QVERIFY(d.field()->isEnabled());
+    }
+
+    void start_dialog_has_no_break_box() {
+        LineAffixDialog d(LineAffixDialog::Mode::Start);
+        QVERIFY(!d.lineBreakBox());
+        QVERIFY(!d.wantsLineBreak());
+    }
+
+    void dialog_reports_typed_text() {
+        LineAffixDialog d(LineAffixDialog::Mode::End);
+        d.field()->setText(QStringLiteral("//"));
+        QCOMPARE(d.text(), QStringLiteral("//"));
+    }
+
+    void dialog_title_names_the_direction() {
+        LineAffixDialog end(LineAffixDialog::Mode::End);
+        LineAffixDialog start(LineAffixDialog::Mode::Start);
+        QVERIFY(end.title().contains(QStringLiteral("End")));
+        QVERIFY(start.title().contains(QStringLiteral("Start")));
     }
 };
 

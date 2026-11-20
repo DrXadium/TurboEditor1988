@@ -60,6 +60,8 @@ add_library(crt-shell STATIC
   src/shell/TvFileDock.cpp
   src/shell/TvModal.cpp
   src/shell/TvModal.h
+  src/shell/FieldCell.cpp
+  src/shell/FieldCell.h
   src/shell/TvCheckBox.cpp
   src/shell/TvCheckBox.h
   src/shell/TvSpinBox.cpp
@@ -130,6 +132,8 @@ add_library(crt-editor STATIC
   src/editor/FindReplace.h
   src/editor/FindReplaceDialog.cpp
   src/editor/FindReplaceDialog.h
+  src/editor/LineAffixDialog.cpp
+  src/editor/LineAffixDialog.h
   src/editor/StatusSelectors.cpp
   src/editor/StatusSelectors.h
   src/editor/tvtheme/tvtheme.qrc

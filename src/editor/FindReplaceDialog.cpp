@@ -2,6 +2,7 @@
 #include "FindReplaceDialog.h"
 
 #include "EditorTabManager.h"
+#include "src/shell/FieldCell.h"
 #include "src/shell/TvCheckBox.h"
 #include "src/shell/TvTabBar.h"
 
@@ -20,78 +21,6 @@
 
 namespace {
 
-const QColor kFieldBlue(0x00, 0x00, 0xAA);
-const QColor kYellow(0xFF, 0xFF, 0x55);
-const int kRing = 2;
-const int kFieldMinWidth = 220;
-
-// The flat TV field: blue box, white text, NO border - the rule that removed
-// the white-border defect the user reported on the settings fields.
-const char* kFieldQss =
-    "QLineEdit { background-color: #0000AA; color: #FFFFFF;"
-    " border: none; padding: 0px 3px; }";
-
-} // namespace
-
-// A TV field cell. The QLineEdit sits inset by kRing inside it, and the cell
-// paints the ring itself: the shell is never an active window, so a QLineEdit
-// never draws a caret here - the yellow ring is the "you are typing here" mark,
-// the same treatment the file dock gives its fields.
-class FieldCell : public QWidget
-{
-public:
-    explicit FieldCell(QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
-        setAutoFillBackground(false);
-    }
-
-    // The field must be tall enough for a full line of VGA text plus the ring,
-    // or the grid squeezes it to 12 px and the glyphs are clipped.
-    QSize sizeHint() const override
-    {
-        return QSize(kFieldMinWidth, fontMetrics().height() + 2 * kRing);
-    }
-    QSize minimumSizeHint() const override { return sizeHint(); }
-
-    void setEdit(QLineEdit* edit) { m_edit = edit; }
-    QLineEdit* edit() const { return m_edit; }
-    bool isActive() const { return m_active; }
-    void setActive(bool on)
-    {
-        if (m_active == on)
-            return;
-        m_active = on;
-        update();
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter p(this);
-        p.fillRect(rect(), kFieldBlue);
-        if (m_active) {
-            // Four hard 2 px bands: exact pixels, no pen-join surprises.
-            p.fillRect(QRect(0, 0, width(), kRing), kYellow);
-            p.fillRect(QRect(0, height() - kRing, width(), kRing), kYellow);
-            p.fillRect(QRect(0, 0, kRing, height()), kYellow);
-            p.fillRect(QRect(width() - kRing, 0, kRing, height()), kYellow);
-        }
-    }
-
-    void resizeEvent(QResizeEvent*) override
-    {
-        if (m_edit)
-            m_edit->setGeometry(rect().adjusted(kRing, kRing, -kRing, -kRing));
-    }
-
-private:
-    QLineEdit* m_edit = nullptr;
-    bool m_active = false;
-};
-
-namespace {
-
 // Row labels: the dialog's yellow ink on the gray panel.
 QLabel* tvLabel(const QString& text)
 {
@@ -105,9 +34,7 @@ FieldCell* makeField(QLineEdit*& edit, const char* name, QWidget* parent)
     auto* cell = new FieldCell(parent);
     edit = new QLineEdit(cell);
     edit->setObjectName(QLatin1String(name));
-    edit->setStyleSheet(QString::fromLatin1(kFieldQss));
-    edit->setFrame(false);
-    edit->setAutoFillBackground(true);
+    styleAsTvField(edit);
     cell->setEdit(edit);
     return cell;
 }
