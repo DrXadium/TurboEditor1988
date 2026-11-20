@@ -8,6 +8,7 @@
 #include <QtTest>
 #include <QApplication>
 #include <QLineEdit>
+#include <QTimer>
 
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -252,6 +253,32 @@ private slots:
         v->document()->setText(QStringLiteral("// a\nb"));
         m.stripActiveLines(QStringLiteral("// "), false);
         QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));
+    }
+
+    void remove_mode_routes_to_strip_not_affix() {
+        // The dialog->apply routing is the core of remove mode: tick Remove and
+        // OK must STRIP the needle, never insert it. Driven through addToLines
+        // with a timer that accepts the modal, so it exercises the real branch.
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("// a\n// b"));
+
+        QWidget anchor;
+        anchor.resize(800, 600);
+        anchor.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&anchor));
+
+        QTimer::singleShot(0, &anchor, [&anchor] {
+            auto* dlg = anchor.findChild<LineAffixDialog*>();
+            QVERIFY(dlg);
+            dlg->field()->setText(QStringLiteral("// "));
+            dlg->removeBox()->setChecked(true);
+            dlg->accept();
+        });
+        m.addToLines(false, &anchor);
+        QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));   // stripped, not "// a// b"
     }
 
     // ---- the affix dialog -------------------------------------------------
