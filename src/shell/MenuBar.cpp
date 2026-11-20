@@ -77,7 +77,13 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(edit, QStringLiteral("&UPPERCASE"), QStringLiteral("actionEditUpper"));
     added(edit, QStringLiteral("&lowercase"), QStringLiteral("actionEditLower"));
     added(edit, QStringLiteral("&Title Case"), QStringLiteral("actionEditTitle"));
+    // Line tools: their own group, flat like every other TV menu. Sort Lines
+    // heads it; the three new items follow (2026-11-19).
+    edit->addSeparator();
     added(edit, QStringLiteral("&Sort Lines"), QStringLiteral("actionEditSort"));
+    added(edit, QStringLiteral("Add to &End of Line..."), QStringLiteral("actionEditAddEol"));
+    added(edit, QStringLiteral("Add to &Start of Line..."), QStringLiteral("actionEditAddBol"));
+    added(edit, QStringLiteral("&Remove Line Breaks"), QStringLiteral("actionEditRemoveBreaks"));
     edit->addSeparator();
     QAction* spell = added(edit, QStringLiteral("Check Spelling &On-the-fly"),
                            QStringLiteral("actionEditSpellcheck"));

@@ -338,6 +338,40 @@ private slots:
         QCOMPARE(items.indexOf(title), items.indexOf(lower) + 1);
     }
 
+    // 2026-11-19: the line-tools group. Sort Lines heads it; the three new
+    // items follow with no submenu, so the Edit menu stays flat like TV.
+    void edit_menu_has_a_line_tools_group() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QMenu* editMenu = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("Edit")))
+                editMenu = top->menu();
+        QVERIFY(editMenu);
+        const QList<QAction*> items = editMenu->actions();
+        auto at = [&items](const char* name) {
+            for (int i = 0; i < items.size(); ++i)
+                if (items.at(i)->objectName() == QLatin1String(name))
+                    return i;
+            return -1;
+        };
+        const int sort = at("actionEditSort");
+        QVERIFY2(sort > 0, "actionEditSort missing");
+        QCOMPARE(at("actionEditAddEol"), sort + 1);
+        QCOMPARE(at("actionEditAddBol"), sort + 2);
+        QCOMPARE(at("actionEditRemoveBreaks"), sort + 3);
+        QVERIFY2(items.at(sort - 1)->isSeparator(),
+                 "the line-tools group must start after a separator");
+        for (int i = sort; i <= sort + 3; ++i) {
+            QVERIFY2(!items.at(i)->menu(), "line tools must not nest in a submenu");
+            QVERIFY2(items.at(i)->isEnabled(), qPrintable(items.at(i)->text()));
+        }
+        QVERIFY(items.at(at("actionEditAddEol"))
+                    ->text().endsWith(QStringLiteral("...")));
+    }
+
     // Task 10: menu entries the composition root wires to real features exist
     // under stable objectNames, and toggles are checkable.
     void menu_entries_expose_wiring_targets() {
@@ -354,6 +388,8 @@ private slots:
             QStringLiteral("actionEditUpper"), QStringLiteral("actionEditLower"),
             QStringLiteral("actionEditTitle"),
             QStringLiteral("actionEditSort"),  QStringLiteral("actionEditSpellcheck"),
+            QStringLiteral("actionEditAddEol"), QStringLiteral("actionEditAddBol"),
+            QStringLiteral("actionEditRemoveBreaks"),
             QStringLiteral("actionSearchFind"),
             QStringLiteral("actionSearchFindNext"),
             // Find and Replace (2026-11-18): the Search menu offers Replace.

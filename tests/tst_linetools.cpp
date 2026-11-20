@@ -96,6 +96,77 @@ private slots:
         QCOMPARE(EditorTabManager::removeLineBreaksText(QString()), QString());
     }
 
+    // ---- document-level application ---------------------------------------
+
+    void remove_breaks_joins_the_selection_only() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("one\ntwo\nthree"));
+        v->setSelection(KTextEditor::Range(0, 0, 1, 3));
+        m.removeLineBreaks();
+        QCOMPARE(v->document()->text(), QStringLiteral("one two\nthree"));
+    }
+
+    void remove_breaks_whole_document_without_selection() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("one\ntwo"));
+        m.removeLineBreaks();
+        QCOMPARE(v->document()->text(), QStringLiteral("one two"));
+    }
+
+    void remove_breaks_on_blank_document_is_a_no_op() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("   "));
+        m.removeLineBreaks();
+        QCOMPARE(v->document()->text(), QStringLiteral("   "));
+    }
+
+    void affix_end_applies_to_the_selection() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("a\nb\nc"));
+        v->setSelection(KTextEditor::Range(0, 0, 1, 1));   // "a\nb"
+        m.affixActiveLines(QStringLiteral(";"), true);
+        QCOMPARE(v->document()->text(), QStringLiteral("a;\nb;\nc"));
+    }
+
+    void affix_start_applies_to_the_selection() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("a\nb\nc"));
+        v->setSelection(KTextEditor::Range(1, 0, 1, 1));   // "b"
+        m.affixActiveLines(QStringLiteral("//"), false);
+        QCOMPARE(v->document()->text(), QStringLiteral("a\n//b\nc"));
+    }
+
+    void affix_mid_line_selection_does_not_expand() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("abc\ndef"));
+        v->setSelection(KTextEditor::Range(0, 1, 0, 2));   // "b"
+        m.affixActiveLines(QStringLiteral(";"), true);
+        // The affix lands at the selection edge, not at the end of the line:
+        // no whole-line expansion, and the 'c' outside the selection is intact.
+        QCOMPARE(v->document()->text(), QStringLiteral("ab;c\ndef"));
+    }
+
+    void empty_affix_leaves_the_document_alone() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        v->document()->setText(QStringLiteral("a\nb"));
+        m.affixActiveLines(QString(), true);
+        QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));
+    }
+
     // ---- the affix dialog -------------------------------------------------
 
     void end_dialog_has_a_field_and_an_unchecked_break_box() {

@@ -84,6 +84,14 @@ public:
     static QString affixLines(const QString& text, const QString& affix, bool atEnd);
     static QString removeLineBreaksText(const QString& text);
 
+    // The Edit menu's line tools, applied to the active view (selection if
+    // present, else whole doc). addToLines() collects the affix in the house
+    // modal; affixActiveLines() is the apply step and is dialog-free so it can
+    // be tested. An empty affix is a no-op: no edit, no undo entry.
+    void affixActiveLines(const QString& affix, bool atEnd);
+    void addToLines(bool atEnd, QWidget* anchor);
+    void removeLineBreaks();
+
     // Standard clipboard editing (Edit menu + Ctrl+X/C/V). This KTextEditor
     // build ships no ClipboardInterface and no action hooks, so these are
     // implemented over Document::text/removeText/insertText and QClipboard.

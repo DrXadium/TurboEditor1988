@@ -541,6 +541,9 @@ int main(int argc, char** argv)
         on(act("actionEditTitle"),
            [&tabs] { tabs.changeCase(EditorTabManager::Title); });
         on(act("actionEditSort"), [&tabs] { tabs.sortLines(); });
+        on(act("actionEditAddEol"), [&tabs, &shell] { tabs.addToLines(true, &shell); });
+        on(act("actionEditAddBol"), [&tabs, &shell] { tabs.addToLines(false, &shell); });
+        on(act("actionEditRemoveBreaks"), [&tabs] { tabs.removeLineBreaks(); });
         if (QAction* spell = act("actionEditSpellcheck"))
             QObject::connect(spell, &QAction::triggered, spell, [&tabs, spell](bool) {
                 if (auto* doc = tabs.activeDocument())

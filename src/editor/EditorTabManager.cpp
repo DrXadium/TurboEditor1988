@@ -6,6 +6,7 @@
 #include <QClipboard>
 #include "EditorTabManager.h"
 #include "FindReplaceDialog.h"
+#include "LineAffixDialog.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -129,6 +130,18 @@ private:
         });
     }
 };
+
+// The range every text tool works on: a single selection if there is one, else
+// the whole document. The selection is treated as TEXT, not expanded to whole
+// lines, so a mid-line selection gets the affix at the selection edge - the
+// same mental model the case tools use.
+KTextEditor::Range activeRange(KTextEditor::View* v, KTextEditor::Document* doc)
+{
+    if (v->selection() && v->selectionRanges().size() == 1)
+        return v->selectionRanges().first();
+    const int lastLine = doc->lines() - 1;
+    return KTextEditor::Range(0, 0, lastLine, doc->lineLength(lastLine));
+}
 } // namespace
 
 void EditorTabManager::applyTvStyle(KTextEditor::View* view)
@@ -866,6 +879,43 @@ void EditorTabManager::setWordWrap(bool on)
     // setConfigValue updates the setting but does not relayout the view - the
     // "font" path in this file learned the same lesson.
     v->update();
+}
+
+void EditorTabManager::affixActiveLines(const QString& affix, bool atEnd)
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc || affix.isEmpty())
+        return;                        // empty affix: no edit, no undo entry
+    const KTextEditor::Range range = activeRange(v, doc);
+    const QString before = doc->text(range);
+    const QString after = affixLines(before, affix, atEnd);
+    if (after != before)
+        doc->replaceText(range, after);
+}
+
+void EditorTabManager::addToLines(bool atEnd, QWidget* anchor)
+{
+    if (!activeView() || !activeDocument())
+        return;
+    LineAffixDialog dlg(atEnd ? LineAffixDialog::Mode::End
+                              : LineAffixDialog::Mode::Start);
+    if (TvModal::exec(anchor ? anchor : activeView(), &dlg) != TvModal::Accept)
+        return;
+    affixActiveLines(dlg.wantsLineBreak() ? QStringLiteral("\n") : dlg.text(), atEnd);
+}
+
+void EditorTabManager::removeLineBreaks()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc)
+        return;
+    const KTextEditor::Range range = activeRange(v, doc);
+    const QString before = doc->text(range);
+    const QString after = removeLineBreaksText(before);
+    if (after != before)
+        doc->replaceText(range, after);
 }
 
 void EditorTabManager::installActions(QWidget* host)
