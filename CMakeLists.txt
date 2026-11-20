@@ -200,6 +200,14 @@ add_executable(tst_restore tests/tst_restore.cpp)
 target_link_libraries(tst_restore PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_restore COMMAND tst_restore)
 
+# 2026-11-20: single-quoted text must be #40A769 in code files too (the theme's
+# Char style; a MovingRange cannot recolour text the highlighter owns).
+add_executable(tst_theme tests/tst_theme.cpp)
+target_link_libraries(tst_theme PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+target_compile_definitions(tst_theme PRIVATE
+  CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME tst_theme COMMAND tst_theme)
+
 # 2026-11-20: pure file-change decision logic for the external-change prompt.
 add_executable(tst_filechange tests/tst_filechange.cpp)
 target_link_libraries(tst_filechange PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

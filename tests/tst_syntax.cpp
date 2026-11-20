@@ -53,6 +53,11 @@ bool isTvColor(QRgb c)
 }
 
 QColor rgbToColor(QRgb c) { return QColor::fromRgb(c); }
+
+// The user-specified single-quote colour (2026-11-20): "the text in single
+// quotes should be #40A769". It is deliberately NOT a DOS primary, so it is the
+// one documented exception to isTvColor - see char_literals_may_leave_the_tv_palette.
+const QColor kSingleQuoteColor(QStringLiteral("#40a769"));
 } // namespace
 
 class TstSyntax : public QObject
@@ -119,6 +124,11 @@ private slots:
         for (int s = KSyntaxHighlighting::Theme::Normal;
              s <= KSyntaxHighlighting::Theme::Others; ++s) {
             const auto style = static_cast<KSyntaxHighlighting::Theme::TextStyle>(s);
+            // Char / SpecialChar are the single-quote exception (2026-11-20):
+            // pinned by char_literals_may_leave_the_tv_palette below.
+            if (style == KSyntaxHighlighting::Theme::TextStyle::Char
+                || style == KSyntaxHighlighting::Theme::TextStyle::SpecialChar)
+                continue;
             const QRgb c = t.textColor(style);
             if (!isTvColor(c))
                 outside << QStringLiteral("%1=%2").arg(s).arg(QString::number(c, 16));
@@ -128,6 +138,39 @@ private slots:
                                 "%1 token colors fall outside the Borland 16-color palette: %2")
                                 .arg(outside.size())
                                 .arg(outside.join(QStringLiteral(", ")))));
+    }
+
+    // The ONE exception to the palette rule (2026-11-20, user: "the text in
+    // single quotes should be #40A769"). Everything else stays a DOS primary, so
+    // this pins the exception instead of letting it drift: if someone reverts
+    // Char to #55ff55 this fails, and if someone widens the exception to other
+    // styles this fails too.
+    void char_literals_may_leave_the_tv_palette()
+    {
+        const KSyntaxHighlighting::Theme t = repo().theme(QStringLiteral("CRTKTV"));
+        QVERIFY(t.isValid());
+        const QColor single = rgbToColor(t.textColor(KSyntaxHighlighting::Theme::Char));
+        const QColor special =
+            rgbToColor(t.textColor(KSyntaxHighlighting::Theme::SpecialChar));
+        const QColor str = rgbToColor(t.textColor(KSyntaxHighlighting::Theme::String));
+
+        QCOMPARE(single, kSingleQuoteColor);
+        // SpecialChar is the escape-sequence flavour of the same literal, so it
+        // must not drift away from Char.
+        QCOMPARE(special, kSingleQuoteColor);
+        // And it must stay distinct from the double-quote colour, which is the
+        // whole point of the second shade.
+        QVERIFY2(single != str,
+                 qPrintable(QStringLiteral("single-quote %1 == string %2 - the "
+                                           "two quote kinds are indistinguishable")
+                                .arg(single.name(), str.name())));
+
+        // The exception must stay narrow: the four styles the retro scheme is
+        // built on are still DOS primaries.
+        QVERIFY(isTvColor(t.textColor(KSyntaxHighlighting::Theme::Normal)));
+        QVERIFY(isTvColor(t.textColor(KSyntaxHighlighting::Theme::Keyword)));
+        QVERIFY(isTvColor(t.textColor(KSyntaxHighlighting::Theme::String)));
+        QVERIFY(isTvColor(t.textColor(KSyntaxHighlighting::Theme::Comment)));
     }
 
     // Comments must be readable but visually quieter than code: a distinct,

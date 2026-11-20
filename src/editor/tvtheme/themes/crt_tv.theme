@@ -1,7 +1,7 @@
 {
   "metadata": {
     "name": "CRTKTV",
-    "revision": 2,
+    "revision": 3,
     "author": "TURBO Kate",
     "license": "GPL-3.0-or-later"
   },
@@ -37,10 +37,10 @@
       "text-color": "#ffffff"
     },
     "Char": {
-      "text-color": "#55ff55"
+      "text-color": "#40a769"
     },
     "SpecialChar": {
-      "text-color": "#55ff55"
+      "text-color": "#40a769"
     },
     "String": {
       "text-color": "#55ff55"
