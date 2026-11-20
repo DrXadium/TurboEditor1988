@@ -40,6 +40,12 @@ GoToLineDialog::GoToLineDialog(int lineCount, QWidget* parent)
 
     grid->addWidget(label, 0, 0);
     grid->addWidget(m_cell, 0, 1);
+    // TvModal's sizeHint floors the dialog at 200px and layoutChildren hands the
+    // body all of it. This dialog has ONE content row, so without an empty
+    // stretch row below, the grid stretches the FieldCell to swallow ~90px of
+    // slack - a one-digit entry field rendered 112px tall. Push the slack into
+    // this invisible row instead; the field keeps its one-line height.
+    grid->setRowStretch(1, 1);
 
     setBody(body);
 

@@ -8,6 +8,8 @@
 #include <QtTest>
 #include <QApplication>
 #include <QLineEdit>
+#include <QTimer>
+#include <QWidget>
 
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -25,6 +27,46 @@ private slots:
     }
 
     // ---- the dialog --------------------------------------------------------
+
+    // The entry field must be ONE text line high. The dialog's 200px floor
+    // (TvModal::sizeHint) hands the body ~140px of slack, and Go to Line has a
+    // single grid row, so the FieldCell was swallowing all of it - a ~140px-tall
+    // input for a one-digit line number. Measured at the REAL exec() size, the
+    // cell must stay within one ring's worth of its own one-line sizeHint.
+    void entry_field_stays_one_line_high() {
+        QWidget anchor;
+        anchor.resize(800, 600);
+        anchor.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&anchor));
+
+        // Heap-allocated: exec() does modal->setParent(anchor), and a STACK
+        // dialog reparented under a stack anchor double-frees on the failing
+        // path (the anchor is destroyed first and tries to delete its child).
+        auto* d = new GoToLineDialog(10);
+        int cellH = -1;
+        int naturalH = -1;
+        bool found = false;
+        QTimer::singleShot(0, &anchor, [&, d] {
+            QLineEdit* f = d->findChild<QLineEdit*>(QStringLiteral("goLineField"));
+            QWidget* cell = f ? f->parentWidget() : nullptr;
+            if (cell) {
+                naturalH = cell->sizeHint().height();   // one line + ring, from FieldCell
+                cellH = cell->height();                 // what exec() actually gave it
+                found = true;
+            }
+            d->reject();          // ALWAYS release exec(), even if nothing matched
+        });
+        TvModal::exec(&anchor, d);
+        // exec() reparented d under anchor, so anchor's destruction cleans it up.
+
+        QVERIFY2(found, "goLineField/cell not found");
+        QVERIFY2(naturalH > 0, "no natural one-line sizeHint");
+        // Allow the ring (2 * kRing = 4px) plus a hair of slack, not a whole
+        // dialog's worth of it.
+        QVERIFY2(cellH <= naturalH + 6,
+                 qPrintable(QStringLiteral("entry field is %1px tall, one line is %2px")
+                                .arg(cellH).arg(naturalH)));
+    }
 
     void field_starts_empty() {
         GoToLineDialog d(10);

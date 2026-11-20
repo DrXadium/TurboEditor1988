@@ -825,6 +825,13 @@ int main(int argc, char** argv)
                 find->replaceField()->setText(QStringLiteral("pin"));
                 modal = find;
             }
+            else if (which == "goto") {
+                // View > Go, shown WITHOUT the round loop so CRT_KATE_SHOT can
+                // capture it (verifying the entry field stays one line high).
+                auto* go = new GoToLineDialog(9999, &shell);
+                go->field()->setText(QStringLiteral("42"));
+                modal = go;
+            }
             if (!modal)
                 return;
             const QSize want = modal->sizeHint();
