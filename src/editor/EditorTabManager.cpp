@@ -929,6 +929,41 @@ void EditorTabManager::setWordWrap(bool on)
     v->update();
 }
 
+namespace {
+QAction* viewAction(KTextEditor::View* v, const char* name)
+{
+    return v ? v->findChild<QAction*>(QString::fromLatin1(name)) : nullptr;
+}
+
+// Kate's whitespace actions toggle on trigger(): the checked flag flips on
+// every trigger (measured 0 -> 1 -> 0). Drive until the state matches, so a
+// request for the state already in force costs nothing and a real one flips
+// exactly once. setChecked is only a fallback for a build whose slot ignores
+// the click - it moves the flag without going through Kate's rendering path.
+void setActionOn(QAction* a, bool on)
+{
+    if (!a)
+        return;
+    for (int guard = 0; guard < 3 && a->isChecked() != on; ++guard)
+        a->trigger();
+    if (a->isChecked() != on)
+        a->setChecked(on);
+}
+} // namespace
+
+void EditorTabManager::setNonprintables(bool on)
+{
+    KTextEditor::View* v = activeView();
+    setActionOn(viewAction(v, "view_show_whitespaces"), on);
+    setActionOn(viewAction(v, "view_non_printable_spaces"), on);
+}
+
+bool EditorTabManager::nonprintablesVisible() const
+{
+    QAction* a = viewAction(activeView(), "view_show_whitespaces");
+    return a && a->isChecked();
+}
+
 void EditorTabManager::affixActiveLines(const QString& affix, bool atEnd)
 {
     KTextEditor::View* v = activeView();

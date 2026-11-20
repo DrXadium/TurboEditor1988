@@ -83,6 +83,15 @@ public:
     bool wordWrap() const;
     void setWordWrap(bool on);
 
+    // View > Show / Hide Nonprintable Characters (2026-11-20): one command
+    // drives Kate's own per-view actions view_show_whitespaces and
+    // view_non_printable_spaces together, so the drawing stays Kate's. The
+    // state is per view; the menu re-syncs on activeViewChanged. QAction
+    // trigger() TOGGLES in this build (measured), so the setter triggers until
+    // the state matches instead of calling setChecked first.
+    bool nonprintablesVisible() const;
+    void setNonprintables(bool on);
+
     // Pure line transforms behind the Edit menu's line tools (2026-11-19).
     // affixLines() inserts `affix` at the start or end of every line; a CRLF's
     // \r stays with the terminator, and the empty segment after a trailing \n

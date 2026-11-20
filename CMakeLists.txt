@@ -158,6 +158,11 @@ add_executable(tst_selectall tests/tst_selectall.cpp)
 target_link_libraries(tst_selectall PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_selectall COMMAND tst_selectall)
 
+# 2026-11-20: View > Show / Hide Nonprintable Characters.
+add_executable(tst_nonprintable tests/tst_nonprintable.cpp)
+target_link_libraries(tst_nonprintable PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_nonprintable COMMAND tst_nonprintable)
+
 # 2026-11-19: Edit-menu line tools + Word Wrap.
 add_executable(tst_linetools tests/tst_linetools.cpp)
 target_link_libraries(tst_linetools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

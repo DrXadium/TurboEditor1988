@@ -133,6 +133,15 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     wrap->setCheckable(true);
     wrap->setChecked(true);
     wrap->setStatusTip(QStringLiteral("Wrap long lines to the window width"));
+    // 2026-11-20: one item drives Kate's TWO per-view whitespace actions
+    // ("Show Whitespace" + "Show Non-Printable Spaces"). The state is per view,
+    // so the composition root re-syncs the check on every tab switch - the
+    // Word Wrap pattern.
+    QAction* nonprint = added(view, QStringLiteral("Show / Hide &Nonprintable Characters"),
+                              QStringLiteral("actionViewNonprintable"));
+    nonprint->setCheckable(true);
+    nonprint->setChecked(false);
+    nonprint->setStatusTip(QStringLiteral("Show spaces, tabs and non-printable characters"));
     // 2026-11-19: a plain jump to a line number, last row of the View menu.
     QAction* go = added(view, QStringLiteral("&Go..."),
                         QStringLiteral("actionViewGo"));

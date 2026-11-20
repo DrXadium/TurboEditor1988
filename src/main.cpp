@@ -585,6 +585,14 @@ int main(int argc, char** argv)
             QObject::connect(&tabs, &EditorTabManager::activeViewChanged, wrap,
                              [&tabs, wrap] { wrap->setChecked(tabs.wordWrap()); });
         }
+        // Nonprintables are per view too (Kate's own actions), so the check
+        // follows the tab exactly like Word Wrap above.
+        if (QAction* np = act("actionViewNonprintable")) {
+            QObject::connect(np, &QAction::triggered, np,
+                             [&tabs, np](bool on) { tabs.setNonprintables(on); });
+            QObject::connect(&tabs, &EditorTabManager::activeViewChanged, np,
+                             [&tabs, np] { np->setChecked(tabs.nonprintablesVisible()); });
+        }
 
         // View > Go... : the dialog needs the document's line count for its
         // validator; the jump itself clamps again, so a stale count is safe.

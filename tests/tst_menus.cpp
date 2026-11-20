@@ -425,9 +425,38 @@ private slots:
                                    QStringLiteral("View")))
                 viewMenu = top->menu();
         QVERIFY(viewMenu);
-        // Rows: Zoom x3, sep, Minimap, FoldBar, Word Wrap, Go. Go was added last,
-        // so wrap sits immediately above it.
-        QCOMPARE(viewMenu->actions().at(viewMenu->actions().size() - 2), wrap);
+        // Rows: Zoom x3, sep, Minimap, FoldBar, Word Wrap, Nonprintable, Go.
+        // Go is always last, so wrap sits third from the end.
+        QCOMPARE(viewMenu->actions().at(viewMenu->actions().size() - 3), wrap);
+    }
+
+    // 2026-11-20: Show / Hide Nonprintable Characters is a checkable toggle
+    // sitting between Word Wrap and Go. Off by default (the Kate actions start
+    // unchecked), and it is NOT a submenu.
+    void view_menu_offers_a_nonprintable_toggle_above_go() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QAction* np = mb->findChild<QAction*>(QStringLiteral("actionViewNonprintable"));
+        QVERIFY2(np, "actionViewNonprintable missing");
+        QVERIFY(np->isCheckable());
+        QVERIFY2(!np->isChecked(), "nonprintable markers must default to off");
+        QVERIFY2(!np->menu(), "Nonprintable must be a toggle, not a submenu");
+        QVERIFY2(np->text().contains(QStringLiteral("Nonprintable")),
+                 qPrintable(np->text()));
+
+        QMenu* viewMenu = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("View")))
+                viewMenu = top->menu();
+        QVERIFY(viewMenu);
+        QAction* wrap = mb->findChild<QAction*>(QStringLiteral("actionViewWordWrap"));
+        QAction* go = mb->findChild<QAction*>(QStringLiteral("actionViewGo"));
+        QVERIFY(wrap && go);
+        const QList<QAction*> items = viewMenu->actions();
+        QCOMPARE(items.indexOf(np), items.indexOf(wrap) + 1);
+        QCOMPARE(items.indexOf(go), items.indexOf(np) + 1);
     }
 
     // 2026-11-19 (second round): View > Go is a plain jump, last in the View menu.
@@ -477,6 +506,7 @@ private slots:
             QStringLiteral("actionViewZoomReset"),
             QStringLiteral("actionViewMinimap"), QStringLiteral("actionViewFoldBar"),
             QStringLiteral("actionViewWordWrap"),
+            QStringLiteral("actionViewNonprintable"),
             QStringLiteral("actionViewGo"),
             QStringLiteral("actionSessionSave"), QStringLiteral("actionSessionRestore"),
             QStringLiteral("actionSettingsConfigure"),
@@ -489,6 +519,7 @@ private slots:
         // Checkable toggles.
         for (const QString& name : { QStringLiteral("actionViewMinimap"),
                                      QStringLiteral("actionViewFoldBar"),
+                                     QStringLiteral("actionViewNonprintable"),
                                      QStringLiteral("actionEditSpellcheck") }) {
             QAction* a = mb->findChild<QAction*>(name);
             QVERIFY2(a && a->isCheckable(),
