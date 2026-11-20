@@ -12,6 +12,9 @@
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QUrl>
 
 namespace {
 const QColor kOvrRed(0xAA, 0x00, 0x00);
@@ -389,6 +392,11 @@ private slots:
             QVERIFY2(s->docTypeCenter().x() >= 0 && s->docTypeCenter().x() <= W,
                      qPrintable(QStringLiteral("w=%1 docType centre %2 outside 0..%3")
                                     .arg(w).arg(s->docTypeCenter().x()).arg(W)));
+            // The FIFTH cell (line ending) must stay inside too - the
+            // proportional shrink now divides 5 ways (2026-11-19).
+            QVERIFY2(s->eolCenter().x() >= 0 && s->eolCenter().x() <= W,
+                     qPrintable(QStringLiteral("w=%1 eol centre %2 outside 0..%3")
+                                    .arg(w).arg(s->eolCenter().x()).arg(W)));
             // The last cell (INS/OVR) is centred in the row's remaining right
             // half; its centre is the docType centre + half doc + boundary + half ovr.
             // Simpler: it must not exceed the widget's right edge either.
@@ -479,6 +487,22 @@ private slots:
                  qPrintable(QStringLiteral("doc-type dropdown is a %1, want BorlandMenu")
                                 .arg(QString::fromLatin1(docMenu->metaObject()->className()))));
         docMenu->hide();
+
+        // Line-ending dropdown (fifth cell).
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        s.setView(v);
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.eolCenter());
+        QCoreApplication::processEvents();
+        QMenu* eolMenu = s.openMenu();
+        QVERIFY2(eolMenu, "line-ending dropdown did not open");
+        QVERIFY2(qobject_cast<BorlandMenu*>(eolMenu),
+                 qPrintable(QStringLiteral("line-ending dropdown is a %1, want BorlandMenu")
+                                .arg(QString::fromLatin1(eolMenu->metaObject()->className()))));
+        eolMenu->hide();
+        s.setView(nullptr);
 
         // Encoding dropdown.
         QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.encodingCenter());
@@ -792,6 +816,178 @@ private slots:
                                 .arg(m.scrollOffset())));
         m.hide();
     }
+
+    // 2026-11-19: the fifth cell shows the document's line-ending type.
+    // A fresh Kate document is UNIX (LF) - probe-verified currentItem=0.
+    void eol_label_shows_current_line_ending()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("one\ntwo\nthree"));
+        StatusSelectors s;
+        s.setView(v);
+        QCOMPARE(s.eolText(), QStringLiteral("UNIX"));
+    }
+
+    // The fifth cell opens a BorlandMenu with exactly the three types Kate
+    // offers, and picking one must change what the label shows.
+    void eol_dropdown_lists_three_types_and_applies_pick()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        StatusSelectors s;
+        s.setView(v);
+        s.resize(640, 20);
+        s.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&s));
+
+        QTest::mouseClick(&s, Qt::LeftButton, Qt::NoModifier, s.eolCenter());
+        QCoreApplication::processEvents();
+        QMenu* menu = s.openMenu();
+        QVERIFY2(menu, "line-ending dropdown did not open");
+        QVERIFY2(qobject_cast<BorlandMenu*>(menu),
+                 qPrintable(QStringLiteral("eol dropdown is a %1, want BorlandMenu")
+                                .arg(QString::fromLatin1(menu->metaObject()->className()))));
+        const QList<QAction*> acts = menu->actions();
+        QCOMPARE(acts.size(), 3);
+        QCOMPARE(acts[0]->text(), QStringLiteral("UNIX"));
+        QCOMPARE(acts[1]->text(), QStringLiteral("Windows/DOS"));
+        QCOMPARE(acts[2]->text(), QStringLiteral("Macintosh"));
+
+        acts[1]->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(s.eolText(), QStringLiteral("Windows/DOS"));
+
+        acts[2]->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(s.eolText(), QStringLiteral("Macintosh"));
+    }
+
+    // The pick must CONVERT the file: what Kate writes to disk changes with
+    // the selection (the probe's byte check, made permanent). Three lines:
+    // 3 LF under UNIX, 3 CRLF + 0 lone LF under Windows, 3 CR under Mac.
+    void eol_pick_converts_saved_bytes()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        KTextEditor::Document* doc = v->document();
+        doc->setText(QStringLiteral("alpha\nbeta\ngamma"));
+        StatusSelectors s;
+        s.setView(v);
+
+        auto bytesFor = [&](int index, QByteArray* raw) -> bool {
+            s.applyEol(index);
+            QTemporaryDir dir;
+            if (!dir.isValid())
+                return false;
+            const QUrl url = QUrl::fromLocalFile(dir.path() + QStringLiteral("/e.txt"));
+            if (!doc->saveAs(url))
+                return false;
+            QFile f(dir.path() + QStringLiteral("/e.txt"));
+            if (!f.open(QIODevice::ReadOnly))
+                return false;
+            *raw = f.readAll();
+            return true;
+        };
+
+        auto countEols = [](const QByteArray& b, int* lf, int* crlf, int* cr) {
+            *lf = *crlf = *cr = 0;
+            for (int i = 0; i < b.size(); ++i) {
+                if (b[i] == '\n') {
+                    if (i > 0 && b[i - 1] == '\r') ++(*crlf);
+                    else ++(*lf);
+                } else if (b[i] == '\r') {
+                    ++(*cr);
+                }
+            }
+        };
+
+        QByteArray raw;
+        int lf = 0, crlf = 0, cr = 0;
+
+        QVERIFY2(bytesFor(0, &raw), "save under UNIX failed");
+        countEols(raw, &lf, &crlf, &cr);
+        QCOMPARE(lf, 3);
+        QCOMPARE(crlf, 0);
+
+        QVERIFY2(bytesFor(1, &raw), "save under Windows/DOS failed");
+        countEols(raw, &lf, &crlf, &cr);
+        QCOMPARE(crlf, 3);
+        QCOMPARE(lf, 0);
+
+        QVERIFY2(bytesFor(2, &raw), "save under Macintosh failed");
+        countEols(raw, &lf, &crlf, &cr);
+        QCOMPARE(cr, 3);
+        QCOMPARE(lf, 0);
+        QCOMPARE(crlf, 0);
+    }
+
+    // Without a view there is nothing to convert: the pick must no-op safely
+    // (never crash) and the label falls back to the placeholder.
+    void eol_set_is_safe_without_a_view()
+    {
+        StatusSelectors s;
+        QCOMPARE(s.eolText(), QStringLiteral("-"));
+        s.applyEol(1);          // must not crash with no view at all
+        QCOMPARE(s.eolText(), QStringLiteral("-"));
+    }
+
+
+    // 2026-11-19: the line-ending popup must hang off the FIFTH cell - same
+    // anchor contract as the doc-type dropdown (right edge on the cell's right
+    // edge, inside the window), asserted through lastPopupPos() because the
+    // test runs under Wayland (menu->pos() is the compositor's).
+    void eol_dropdown_anchors_under_its_cell()
+    {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        QWidget host;
+        host.resize(600, 400);
+        // NOT shown: a real WM would reposition the window and desync
+        // mapToGlobal from the requested geometry (see doc-type anchor test).
+        auto* s = new StatusSelectors(&host);
+        // Plant the row on the RIGHT of the window, like the real bar.
+        s->setGeometry(340, 376, 260, 20);
+        s->setView(v);
+
+        QTest::mouseClick(s, Qt::LeftButton, Qt::NoModifier, s->eolCenter());
+        QCoreApplication::processEvents();
+        QMenu* menu = s->openMenu();
+        QVERIFY2(menu, "line-ending dropdown did not open");
+        const QRect hostR = QRect(host.mapToGlobal(QPoint(0, 0)), host.size());
+        const QPoint mpos = s->lastPopupPos();
+        // The cell in global coordinates (same contract as the doc-type anchor
+        // test): right edge of the menu lands on the cell's right edge.
+        const QRect cellLocal = s->eolCellRect();
+        const QRect cell(cellLocal.topLeft() + s->mapToGlobal(QPoint(0, 0)),
+                         cellLocal.size());
+        const int menuW = menu->sizeHint().width();
+        QVERIFY2(qAbs((mpos.x() + menuW) - (cell.right() + 1)) <= 1,
+                 qPrintable(QStringLiteral("eol menu right edge %1 vs cell right %2 "
+                                           "(not anchored to the indicator)")
+                                .arg(mpos.x() + menuW).arg(cell.right() + 1)));
+        // NOT pinned to the window's left edge.
+        QVERIFY2(mpos.x() > hostR.left(),
+                 qPrintable(QStringLiteral("eol menu x=%1 pinned to the window left %2")
+                                .arg(mpos.x()).arg(hostR.left())));
+        // Fully inside the window.
+        QVERIFY2(mpos.x() >= hostR.left() && mpos.x() + menuW <= hostR.right() + 1,
+                 qPrintable(QStringLiteral("eol menu %1..%2 outside window %3..%4")
+                                .arg(mpos.x()).arg(mpos.x() + menuW)
+                                .arg(hostR.left()).arg(hostR.right())));
+        menu->hide();
+
+        s->setView(nullptr);
+    }
+
 
 };
 

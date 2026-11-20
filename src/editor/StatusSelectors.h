@@ -8,10 +8,10 @@ namespace KTextEditor { class Document; class View; }
 namespace Sonnet { class Speller; }
 class QMenu;
 
-// The four status-line indicators that live on the F-key row, right of the
-// F-key text: spell language, encoding, document type (highlighting mode), and
-// INS/OVR. Each is an independent click target that opens a TV-styled
-// scrollable dropdown. Hosted by FKeyStatusBar (see the spec:
+// The five status-line indicators that live on the count line's row, right of
+// the count text: spell language, encoding, document type (highlighting mode),
+// line-ending type (UNIX / Windows/DOS / Macintosh), and INS/OVR. Each is an
+// independent click target that opens a TV-styled scrollable dropdown. Hosted by FKeyStatusBar (see the spec:
 // docs/superpowers/specs/2026-11-14-status-line-selectors-design.md).
 //
 // The widget paints its own row segment (transparent background over the
@@ -46,12 +46,17 @@ public:
     QString encodingText() const;
     QString spellText() const;
     QString overwriteText() const;   // "INS" or "OVR"
+    // Line-ending cell: "UNIX" | "Windows/DOS" | "Macintosh", or "-" without
+    // a view (or when Kate's set_eol action is missing). Reads the DOMINANT
+    // type when the document mixes endings - no "Mixed" state (Xadium's rule).
+    QString eolText() const;
 
     // Click geometry (widget-local centre of each indicator) - exposed so tests
     // can drive the dropdowns with a synthetic click.
     QPoint docTypeCenter() const;
     QPoint encodingCenter() const;
     QPoint spellCenter() const;
+    QPoint eolCenter() const;
 
     // The menu most recently opened by a click, for tests to inspect.
     QMenu* openMenu() const { return m_menu; }
@@ -84,21 +89,33 @@ private:
     QRect spellRect() const;
     QRect encodingRect() const;
     QRect docTypeRect() const;
+    QRect eolRect() const;
     QRect overwriteRect() const;
 
 public:
     // Public, read-only geometry: tests assert that a dropdown hangs off the
     // indicator it was opened from.
     QRect docTypeCellRect() const { return docTypeRect(); }
+    QRect eolCellRect() const { return eolRect(); }
+
+    // Convert the document to the line-ending type at Kate's index
+    // (0=UNIX/LF, 1=Windows/CRLF, 2=Mac/CR) via the view's setEol(int) slot
+    // - meta-called, Kate-private (no public EOL API in KTextEditor).
+    // Returns false and does nothing with no view or no setEol method.
+    bool applyEol(int index);
 
 private:
-    // The four cell widths (natural text width, shrunk proportionally when the
+    // The five cell widths (natural text width, shrunk proportionally when the
     // widget is narrower than the content) so no label ever overflows the row.
-    std::array<int, 4> cellWidths() const;
+    std::array<int, 5> cellWidths() const;
 
     void openDocTypeMenu();
     void openEncodingMenu();
     void openSpellMenu();
+    void openEolMenu();
+    // Kate's line-ending names in index order, read from its own set_eol
+    // select action when present; the static list is the fallback.
+    static QStringList eolNames(QObject* view);
     // Wire a freshly-built menu's show/hide to the context-hint swap signals.
     void attachHint(QMenu* menu, const QString& hint);
     // Size + place a dropdown so it hangs off its indicator cell (right edge on

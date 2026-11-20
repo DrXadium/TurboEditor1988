@@ -4,6 +4,7 @@
 #include <QMouseEvent>
 #include <QFontMetrics>
 #include <QMenu>
+#include <QMetaObject>
 #include <QStringConverter>
 #include "src/shell/BorlandMenu.h"
 #include <sonnet/speller.h>
@@ -20,6 +21,10 @@ const QColor kOvrRed(0xAA, 0x00, 0x00);
 const int kGap = 8;
 // Boundary between two cells: prev.right() + 1 + kGap.
 const int kBoundary = kGap + 1;
+// Kate's line-ending types in ITS OWN index order (set_eol action items,
+// probe-verified): 0=UNIX(LF) 1=Windows/DOS(CRLF) 2=Macintosh(CR). The
+// dropdown and the label both use these as the setEol(int) index.
+const char* const kEolNames[3] = {"UNIX", "Windows/DOS", "Macintosh"};
 } // namespace
 
 StatusSelectors::StatusSelectors(QWidget* parent) : QWidget(parent)
@@ -106,6 +111,62 @@ QString StatusSelectors::overwriteText() const
     return m_ovr ? QStringLiteral("OVR") : QStringLiteral("INS");
 }
 
+// Kate's own names for its three line-ending choices, in index order, read
+// from the view's set_eol select action when it is reachable (so a Kate
+// rename shows up rather than lying); the static list is the fallback.
+QStringList StatusSelectors::eolNames(QObject* view)
+{
+    QStringList out;
+    if (view) {
+        if (QAction* act = view->findChild<QAction*>(QStringLiteral("set_eol"))) {
+            const QVariant items = act->property("items");
+            if (items.isValid() && !items.toStringList().isEmpty())
+                out = items.toStringList();
+        }
+    }
+    if (out.isEmpty())
+        out = QStringList{kEolNames[0], kEolNames[1], kEolNames[2]};
+    return out;
+}
+
+// The line-ending cell: the DOMINANT type Kate reports for the document
+// (its set_eol action's currentItem - no "Mixed" state, Xadium's rule).
+// "-" without a view, or if Kate's action is unreachable (probe it: if this
+// ever shows "-", Kate renamed set_eol).
+QString StatusSelectors::eolText() const
+{
+    if (!m_view)
+        return QStringLiteral("-");
+    QAction* act = m_view->findChild<QAction*>(QStringLiteral("set_eol"));
+    if (!act)
+        return QStringLiteral("-");
+    const int idx = act->property("currentItem").toInt();
+    const QStringList names = eolNames(m_view);
+    if (idx < 0 || idx >= names.size())
+        return QStringLiteral("-");
+    return names[idx];
+}
+
+// Convert the document to line-ending type `index`. KTextEditor has NO public
+// EOL API (verified) - Kate's own ViewPrivate::setEol(int) slot is reached
+// through the meta-object (Approach A, probe-proven to change saved bytes).
+// No view / no such slot => false and nothing happens (never a crash).
+bool StatusSelectors::applyEol(int index)
+{
+    if (!m_view)
+        return false;
+    if (m_view->metaObject()->indexOfMethod("setEol(int)") < 0) {
+        qWarning("StatusSelectors: this Kate build has no setEol(int) slot - "
+                 "line-ending conversion unavailable");
+        return false;
+    }
+    if (!QMetaObject::invokeMethod(m_view, "setEol", Qt::DirectConnection,
+                                   Q_ARG(int, index)))
+        return false;
+    update();   // the label reads the action's currentItem Kate just moved
+    return true;
+}
+
 QString StatusSelectors::docTypeText() const
 {
     if (!m_doc)
@@ -132,10 +193,10 @@ QString StatusSelectors::spellText() const
 QSize StatusSelectors::sizeHint() const
 {
     const QFontMetrics fm(font());
-    // spell + encoding + docType + overwrite, each with a gap between.
+    // spell + encoding + docType + eol + overwrite, each with a gap between.
     const int w = fm.horizontalAdvance(spellText()) + fm.horizontalAdvance(encodingText()) +
-                  fm.horizontalAdvance(docTypeText()) + fm.horizontalAdvance(overwriteText()) +
-                  3 * kBoundary;
+                  fm.horizontalAdvance(docTypeText()) + fm.horizontalAdvance(eolText()) +
+                  fm.horizontalAdvance(overwriteText()) + 4 * kBoundary;
     return QSize(w, qMax(10, fm.height()));
 }
 
@@ -165,27 +226,33 @@ QPoint StatusSelectors::spellCenter() const
     return spellRect().center();
 }
 
+QPoint StatusSelectors::eolCenter() const
+{
+    return eolRect().center();
+}
+
 // Each indicator is a cell sized to its text, laid out left to right with a
 // gap. When the widget is narrower than the content (the F-row squeezed on a
 // small window), the cells shrink PROPORTIONALLY so every label stays inside
 // the row - the paint step then elides each label to its cell. Natural width
 // (wide widget) is unchanged.
-std::array<int, 4> StatusSelectors::cellWidths() const
+std::array<int, 5> StatusSelectors::cellWidths() const
 {
     const QFontMetrics fm(font());
-    std::array<int, 4> nat{fm.horizontalAdvance(spellText()),
+    std::array<int, 5> nat{fm.horizontalAdvance(spellText()),
                            fm.horizontalAdvance(encodingText()),
                            fm.horizontalAdvance(docTypeText()),
+                           fm.horizontalAdvance(eolText()),
                            fm.horizontalAdvance(overwriteText())};
-    const int boundaries = 3 * kBoundary;
-    const int content = nat[0] + nat[1] + nat[2] + nat[3];
+    const int boundaries = 4 * kBoundary;
+    const int content = nat[0] + nat[1] + nat[2] + nat[3] + nat[4];
     const int avail = qMax(0, width() - boundaries);
     if (content <= avail || content == 0)
         return nat;
     // Shrink proportionally, floor at 0.
     const double scale = double(avail) / double(content);
-    std::array<int, 4> out;
-    for (int i = 0; i < 4; ++i)
+    std::array<int, 5> out;
+    for (int i = 0; i < 5; ++i)
         out[i] = qRound(nat[i] * scale);
     return out;
 }
@@ -209,10 +276,16 @@ QRect StatusSelectors::docTypeRect() const
     return QRect(encodingRect().right() + kBoundary, 0, w[2], height());
 }
 
-QRect StatusSelectors::overwriteRect() const
+QRect StatusSelectors::eolRect() const
 {
     const auto w = cellWidths();
     return QRect(docTypeRect().right() + kBoundary, 0, w[3], height());
+}
+
+QRect StatusSelectors::overwriteRect() const
+{
+    const auto w = cellWidths();
+    return QRect(eolRect().right() + kBoundary, 0, w[4], height());
 }
 
 void StatusSelectors::paintEvent(QPaintEvent*)
@@ -232,6 +305,8 @@ void StatusSelectors::paintEvent(QPaintEvent*)
     p.drawText(encodingRect(), Qt::AlignCenter, elide(encodingRect(), encodingText()));
     // Document type (highlighting mode).
     p.drawText(docTypeRect(), Qt::AlignCenter, elide(docTypeRect(), docTypeText()));
+    // Line-ending type (UNIX / Windows/DOS / Macintosh).
+    p.drawText(eolRect(), Qt::AlignCenter, elide(eolRect(), eolText()));
     // INS/OVR: red only when OVR.
     p.setPen(m_ovr ? kOvrRed : kInk);
     p.drawText(overwriteRect(), Qt::AlignCenter, elide(overwriteRect(), overwriteText()));
@@ -245,6 +320,10 @@ void StatusSelectors::mousePressEvent(QMouseEvent* ev)
     }
     if (docTypeRect().contains(ev->pos())) {
         openDocTypeMenu();
+        return;
+    }
+    if (eolRect().contains(ev->pos())) {
+        openEolMenu();
         return;
     }
     if (encodingRect().contains(ev->pos())) {
@@ -284,6 +363,32 @@ void StatusSelectors::openDocTypeMenu()
     m_menu->setMaximumWidth(360);
     attachHint(m_menu, QStringLiteral("Select document type"));
     popupAnchored(m_menu, docTypeRect());
+}
+
+// The line-ending dropdown: Kate's own three types (its set_eol items) as a
+// TV-styled menu; picking one CONVERTS the document through setEol(int).
+void StatusSelectors::openEolMenu()
+{
+    if (!m_view)
+        return;
+    delete m_menu;
+    m_menu = new BorlandMenu(this);   // TV dropdown, same as the menu bar's
+    const QStringList names = eolNames(m_view);
+    const int current = eolText() == QStringLiteral("-")
+                            ? -1
+                            : names.indexOf(eolText());
+    for (int i = 0; i < names.size(); ++i) {
+        QAction* a = m_menu->addAction(names[i]);
+        a->setCheckable(true);
+        a->setChecked(i == current);
+        a->setData(i);
+    }
+    connect(m_menu, &QMenu::triggered, this, [this](QAction* a) {
+        if (a)
+            applyEol(a->data().toInt());
+    });
+    attachHint(m_menu, QStringLiteral("Select line ending"));
+    popupAnchored(m_menu, eolRect());
 }
 
 // Spec 7: while a dropdown is open the F-key row shows a context hint and the
