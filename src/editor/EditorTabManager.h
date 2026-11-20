@@ -70,6 +70,13 @@ public:
     void changeCase(CaseKind kind);
     void sortLines();
 
+    // Edit menu (2026-11-20): Select All covers the WHOLE active document and
+    // ignores any existing selection (unlike the text tools above, which prefer
+    // one). Deselect clears the selection and leaves the caret where it is -
+    // KTextEditor::View::removeSelection() does not move the cursor.
+    void selectAllActive();
+    void deselectActive();
+
     // Word wrap (2026-11-19): Kate's own per-view config key
     // "dynamic-word-wrap" (bool). applyTvStyle() turns it on for every new
     // view; the View menu toggles the ACTIVE view only.

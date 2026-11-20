@@ -153,6 +153,11 @@ add_executable(tst_gotoline tests/tst_gotoline.cpp)
 target_link_libraries(tst_gotoline PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_gotoline COMMAND tst_gotoline)
 
+# 2026-11-20: Edit > Select All / Deselect All.
+add_executable(tst_selectall tests/tst_selectall.cpp)
+target_link_libraries(tst_selectall PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_selectall COMMAND tst_selectall)
+
 # 2026-11-19: Edit-menu line tools + Word Wrap.
 add_executable(tst_linetools tests/tst_linetools.cpp)
 target_link_libraries(tst_linetools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

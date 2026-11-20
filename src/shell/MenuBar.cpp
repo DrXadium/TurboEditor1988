@@ -73,6 +73,11 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(edit, QStringLiteral("&Cut\tCtrl+X"), QStringLiteral("actionEditCut"));
     added(edit, QStringLiteral("C&opy\tCtrl+C"), QStringLiteral("actionEditCopy"));
     added(edit, QStringLiteral("&Paste\tCtrl+V"), QStringLiteral("actionEditPaste"));
+    // 2026-11-20: whole-document selection. No shortcut text is shown: Kate's
+    // Ctrl+A is not exposed as an action in this build, so the menu must not
+    // promise a chord nobody verified.
+    added(edit, QStringLiteral("Select &All"), QStringLiteral("actionEditSelectAll"));
+    added(edit, QStringLiteral("&Deselect All"), QStringLiteral("actionEditDeselectAll"));
     edit->addSeparator();
     added(edit, QStringLiteral("&UPPERCASE"), QStringLiteral("actionEditUpper"));
     added(edit, QStringLiteral("&lowercase"), QStringLiteral("actionEditLower"));

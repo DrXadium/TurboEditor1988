@@ -526,6 +526,10 @@ int main(int argc, char** argv)
             a->setShortcut(QKeySequence::Copy);
         if (QAction* a = act("actionEditPaste"))
             a->setShortcut(QKeySequence::Paste);
+        // Select All / Deselect All (2026-11-20): plain menu commands, no
+        // shortcut - Kate's Ctrl+A path is not an action we can bind to.
+        on(act("actionEditSelectAll"), [&tabs] { tabs.selectAllActive(); });
+        on(act("actionEditDeselectAll"), [&tabs] { tabs.deselectActive(); });
         if (qEnvironmentVariableIsSet("CRT_KATE_DIAG")) {
             for (const char* n : { "actionEditCut", "actionEditCopy", "actionEditPaste" }) {
                 if (QAction* a = act(n))

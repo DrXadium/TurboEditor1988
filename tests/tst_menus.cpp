@@ -338,6 +338,35 @@ private slots:
         QCOMPARE(items.indexOf(title), items.indexOf(lower) + 1);
     }
 
+    // 2026-11-20: Select All / Deselect All close the clipboard block, right
+    // after Paste. Neither carries a shortcut: Kate's Ctrl+A is not an action
+    // in this build, so the menu must not advertise one.
+    void edit_menu_offers_select_all_and_deselect_all_after_paste() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QAction* paste = mb->findChild<QAction*>(QStringLiteral("actionEditPaste"));
+        QAction* all = mb->findChild<QAction*>(QStringLiteral("actionEditSelectAll"));
+        QAction* none = mb->findChild<QAction*>(QStringLiteral("actionEditDeselectAll"));
+        QVERIFY(paste);
+        QVERIFY2(all, "actionEditSelectAll missing");
+        QVERIFY2(none, "actionEditDeselectAll missing");
+        QCOMPARE(all->text().remove(QLatin1Char('&')), QStringLiteral("Select All"));
+        QCOMPARE(none->text().remove(QLatin1Char('&')), QStringLiteral("Deselect All"));
+        QVERIFY2(!all->shortcut().toString().size(), "Select All must not bind a shortcut");
+        QVERIFY2(!none->shortcut().toString().size(), "Deselect All must not bind a shortcut");
+
+        QMenu* editMenu = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("Edit")))
+                editMenu = top->menu();
+        QVERIFY(editMenu);
+        const QList<QAction*> items = editMenu->actions();
+        QCOMPARE(items.indexOf(all), items.indexOf(paste) + 1);
+        QCOMPARE(items.indexOf(none), items.indexOf(paste) + 2);
+    }
+
     // 2026-11-19: the line-tools group. Sort Lines heads it; the three new
     // items follow with no submenu, so the Edit menu stays flat like TV.
     void edit_menu_has_a_line_tools_group() {
@@ -434,6 +463,7 @@ private slots:
             QStringLiteral("actionEditUndo"),  QStringLiteral("actionEditRedo"),
             QStringLiteral("actionEditCut"),   QStringLiteral("actionEditCopy"),
             QStringLiteral("actionEditPaste"),
+            QStringLiteral("actionEditSelectAll"), QStringLiteral("actionEditDeselectAll"),
             QStringLiteral("actionEditUpper"), QStringLiteral("actionEditLower"),
             QStringLiteral("actionEditTitle"),
             QStringLiteral("actionEditSort"),  QStringLiteral("actionEditSpellcheck"),

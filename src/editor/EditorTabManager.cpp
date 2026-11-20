@@ -822,6 +822,25 @@ void EditorTabManager::sortLines()
     doc->setText(out);
 }
 
+void EditorTabManager::selectAllActive()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc)
+        return;
+    // Whole document, not activeRange(): Select All must replace a smaller
+    // selection rather than defer to it. An empty document yields the empty
+    // range (0,0,0,0), which setSelection leaves unselected - harmless.
+    const int lastLine = qMax(0, doc->lines() - 1);
+    v->setSelection(KTextEditor::Range(0, 0, lastLine, doc->lineLength(lastLine)));
+}
+
+void EditorTabManager::deselectActive()
+{
+    if (KTextEditor::View* v = activeView())
+        v->removeSelection();
+}
+
 QString EditorTabManager::affixLines(const QString& text, const QString& affix, bool atEnd)
 {
     if (affix.isEmpty())
