@@ -209,6 +209,42 @@ private slots:
         wiring.setView(nullptr);
         delete doc;
     }
+
+    // 2026-11-20: the two quote kinds must BOTH reach the screen, and they must
+    // be different colours - that is the whole point of the second shade.
+    void both_quote_kinds_paint_in_their_own_colour()
+    {
+        auto* ed = KTextEditor::Editor::instance();
+        auto* doc = ed->createDocument(this);
+        doc->setHighlightingMode(QStringLiteral("None"));
+        doc->setText(QStringLiteral("a = \"double\"\nb = 'single'\n"));
+        auto* view = doc->createView(nullptr);
+        view->resize(500, 300);
+        view->show();
+        QCoreApplication::processEvents();
+
+        ColourWiring wiring;
+        wiring.setView(view);
+        QSignalSpy spy(&wiring, &ColourWiring::stringsPainted);
+        wiring.repaint();
+        QCOMPARE(spy.last().at(0).toInt(), 2);   // one span of each kind
+
+        view->repaint();
+        QCoreApplication::sendPostedEvents();
+        const QImage img = view->grab().toImage();
+
+        const int doublePx = countColor(img, StringColorizer::defaultColor(), 60);
+        const int singlePx = countColor(img, StringColorizer::singleQuoteColor(), 60);
+        QVERIFY2(doublePx > 20,
+                 qPrintable(QStringLiteral("double-quoted text did not paint green (%1 px)")
+                                .arg(doublePx)));
+        QVERIFY2(singlePx > 20,
+                 qPrintable(QStringLiteral("single-quoted text did not paint #40a769 (%1 px)")
+                                .arg(singlePx)));
+
+        wiring.setView(nullptr);
+        delete doc;
+    }
 };
 
 int main(int argc, char** argv)

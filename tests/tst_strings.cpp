@@ -127,15 +127,96 @@ private Q_SLOTS:
         QCOMPARE(spans.at(0).line, 1);
     }
 
-    // Every span carries the one string colour (the theme's String/Char green).
-    void every_span_carries_the_string_colour()
+    // Double-quoted text keeps the theme's String green.
+    void double_quoted_text_uses_the_string_green()
+    {
+        const QVector<QString> lines{ QStringLiteral("\"a\"") };
+        const auto spans = findSpans(lines, 0, 0, nothingStyled());
+        QCOMPARE(spans.size(), 1);
+        QCOMPARE(spans.at(0).color, defaultColor());
+        QCOMPARE(defaultColor().name(), QStringLiteral("#55ff55"));
+    }
+
+    // 2026-11-20 (user): single-quoted text gets its own colour so a nested pair
+    // ("he said 'hi'") separates into two shades instead of one green run.
+    void single_quoted_text_has_its_own_colour()
+    {
+        const QVector<QString> lines{ QStringLiteral("'b'") };
+        const auto spans = findSpans(lines, 0, 0, nothingStyled());
+        QCOMPARE(spans.size(), 1);
+        QCOMPARE(spans.at(0).color.name(), QStringLiteral("#40a769"));
+        QCOMPARE(spans.at(0).color, singleQuoteColor());
+    }
+
+    // The two kinds side by side keep their own colours.
+    void the_two_quote_kinds_keep_their_own_colours()
     {
         const QVector<QString> lines{ QStringLiteral("\"a\" 'b'") };
         const auto spans = findSpans(lines, 0, 0, nothingStyled());
         QCOMPARE(spans.size(), 2);
         QCOMPARE(spans.at(0).color, defaultColor());
+        QCOMPARE(spans.at(1).color, singleQuoteColor());
+        QVERIFY2(spans.at(0).color != spans.at(1).color,
+                 "the two quote kinds must not share a colour");
+    }
+
+    // THE nesting case, and the reason for the second colour: inside a
+    // double-quoted string a single-quoted run takes the single-quote colour, so
+    // the two are told apart at a glance. The span is split into non-overlapping
+    // segments (an outer range covering the inner one would leave which colour
+    // wins up to range ordering).
+    void a_single_quoted_run_inside_a_double_quoted_string_is_its_own_colour()
+    {
+        // s = "he said 'hi'";
+        // 0123456789...
+        // "4 ......... '13 h i '16 "17
+        const QVector<QString> lines{ QStringLiteral("s = \"he said 'hi'\";") };
+        const auto spans = findSpans(lines, 0, 0, nothingStyled());
+        QCOMPARE(spans.size(), 3);
+        // "he said        -> double-quote green
+        QCOMPARE(spans.at(0).col, 4);
+        QCOMPARE(spans.at(0).endCol, 12);
+        QCOMPARE(spans.at(0).color, defaultColor());
+        // 'hi'            -> single-quote colour
+        QCOMPARE(spans.at(1).col, 13);
+        QCOMPARE(spans.at(1).endCol, 16);
+        QCOMPARE(spans.at(1).color, singleQuoteColor());
+        // closing "       -> back to green
+        QCOMPARE(spans.at(2).col, 17);
+        QCOMPARE(spans.at(2).endCol, 17);
+        QCOMPARE(spans.at(2).color, defaultColor());
+    }
+
+    // And the mirror image: a double-quoted run inside a single-quoted string.
+    void a_double_quoted_run_inside_a_single_quoted_string_is_green()
+    {
+        // h = '<a href="x">';
+        // 0123456789012345678
+        // '4 .......... "13 x "15
+        const QVector<QString> lines{ QStringLiteral("h = '<a href=\"x\">';") };
+        const auto spans = findSpans(lines, 0, 0, nothingStyled());
+        QCOMPARE(spans.size(), 3);
+        QCOMPARE(spans.at(0).color, singleQuoteColor());
+        QCOMPARE(spans.at(1).col, 13);
+        QCOMPARE(spans.at(1).endCol, 15);
         QCOMPARE(spans.at(1).color, defaultColor());
-        QCOMPARE(defaultColor().name(), QStringLiteral("#55ff55"));
+        QCOMPARE(spans.at(2).color, singleQuoteColor());
+    }
+
+    // Segments never overlap: each painted range must own its characters.
+    void segments_never_overlap()
+    {
+        const QVector<QString> lines{ QStringLiteral("s = \"a 'b' c\" + 'd'") };
+        const auto spans = findSpans(lines, 0, 0, nothingStyled());
+        QVERIFY(spans.size() >= 4);
+        for (int i = 1; i < spans.size(); ++i) {
+            const auto& prev = spans.at(i - 1);
+            const auto& cur = spans.at(i);
+            QVERIFY2(cur.line != prev.line || cur.col > prev.endCol,
+                     qPrintable(QStringLiteral("span %1 starts at %2, inside the "
+                                               "previous span ending at %3")
+                                    .arg(i).arg(cur.col).arg(prev.endCol)));
+        }
     }
 
     // A one-character span ("") is still a span: two adjacent quotes.

@@ -18,17 +18,25 @@
 // pixel probes.
 namespace StringColorizer {
 
-// One quoted span, both ends inclusive. `endCol` is the CLOSING quote.
+// One coloured segment of a quoted span, both ends inclusive. A span that
+// contains the OTHER quote kind is split into non-overlapping segments (an outer
+// range covering an inner one would leave which colour wins to range ordering),
+// so segments come back in document order and never overlap.
 struct Span {
     int line = 0;
-    int col = 0;      // the opening quote
-    int endCol = 0;   // the closing quote (inclusive, same line as `col`)
+    int col = 0;      // first character of the segment
+    int endCol = 0;   // last character (inclusive, same line as `col`)
     QColor color;
 };
 
 // The theme's own String/Char green, so a coloured document and an uncoloured
 // one look identical where the theme does apply.
 QColor defaultColor();
+
+// Single-quoted text gets its own shade (2026-11-20, user: "the text in single
+// quotes should be #40A769") so a nested pair like "he said 'hi'" separates into
+// two visible colours instead of one green run. Contrast on #0000AA is 11.41.
+QColor singleQuoteColor();
 
 // True when the character at (line, col) already has a colour the highlighter
 // owns (String, Char or Comment). Those positions are left alone so this pass
