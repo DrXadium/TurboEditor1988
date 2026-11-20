@@ -252,6 +252,66 @@ private slots:
         QVERIFY(end.title().contains(QStringLiteral("End")));
         QVERIFY(start.title().contains(QStringLiteral("Start")));
     }
+
+    // ---- remove mode (2026-11-19) -----------------------------------------
+
+    void both_modes_offer_a_remove_checkbox() {
+        LineAffixDialog end(LineAffixDialog::Mode::End);
+        LineAffixDialog start(LineAffixDialog::Mode::Start);
+        QVERIFY(end.removeBox());
+        QVERIFY(start.removeBox());
+        QVERIFY(!end.wantsRemove());
+        QVERIFY(!start.wantsRemove());
+        QVERIFY(end.field()->isEnabled());
+        QVERIFY(start.field()->isEnabled());
+    }
+
+    void remove_checkbox_disables_the_field_and_clears_line_break() {
+        LineAffixDialog d(LineAffixDialog::Mode::End);
+        d.resize(d.sizeHint());
+        d.show();
+        d.lineBreakBox()->setChecked(true);       // Line break on, field dead
+        QVERIFY(!d.field()->isEnabled());
+
+        d.removeBox()->setChecked(true);          // Remove wins, Line break clears
+        QVERIFY(d.wantsRemove());
+        QVERIFY(!d.lineBreakBox()->isChecked());
+        QVERIFY(!d.field()->isEnabled());
+
+        d.removeBox()->setChecked(false);         // back to Line break's terms
+        QVERIFY(!d.wantsRemove());
+        QVERIFY(!d.field()->isEnabled());         // Line break is still ticking
+        QVERIFY(d.lineBreakBox()->isChecked());
+
+        d.lineBreakBox()->setChecked(false);      // now nothing owns the field
+        QVERIFY(d.field()->isEnabled());
+    }
+
+    void remove_checkbox_round_trip_leaves_line_break_alone_if_it_was_off() {
+        LineAffixDialog d(LineAffixDialog::Mode::End);
+        QVERIFY(!d.lineBreakBox()->isChecked());    // Line break starts off
+        d.removeBox()->setChecked(true);
+        QVERIFY(!d.lineBreakBox()->isChecked());    // still off
+        d.removeBox()->setChecked(false);
+        QVERIFY(!d.lineBreakBox()->isChecked());    // must NOT spontaneously tick
+        QVERIFY(d.field()->isEnabled());            // and nothing owns the field
+    }
+
+    void remove_checkbox_in_start_mode_owns_the_field_alone() {
+        LineAffixDialog d(LineAffixDialog::Mode::Start);
+        QVERIFY(!d.lineBreakBox());               // Start mode has no break row
+        d.removeBox()->setChecked(true);
+        QVERIFY(!d.field()->isEnabled());
+        d.removeBox()->setChecked(false);
+        QVERIFY(d.field()->isEnabled());
+    }
+
+    void dialog_titles_are_modify_not_add() {
+        LineAffixDialog end(LineAffixDialog::Mode::End);
+        LineAffixDialog start(LineAffixDialog::Mode::Start);
+        QCOMPARE(end.title(), QStringLiteral("Modify End of Line"));
+        QCOMPARE(start.title(), QStringLiteral("Modify Start of Line"));
+    }
 };
 
 int main(int argc, char** argv)

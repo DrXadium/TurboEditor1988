@@ -25,12 +25,21 @@ public:
 
     QLineEdit* field() const { return m_field; }
     TvCheckBox* lineBreakBox() const { return m_box; }
+    TvCheckBox* removeBox() const { return m_removeBox; }
     QString text() const;
     bool wantsLineBreak() const;
+    bool wantsRemove() const;
 
 private:
+    void refreshFieldEnabled();
+    void clearLineBreakIfRemove();
+
     Mode m_mode;
     FieldCell* m_cell = nullptr;
     QLineEdit* m_field = nullptr;
     TvCheckBox* m_box = nullptr;
+    TvCheckBox* m_removeBox = nullptr;
+    // Set when Remove cleared a ticked Line break, so turning Remove back off
+    // restores it instead of leaving the box off.
+    bool m_breakWasCleared = false;
 };
