@@ -20,6 +20,7 @@
 #include <QQuickItem>
 #include <QtQuick/qquickitemgrabresult.h>
 #include <QTimer>
+#include <memory>
 #include "src/shell/ShellWindow.h"
 #include "src/AppIdentity.h"
 #include "src/shell/TabStrip.h"
@@ -286,6 +287,55 @@ int main(int argc, char** argv)
                              tabs.triggerActiveViewShortcut(
                                  QKeySequence(Qt::Key_Insert));
                          });
+    }
+    // Status-line counts (2026-11-19): the left line shows whole-document word
+    // and character counts in place of the retired F-key reminder. Counts come
+    // from the SAME document text the user sees, so a 16-character file reads
+    // 16; the bar only formats them (FKeyStatusBar::wordCount is the one rule).
+    {
+        FKeyStatusBar* bar = shell.fkeyStatusBar();
+        auto refreshCounts = [&tabs, bar]() {
+            if (!bar)
+                return;
+            KTextEditor::View* v = tabs.activeView();
+            KTextEditor::Document* d = v ? v->document() : nullptr;
+            if (!d) {
+                bar->setCounts(0, 0);
+                return;
+            }
+            const QString text = d->text();
+            bar->setCounts(FKeyStatusBar::wordCount(text), text.size());
+        };
+        // Re-scanning a whole document on every keystroke would stutter on a
+        // large file, so edits coalesce through a short single-shot timer.
+        // Tab switches bypass it: a stale count on the newly active tab would
+        // read as the old tab's numbers (the L:C band bug class).
+        auto* debounce = new QTimer(&shell);
+        debounce->setSingleShot(true);
+        debounce->setInterval(120);
+        QObject::connect(debounce, &QTimer::timeout, &shell, refreshCounts);
+        // The active DOCUMENT changes with the active view; re-bind its
+        // textChanged each time so the count follows the tab you are in.
+        auto activeDocConn = std::make_shared<QMetaObject::Connection>();
+        auto bindActiveDoc = [&tabs, debounce, activeDocConn]() {
+            QObject::disconnect(*activeDocConn);
+            KTextEditor::View* v = tabs.activeView();
+            KTextEditor::Document* d = v ? v->document() : nullptr;
+            if (!d)
+                return;
+            *activeDocConn = QObject::connect(
+                d, &KTextEditor::Document::textChanged, debounce,
+                [debounce]() { debounce->start(); });
+        };
+        QObject::connect(&tabs, &EditorTabManager::activeViewChanged, &shell,
+                         [refreshCounts, bindActiveDoc, debounce](
+                             KTextEditor::View*) {
+                             bindActiveDoc();
+                             debounce->stop();   // drop the old tab's pending tick
+                             refreshCounts();
+                         });
+        bindActiveDoc();
+        refreshCounts();
     }
     // Seed the strip with the initial tab (created by the manager ctor).
     if (TabStrip* strip0 = shell.tabStrip()) {
@@ -799,8 +849,11 @@ int main(int argc, char** argv)
     // Dev aid (unset in normal runs): CRT_KATE_RAWSHOT=/tmp/x.png grabs the
     // RAW widget render (the true chrome, no CRT shader) and exits - used for
     // visual restyle verification / pixel proofs against the Turbo Vision spec.
+    // CRT_KATE_RAWSHOT_DELAY (ms) lets the grab wait for a text-seeding dev aid
+    // (they run at 1200ms); unset keeps the historical 900ms.
     if (const QByteArray raw = qgetenv("CRT_KATE_RAWSHOT"); !raw.isEmpty()) {
-        QTimer::singleShot(900, &app, [&shell, raw, &app]() {
+        const int rawDelay = qEnvironmentVariableIntValue("CRT_KATE_RAWSHOT_DELAY");
+        QTimer::singleShot(rawDelay > 0 ? rawDelay : 900, &app, [&shell, raw, &app]() {
             const QImage img = shell.grab().toImage();
             img.save(QString::fromUtf8(raw));
             QCoreApplication::exit(0);

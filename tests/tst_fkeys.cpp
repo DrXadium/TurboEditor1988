@@ -312,6 +312,49 @@ private slots:
 
 
 
+    // The counting rule the status line runs on: whitespace-separated words
+    // over the WHOLE document. These pin the cases a naive split gets wrong.
+    void word_count_ignores_whitespace_only_text()
+    {
+        QCOMPARE(FKeyStatusBar::wordCount(QString()), qint64(0));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("")), qint64(0));
+        // Whitespace-only documents are 0 words, not 1 (a naive split() emits
+        // empty tokens and reports a word for a blank file).
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("   ")), qint64(0));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("\n\n\n")), qint64(0));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral(" \t\r\n  \t ")), qint64(0));
+    }
+
+    void word_count_splits_on_any_whitespace()
+    {
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("one")), qint64(1));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("one two\nthree")), qint64(3));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("one\ttwo\tthree")), qint64(3));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("one\r\ntwo")), qint64(2));
+        // Leading / trailing / repeated whitespace never adds or drops a word.
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("  one  two  ")), qint64(2));
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("a\n\n\nb")), qint64(2));
+        // Punctuation stays inside its word (Kate-class behaviour: no stemming).
+        QCOMPARE(FKeyStatusBar::wordCount(QStringLiteral("hello, world!")), qint64(2));
+        // Non-ASCII words count as words.
+        QCOMPARE(FKeyStatusBar::wordCount(QString::fromUtf8("café déjà vu")), qint64(3));
+    }
+
+    // The line the composition root feeds: counts are independent of the label
+    // (a zero-character doc still shows both labels).
+    void count_line_carries_both_numbers_for_a_real_document()
+    {
+        const QString text = QStringLiteral("alpha beta\ngamma");
+        ShellWindow w;
+        FKeyStatusBar* bar = w.fkeyStatusBar();
+        QVERIFY(bar);
+        bar->setCounts(FKeyStatusBar::wordCount(text), text.size());
+        const QString line = plain(bar->displayedText());
+        QVERIFY2(line.contains(QStringLiteral("Word Count: 3")), qPrintable(line));
+        QVERIFY2(line.contains(QStringLiteral("Character Count: 16")), qPrintable(line));
+    }
+
+
 };
 
 int main(int argc, char** argv)

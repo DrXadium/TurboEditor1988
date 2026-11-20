@@ -16,6 +16,10 @@ public:
     // can assert the format without a live bar.
     static QString countLine(qint64 words, qint64 chars);
     void setCounts(qint64 words, qint64 chars);
+    // Whole-document word count: maximal runs of non-whitespace, so a blank or
+    // whitespace-only document is 0 (not 1). The composition root's only
+    // counting rule - the status line never counts on its own.
+    static qint64 wordCount(const QString& text);
 
     // TV-revision2 spec 7: while a dropdown is open the status line is
     // REPLACED by a context hint ("F1 Help | <hint>"); setContextHint()

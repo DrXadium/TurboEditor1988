@@ -89,6 +89,21 @@ QString FKeyStatusBar::countLine(qint64 words, qint64 chars)
            + QString::number(chars) + close;
 }
 
+// Words = maximal runs of non-whitespace. Counting \S+ runs (rather than
+// splitting on a single separator) is what makes tabs, CRLF and repeated blank
+// lines behave, and an all-whitespace document yields zero runs -> 0 words.
+qint64 FKeyStatusBar::wordCount(const QString& text)
+{
+    static const QRegularExpression wordRe(QStringLiteral("\\S+"));
+    qint64 n = 0;
+    auto it = wordRe.globalMatch(text);
+    while (it.hasNext()) {
+        it.next();
+        ++n;
+    }
+    return n;
+}
+
 void FKeyStatusBar::setCounts(qint64 words, qint64 chars)
 {
     m_text = countLine(words, chars);
