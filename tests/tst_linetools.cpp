@@ -211,6 +211,49 @@ private slots:
         QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));
     }
 
+    // ---- remove mode, document-level (2026-11-19) --------------------------
+
+    void strip_end_mode_strips_each_line_of_the_selection() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("a ;\nb ;\nc"));
+        v->setSelection(KTextEditor::Range(0, 0, 1, 4));     // "a ;\nb ;"
+        m.stripActiveLines(QStringLiteral(" ;"), true);
+        QCOMPARE(v->document()->text(), QStringLiteral("a\nb\nc"));
+    }
+
+    void strip_start_mode_strips_the_leading_needle() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("// a\n// b"));
+        m.stripActiveLines(QStringLiteral("// "), false);     // no selection: whole doc
+        QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));
+    }
+
+    void empty_needle_leaves_the_document_alone() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("a\nb"));
+        m.stripActiveLines(QString(), true);
+        QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));
+    }
+
+    void strip_leaves_a_line_without_the_needle_untouched() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        QVERIFY(v);
+        v->document()->setText(QStringLiteral("// a\nb"));
+        m.stripActiveLines(QStringLiteral("// "), false);
+        QCOMPARE(v->document()->text(), QStringLiteral("a\nb"));
+    }
+
     // ---- the affix dialog -------------------------------------------------
 
     void end_dialog_has_a_field_and_an_unchecked_break_box() {

@@ -370,6 +370,11 @@ private slots:
         }
         QVERIFY(items.at(at("actionEditAddEol"))
                     ->text().endsWith(QStringLiteral("...")));
+        // 2026-11-19 (second round): Add -> Modify, object names unchanged.
+        QCOMPARE(items.at(at("actionEditAddEol"))->text(),
+                 QStringLiteral("Modify &End of Line..."));
+        QCOMPARE(items.at(at("actionEditAddBol"))->text(),
+                 QStringLiteral("Modify &Start of Line..."));
     }
 
     // 2026-11-19: Word Wrap sits at the end of the View menu, checkable, and

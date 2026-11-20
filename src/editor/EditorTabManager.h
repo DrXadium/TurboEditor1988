@@ -93,6 +93,10 @@ public:
     // modal; affixActiveLines() is the apply step and is dialog-free so it can
     // be tested. An empty affix is a no-op: no edit, no undo entry.
     void affixActiveLines(const QString& affix, bool atEnd);
+    // Remove mode of the line tools: strips `needle` off each line's edge
+    // (selection if present, else whole doc), mirroring affixActiveLines. An
+    // empty needle is a no-op: no edit, no undo entry.
+    void stripActiveLines(const QString& needle, bool atEnd);
     void addToLines(bool atEnd, QWidget* anchor);
     void removeLineBreaks();
 

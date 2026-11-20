@@ -931,7 +931,27 @@ void EditorTabManager::addToLines(bool atEnd, QWidget* anchor)
                               : LineAffixDialog::Mode::Start);
     if (TvModal::exec(anchor ? anchor : activeView(), &dlg) != TvModal::Accept)
         return;
+    if (dlg.wantsRemove()) {
+        // Remove mode: the typed string comes OFF each line's edge instead of
+        // going on. (The field is disabled while Remove is ticked, so the text
+        // is whatever was in it before the flip - that is the needle.)
+        stripActiveLines(dlg.text(), atEnd);
+        return;
+    }
     affixActiveLines(dlg.wantsLineBreak() ? QStringLiteral("\n") : dlg.text(), atEnd);
+}
+
+void EditorTabManager::stripActiveLines(const QString& needle, bool atEnd)
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc || needle.isEmpty())
+        return;                        // empty needle: no edit, no undo entry
+    const KTextEditor::Range range = activeRange(v, doc);
+    const QString before = doc->text(range);
+    const QString after = stripEdgeText(before, needle, atEnd);
+    if (after != before)
+        doc->replaceText(range, after);
 }
 
 void EditorTabManager::removeLineBreaks()
