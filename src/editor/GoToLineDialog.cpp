@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "GoToLineDialog.h"
+
+#include "src/shell/FieldCell.h"
+
+#include <QGridLayout>
+#include <QIntValidator>
+#include <QLabel>
+#include <QLineEdit>
+
+GoToLineDialog::GoToLineDialog(int lineCount, QWidget* parent)
+    : TvModal(parent)
+    , m_lineCount(qMax(1, lineCount))
+{
+    setObjectName(QStringLiteral("goToLineDialog"));
+    setWindowTitle(tr("Go to Line"));
+    setTitle(tr("Go to Line"));
+
+    auto* body = new QWidget;
+    body->setObjectName(QStringLiteral("goLineBody"));
+    auto* grid = new QGridLayout(body);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(2 * cellWidth());
+    grid->setVerticalSpacing(cellHeight());
+    grid->setColumnStretch(1, 1);
+
+    auto* label = new QLabel(tr("Line:"), body);
+    label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+
+    m_cell = new FieldCell(body);
+    m_field = new QLineEdit(m_cell);
+    m_field->setObjectName(QStringLiteral("goLineField"));
+    styleAsTvField(m_field);
+    m_cell->setEdit(m_field);
+    m_cell->setActive(true);   // the only field: it is always the typing target
+    // Digits only, inside the document's range: a keystroke that would make an
+    // out-of-range number is refused rather than corrected after the fact.
+    m_field->setValidator(new QIntValidator(1, m_lineCount, m_field));
+    m_field->setText(QString());   // empty on open (rarely want the current line)
+
+    grid->addWidget(label, 0, 0);
+    grid->addWidget(m_cell, 0, 1);
+
+    setBody(body);
+
+    // Plates right to left: Cancel added first, so it sits rightmost.
+    addButton(tr("Cancel"), Reject);
+    addButton(tr("OK"), Accept);
+}
+
+int GoToLineDialog::line() const
+{
+    if (!m_field)
+        return 1;
+    bool ok = false;
+    const int value = m_field->text().toInt(&ok);
+    if (!ok)
+        return 1;                       // empty or non-numeric: first line
+    return qBound(1, value, m_lineCount);
+}

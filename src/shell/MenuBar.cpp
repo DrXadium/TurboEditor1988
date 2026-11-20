@@ -128,6 +128,10 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     wrap->setCheckable(true);
     wrap->setChecked(true);
     wrap->setStatusTip(QStringLiteral("Wrap long lines to the window width"));
+    // 2026-11-19: a plain jump to a line number, last row of the View menu.
+    QAction* go = added(view, QStringLiteral("&Go..."),
+                        QStringLiteral("actionViewGo"));
+    go->setStatusTip(QStringLiteral("Jump to a line number"));
 
     QMenu* session = addMenu(QStringLiteral("Se&ssion"));
     added(session, QStringLiteral("&Save Session..."), QStringLiteral("actionSessionSave"));

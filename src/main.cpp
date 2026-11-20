@@ -41,6 +41,7 @@
 #include "src/settings/SettingsDialog.h"
 #include "src/shell/AboutModal.h"
 #include "src/editor/FindReplaceDialog.h"
+#include "src/editor/GoToLineDialog.h"
 #include "src/shell/TvModal.h"
 #include <QPushButton>
 #include "src/session/SessionManager.h"
@@ -580,6 +581,16 @@ int main(int argc, char** argv)
             QObject::connect(&tabs, &EditorTabManager::activeViewChanged, wrap,
                              [&tabs, wrap] { wrap->setChecked(tabs.wordWrap()); });
         }
+
+        // View > Go... : the dialog needs the document's line count for its
+        // validator; the jump itself clamps again, so a stale count is safe.
+        on(act("actionViewGo"), [&tabs, &shell] {
+            const KTextEditor::Document* doc = tabs.activeDocument();
+            const int lineCount = doc ? doc->lines() : 1;
+            GoToLineDialog dlg(lineCount);
+            if (TvModal::exec(&shell, &dlg) == TvModal::Accept)
+                tabs.goToLine(dlg.line());
+        });
 
         // Session -> SessionManager (reuses collectSessionEntries/restoreEntries)
         on(act("actionSessionSave"),

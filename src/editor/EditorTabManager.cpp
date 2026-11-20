@@ -947,6 +947,18 @@ void EditorTabManager::removeLineBreaks()
         doc->replaceText(range, after);
 }
 
+void EditorTabManager::goToLine(int oneBasedLine)
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = activeDocument();
+    if (!v || !doc)
+        return;
+    // 1-based in from the user, 0-based cursor out, floored and clamped (a paste
+    // can bypass the dialog's validator, so this is not a duplicate of it).
+    const int bounded = qBound(1, oneBasedLine, doc->lines());
+    v->setCursorPosition(KTextEditor::Cursor(bounded - 1, 0));
+}
+
 void EditorTabManager::installActions(QWidget* host)
 {
     if (!host)

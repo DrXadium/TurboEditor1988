@@ -96,6 +96,10 @@ public:
     void addToLines(bool atEnd, QWidget* anchor);
     void removeLineBreaks();
 
+    // View > Go: move the caret to a 1-based line number (clamped to the
+    // document). The dialog does the validation; this does the jump.
+    void goToLine(int oneBasedLine);
+
     // Standard clipboard editing (Edit menu + Ctrl+X/C/V). This KTextEditor
     // build ships no ClipboardInterface and no action hooks, so these are
     // implemented over Document::text/removeText/insertText and QClipboard.

@@ -391,7 +391,29 @@ private slots:
                                    QStringLiteral("View")))
                 viewMenu = top->menu();
         QVERIFY(viewMenu);
-        QCOMPARE(viewMenu->actions().last(), wrap);
+        // Rows: Zoom x3, sep, Minimap, FoldBar, Word Wrap, Go. Go was added last,
+        // so wrap sits immediately above it.
+        QCOMPARE(viewMenu->actions().at(viewMenu->actions().size() - 2), wrap);
+    }
+
+    // 2026-11-19 (second round): View > Go is a plain jump, last in the View menu.
+    void view_menu_offers_go_as_its_last_row() {
+        ShellWindow w;
+        QMenuBar* mb = w.menuBar();
+        QVERIFY(mb);
+        QAction* go = mb->findChild<QAction*>(QStringLiteral("actionViewGo"));
+        QVERIFY2(go, "actionViewGo missing");
+        QCOMPARE(go->text().remove(QLatin1Char('&')), QStringLiteral("Go..."));
+        QVERIFY(!go->isCheckable());
+        QVERIFY2(!go->menu(), "Go must be a plain action, not a submenu");
+
+        QMenu* view = nullptr;
+        for (QAction* top : mb->actions())
+            if (top->menu() && top->text().remove(QLatin1Char('&')).startsWith(
+                                   QStringLiteral("View")))
+                view = top->menu();
+        QVERIFY(view);
+        QCOMPARE(view->actions().last(), go);
     }
 
     // Task 10: menu entries the composition root wires to real features exist
@@ -420,6 +442,7 @@ private slots:
             QStringLiteral("actionViewZoomReset"),
             QStringLiteral("actionViewMinimap"), QStringLiteral("actionViewFoldBar"),
             QStringLiteral("actionViewWordWrap"),
+            QStringLiteral("actionViewGo"),
             QStringLiteral("actionSessionSave"), QStringLiteral("actionSessionRestore"),
             QStringLiteral("actionSettingsConfigure"),
             QStringLiteral("actionHelpAbout"),

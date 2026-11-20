@@ -134,6 +134,8 @@ add_library(crt-editor STATIC
   src/editor/FindReplaceDialog.h
   src/editor/LineAffixDialog.cpp
   src/editor/LineAffixDialog.h
+  src/editor/GoToLineDialog.cpp
+  src/editor/GoToLineDialog.h
   src/editor/StatusSelectors.cpp
   src/editor/StatusSelectors.h
   src/editor/tvtheme/tvtheme.qrc
@@ -145,6 +147,11 @@ target_link_libraries(crt-editor PUBLIC crt-shell Qt6::Widgets KF6::TextEditor)
 add_executable(tst_zoomtools tests/tst_zoomtools.cpp)
 target_link_libraries(tst_zoomtools PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
+
+# 2026-11-19 (second round): View > Go.
+add_executable(tst_gotoline tests/tst_gotoline.cpp)
+target_link_libraries(tst_gotoline PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_gotoline COMMAND tst_gotoline)
 
 # 2026-11-19: Edit-menu line tools + Word Wrap.
 add_executable(tst_linetools tests/tst_linetools.cpp)
