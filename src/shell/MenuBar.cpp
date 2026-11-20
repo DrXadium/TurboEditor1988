@@ -142,6 +142,14 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     nonprint->setCheckable(true);
     nonprint->setChecked(false);
     nonprint->setStatusTip(QStringLiteral("Show spaces, tabs and non-printable characters"));
+    // 2026-11-20: colour each bracket pair so nested blocks are readable.
+    // Kate's addon (rainbow-parens) ported as a MovingRange colourer; on by
+    // default, re-synced on tab switch like Word Wrap and Nonprintable.
+    QAction* brackets = added(view, QStringLiteral("Coloured &Brackets"),
+                              QStringLiteral("actionViewBrackets"));
+    brackets->setCheckable(true);
+    brackets->setChecked(true);
+    brackets->setStatusTip(QStringLiteral("Colour nested bracket pairs so they are easy to match"));
     // 2026-11-19: a plain jump to a line number, last row of the View menu.
     QAction* go = added(view, QStringLiteral("&Go..."),
                         QStringLiteral("actionViewGo"));

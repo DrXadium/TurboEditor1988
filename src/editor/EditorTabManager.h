@@ -95,6 +95,13 @@ public:
     bool nonprintablesVisible() const;
     void setNonprintables(bool on);
 
+    // View > Coloured Brackets (2026-11-20): colour each bracket pair so nested
+    // blocks are readable (Kate's addon ported - see the design doc). State is
+    // per active view; trackActiveCursor() re-points the wiring on every tab
+    // change, and the menu re-syncs its check on activeViewChanged.
+    bool colouredBrackets() const;
+    void setColouredBrackets(bool on);
+
     // Pure line transforms behind the Edit menu's line tools (2026-11-19).
     // affixLines() inserts `affix` at the start or end of every line; a CRLF's
     // \r stays with the terminator, and the empty segment after a trailing \n
@@ -261,5 +268,8 @@ private:
     // Guards against the history handler re-entering while undo/redo is
     // restoring text (Document::setText emits textChanged).
     bool m_applyingHistory = false;
+    // Colouring of bracket pairs for the ACTIVE view (owns its MovingRanges).
+    class BracketWiring* m_brackets = nullptr;
+    bool m_bracketsOn = true;
     static constexpr int kMaxHistory = 200;
 };

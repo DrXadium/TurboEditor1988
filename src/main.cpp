@@ -596,6 +596,15 @@ int main(int argc, char** argv)
             QObject::connect(&tabs, &EditorTabManager::activeViewChanged, np,
                              [&tabs, np] { np->setChecked(tabs.nonprintablesVisible()); });
         }
+        // Coloured Brackets: one app-level toggle (the colouring itself is
+        // managed by EditorTabManager for the active view). The check follows
+        // the tab like Word Wrap above.
+        if (QAction* cb = act("actionViewBrackets")) {
+            QObject::connect(cb, &QAction::triggered, cb,
+                             [&tabs, cb](bool on) { tabs.setColouredBrackets(on); });
+            QObject::connect(&tabs, &EditorTabManager::activeViewChanged, cb,
+                             [&tabs, cb] { cb->setChecked(tabs.colouredBrackets()); });
+        }
 
         // View > Go... : the dialog needs the document's line count for its
         // validator; the jump itself clamps again, so a stale count is safe.

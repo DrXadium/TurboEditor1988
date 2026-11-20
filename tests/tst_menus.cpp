@@ -425,9 +425,9 @@ private slots:
                                    QStringLiteral("View")))
                 viewMenu = top->menu();
         QVERIFY(viewMenu);
-        // Rows: Zoom x3, sep, Minimap, FoldBar, Word Wrap, Nonprintable, Go.
-        // Go is always last, so wrap sits third from the end.
-        QCOMPARE(viewMenu->actions().at(viewMenu->actions().size() - 3), wrap);
+        // Rows: Zoom x3, sep, Minimap, FoldBar, Word Wrap, Nonprintable,
+        // Brackets, Go. Go is always last, so wrap sits fourth from the end.
+        QCOMPARE(viewMenu->actions().at(viewMenu->actions().size() - 4), wrap);
     }
 
     // 2026-11-20: Show / Hide Nonprintable Characters is a checkable toggle
@@ -453,10 +453,13 @@ private slots:
         QVERIFY(viewMenu);
         QAction* wrap = mb->findChild<QAction*>(QStringLiteral("actionViewWordWrap"));
         QAction* go = mb->findChild<QAction*>(QStringLiteral("actionViewGo"));
+        QAction* brackets = mb->findChild<QAction*>(QStringLiteral("actionViewBrackets"));
         QVERIFY(wrap && go);
+        QVERIFY(brackets);
         const QList<QAction*> items = viewMenu->actions();
         QCOMPARE(items.indexOf(np), items.indexOf(wrap) + 1);
-        QCOMPARE(items.indexOf(go), items.indexOf(np) + 1);
+        QCOMPARE(items.indexOf(brackets), items.indexOf(np) + 1);
+        QCOMPARE(items.indexOf(go), items.indexOf(brackets) + 1);
     }
 
     // 2026-11-19 (second round): View > Go is a plain jump, last in the View menu.
@@ -507,6 +510,7 @@ private slots:
             QStringLiteral("actionViewMinimap"), QStringLiteral("actionViewFoldBar"),
             QStringLiteral("actionViewWordWrap"),
             QStringLiteral("actionViewNonprintable"),
+            QStringLiteral("actionViewBrackets"),
             QStringLiteral("actionViewGo"),
             QStringLiteral("actionSessionSave"), QStringLiteral("actionSessionRestore"),
             QStringLiteral("actionSettingsConfigure"),
@@ -520,6 +524,7 @@ private slots:
         for (const QString& name : { QStringLiteral("actionViewMinimap"),
                                      QStringLiteral("actionViewFoldBar"),
                                      QStringLiteral("actionViewNonprintable"),
+                                     QStringLiteral("actionViewBrackets"),
                                      QStringLiteral("actionEditSpellcheck") }) {
             QAction* a = mb->findChild<QAction*>(name);
             QVERIFY2(a && a->isCheckable(),

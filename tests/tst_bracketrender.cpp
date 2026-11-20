@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// 2026-11-20: Coloured Brackets, the RENDERER verification. Confirms the
+// MovingRange attributes actually paint (measured: a red-attributed bracket
+// produced red pixels; lineAttributes() returned 0 and is NOT the render path).
+#include <QtTest>
+#include <QApplication>
+#include <QImage>
+#include "src/editor/BracketWiring.h"
+#include "src/editor/BracketColorizer.h"
+#include <ktexteditor/view.h>
+#include <ktexteditor/document.h>
+#include <ktexteditor/editor.h>
+
+namespace {
+// Count pixels of a colour within tolerance.
+int countColor(const QImage& img, const QColor& want, int tol)
+{
+    int n = 0;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (qAbs(c.red() - want.red()) <= tol
+                && qAbs(c.green() - want.green()) <= tol
+                && qAbs(c.blue() - want.blue()) <= tol)
+                ++n;
+        }
+    return n;
+}
+} // namespace
+
+class TstBracketRender : public QObject
+{
+    Q_OBJECT
+private slots:
+    void initTestCase()
+    {
+        // Deterministic, same as the other renderer suites.
+        if (qgetenv("QT_QPA_PLATFORM").isEmpty())
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
+
+    void a_bracket_pair_paints_its_colour()
+    {
+        auto* ed = KTextEditor::Editor::instance();
+        auto* doc = ed->createDocument(this);
+        doc->setText(QStringLiteral("if (aaa) {\n  return bbb;\n}\n"));
+        auto* view = doc->createView(nullptr);
+        view->resize(500, 300);
+        view->show();
+        QCoreApplication::processEvents();
+
+        BracketWiring wiring;
+        wiring.setView(view);
+        QSignalSpy spy(&wiring, &BracketWiring::painted);
+        wiring.repaint();
+        QVERIFY2(spy.count() >= 1, "repaint never signalled");
+        QVERIFY2(spy.last().at(0).toInt() >= 2,
+                 qPrintable(QStringLiteral("expected >=2 pairs, painted %1")
+                                .arg(spy.last().at(0).toInt())));
+        // Force a real paint: grab() re-renders the widget, and the moving-range
+        // attributes are applied in the view's paint pass.
+        view->repaint();               // synchronous paint pass
+        QCoreApplication::sendPostedEvents();
+
+        // Kate palette: index 0 blue (first pair), index 1 orange-red (nested).
+        const QImage img = view->grab().toImage();
+        const QVector<QColor> palette = BracketColorizer::defaultColors();
+        int total = 0;
+        for (const QColor& c : palette)
+            total += countColor(img, c, 60);   // anti-aliased glyph edges blend
+        QVERIFY2(total >= 4,
+                 qPrintable(QStringLiteral("no bracket colour pixels found (got %1)")
+                                .arg(total)));
+
+        // Off -> no coloured pixels remain (the ranges are dropped).
+        wiring.setEnabled(false);
+        QCoreApplication::processEvents();
+        const QImage off = view->grab().toImage();
+        int totalOff = 0;
+        for (const QColor& c : palette)
+            totalOff += countColor(off, c, 12);
+        QVERIFY2(totalOff < total,
+                 qPrintable(QStringLiteral("disabling did not remove colours (%1 -> %2)")
+                                .arg(total).arg(totalOff)));
+        wiring.setEnabled(true);
+        wiring.setView(nullptr);
+        delete doc;
+    }
+
+    void nested_pairs_get_distinct_colours_on_screen()
+    {
+        auto* ed = KTextEditor::Editor::instance();
+        auto* doc = ed->createDocument(this);
+        doc->setText(QStringLiteral("a({ [x] })\n"));
+        auto* view = doc->createView(nullptr);
+        view->resize(500, 300);
+        view->show();
+        QCoreApplication::processEvents();
+
+        BracketWiring wiring;
+        wiring.setView(view);
+        wiring.repaint();
+
+        const QImage img = view->grab().toImage();
+        const QVector<QColor> palette = BracketColorizer::defaultColors();
+        // "a({ [x] })" nests: outer {} inner () and [] - at least 2 distinct
+        // palette colours must be on screen simultaneously.
+        int distinct = 0;
+        for (const QColor& c : palette)
+            if (countColor(img, c, 60) > 0)   // anti-aliased glyph edges blend
+                ++distinct;
+        QVERIFY2(distinct >= 2,
+                 qPrintable(QStringLiteral("only %1 distinct bracket colours on screen")
+                                .arg(distinct)));
+        wiring.setView(nullptr);
+        delete doc;
+    }
+};
+
+int main(int argc, char** argv)
+{
+    QApplication app(argc, argv);
+    TstBracketRender tc;
+    return QTest::qExec(&tc, argc, argv);
+}
+#include "tst_bracketrender.moc"

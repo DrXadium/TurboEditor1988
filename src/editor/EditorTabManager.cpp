@@ -7,6 +7,7 @@
 #include "EditorTabManager.h"
 #include "FindReplaceDialog.h"
 #include "LineAffixDialog.h"
+#include "BracketWiring.h"
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -69,6 +70,9 @@ EditorTabManager::EditorTabManager(QObject* parent) : QObject(parent)
 {
     m_container = new QStackedWidget;
     m_container->setObjectName(QStringLiteral("editorStack"));
+    // Coloured Brackets (2026-11-20): one wiring instance follows the active
+    // view; it owns its own MovingRanges and re-points in trackActiveCursor().
+    m_brackets = new BracketWiring(this);
     // External-change detection (2026-11-20): Kate has no watcher of its own, so
     // this one is the only thing that can notice a file changing underneath us.
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this,
@@ -313,6 +317,13 @@ void EditorTabManager::trackActiveCursor()
 {
     QObject::disconnect(m_cursorConn);
     KTextEditor::View* v = activeView();
+    // Coloured Brackets follow the active view (2026-11-20). Every tab-change
+    // path funnels through here, so re-pointing here keeps the colours on the
+    // buffer the user is actually looking at.
+    if (m_brackets) {
+        m_brackets->setView(v);
+        m_brackets->setEnabled(m_bracketsOn);
+    }
     if (!v)
         return;
     // A tab that just became active behaves like one the user clicked: it takes
@@ -983,6 +994,18 @@ bool EditorTabManager::nonprintablesVisible() const
 {
     QAction* a = viewAction(activeView(), "view_show_whitespaces");
     return a && a->isChecked();
+}
+
+void EditorTabManager::setColouredBrackets(bool on)
+{
+    m_bracketsOn = on;
+    if (m_brackets)
+        m_brackets->setEnabled(on);
+}
+
+bool EditorTabManager::colouredBrackets() const
+{
+    return m_bracketsOn;
 }
 
 void EditorTabManager::affixActiveLines(const QString& affix, bool atEnd)

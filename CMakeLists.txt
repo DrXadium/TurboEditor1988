@@ -144,6 +144,10 @@ add_library(crt-editor STATIC
   src/editor/ReloadDialog.h
   src/editor/StatusSelectors.cpp
   src/editor/StatusSelectors.h
+  src/editor/BracketColorizer.cpp
+  src/editor/BracketColorizer.h
+  src/editor/BracketWiring.cpp
+  src/editor/BracketWiring.h
   src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -168,6 +172,16 @@ add_test(NAME tst_selectall COMMAND tst_selectall)
 add_executable(tst_nonprintable tests/tst_nonprintable.cpp)
 target_link_libraries(tst_nonprintable PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_nonprintable COMMAND tst_nonprintable)
+
+# 2026-11-20: Coloured Brackets - the pure pair-matching/colour logic.
+add_executable(tst_brackets tests/tst_brackets.cpp)
+target_link_libraries(tst_brackets PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_brackets COMMAND tst_brackets)
+
+# 2026-11-20: Coloured Brackets through the renderer (pixel proof).
+add_executable(tst_bracketrender tests/tst_bracketrender.cpp)
+target_link_libraries(tst_bracketrender PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_bracketrender COMMAND tst_bracketrender)
 
 # 2026-11-20: pure file-change decision logic for the external-change prompt.
 add_executable(tst_filechange tests/tst_filechange.cpp)
