@@ -70,6 +70,12 @@ public:
     void changeCase(CaseKind kind);
     void sortLines();
 
+    // Word wrap (2026-11-19): Kate's own per-view config key
+    // "dynamic-word-wrap" (bool). applyTvStyle() turns it on for every new
+    // view; the View menu toggles the ACTIVE view only.
+    bool wordWrap() const;
+    void setWordWrap(bool on);
+
     // Standard clipboard editing (Edit menu + Ctrl+X/C/V). This KTextEditor
     // build ships no ClipboardInterface and no action hooks, so these are
     // implemented over Document::text/removeText/insertText and QClipboard.

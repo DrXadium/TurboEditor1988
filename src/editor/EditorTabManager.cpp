@@ -191,6 +191,9 @@ void EditorTabManager::applyTvStyle(KTextEditor::View* view)
         }
     new VerticalScrollHider(view);   // re-hide stub is idempotent
     applyTvTheme(view);
+    // Word wrap is ON for every new view (2026-11-19). The View menu toggle
+    // changes the active view only, so this is the default, not a global.
+    view->setConfigValue(QStringLiteral("dynamic-word-wrap"), true);
     startCaretBlink(view);
 }
 
@@ -803,6 +806,25 @@ void EditorTabManager::sortLines()
     if (trailing)
         out += QLatin1Char('\n');
     doc->setText(out);
+}
+
+bool EditorTabManager::wordWrap() const
+{
+    KTextEditor::View* v = activeView();
+    if (!v)
+        return false;
+    return v->configValue(QStringLiteral("dynamic-word-wrap")).toBool();
+}
+
+void EditorTabManager::setWordWrap(bool on)
+{
+    KTextEditor::View* v = activeView();
+    if (!v)
+        return;
+    v->setConfigValue(QStringLiteral("dynamic-word-wrap"), on);
+    // setConfigValue updates the setting but does not relayout the view - the
+    // "font" path in this file learned the same lesson.
+    v->update();
 }
 
 void EditorTabManager::installActions(QWidget* host)

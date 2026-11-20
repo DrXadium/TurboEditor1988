@@ -183,6 +183,34 @@ private slots:
         QVERIFY2(up > base, "Ctrl+= action did not zoom in");
     }
 
+    void word_wrap_defaults_on() {
+        EditorTabManager m;
+        m.newDocument();
+        QVERIFY(m.activeView());
+        QVERIFY2(m.wordWrap(), "a new view must start wrapped");
+    }
+
+    void word_wrap_toggles_the_active_view() {
+        EditorTabManager m;
+        m.newDocument();
+        KTextEditor::View* v = m.activeView();
+        m.setWordWrap(false);
+        QVERIFY(!m.wordWrap());
+        QCOMPARE(v->configValue(QStringLiteral("dynamic-word-wrap")).toBool(), false);
+        m.setWordWrap(true);
+        QVERIFY(m.wordWrap());
+        QCOMPARE(v->configValue(QStringLiteral("dynamic-word-wrap")).toBool(), true);
+    }
+
+    void word_wrap_key_is_registered() {
+        EditorTabManager m;
+        m.newDocument();
+        // Canary: Kate owns this key. If a KF6 upgrade renames it, this fails
+        // loudly instead of the toggle silently doing nothing.
+        QVERIFY2(m.activeView()->configKeys().contains(QStringLiteral("dynamic-word-wrap")),
+                 "KTextEditor no longer registers dynamic-word-wrap");
+    }
+
     void sort_lines_orders_document() {
         EditorTabManager m;
         m.newDocument();
