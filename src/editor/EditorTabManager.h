@@ -171,7 +171,12 @@ public:
     // buffer the user chose to discard: the custom history is re-seeded to the
     // reloaded text.
     void reloadDocument(KTextEditor::Document* doc);
-    bool isWatchingPath(const QString& path) const { return m_watchedDoc.contains(path); }
+    // Reflects the REAL watcher, not just our bookkeeping: Qt silently drops a
+    // path that disappears, so a Keep-then-unsaved buffer is not "watching".
+    bool isWatchingPath(const QString& path) const
+    {
+        return !path.isEmpty() && m_watcher.files().contains(path);
+    }
 
     // Installs zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0) and text-tool actions
     // (change case, sort) as children of \p host (typically the ShellWindow).
