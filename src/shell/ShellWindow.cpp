@@ -541,6 +541,15 @@ QString sonnetDefaultLanguage()
 }
 } // namespace
 
+void ShellWindow::setBlockMenuActions(QAction* collapse, QAction* expand, QAction* highlight,
+                                      std::function<void()> refresh)
+{
+    m_blockCollapse = collapse;
+    m_blockExpand = expand;
+    m_blockHighlight = highlight;
+    m_blockRefresh = std::move(refresh);
+}
+
 void ShellWindow::showEditorContextMenu(const QPoint& shellLocal)
 {
     showEditorContextMenu(shellLocal, SpellWord());
@@ -565,6 +574,22 @@ void ShellWindow::showEditorContextMenu(const QPoint& shellLocal, const SpellWor
         add("actionEditCopy");
         add("actionEditPaste");
     }
+
+    // Block commands (2026-11-20). Added once, on whichever popup comes first -
+    // the menu may already have been built before the editor manager handed us
+    // the actions. They are never removed or deleted here: they belong to
+    // EditorTabManager, which keeps them alive across right-clicks.
+    if (m_blockCollapse && m_blockExpand && m_blockHighlight
+        && !menu->actions().contains(m_blockCollapse)) {
+        menu->addSeparator();
+        menu->addAction(m_blockCollapse);
+        menu->addAction(m_blockExpand);
+        menu->addAction(m_blockHighlight);
+    }
+    // The caret decides which block the commands act on, so ask for a fresh
+    // enabled state on every right-click.
+    if (m_blockRefresh)
+        m_blockRefresh();
 
     // Rebuild the spell section on EVERY right-click so it always describes the
     // word actually under the pointer. Remove anything a previous click left,

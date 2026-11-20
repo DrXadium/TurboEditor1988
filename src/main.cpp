@@ -90,6 +90,14 @@ int main(int argc, char** argv)
     // External-change prompts (2026-11-20) are house modals over the shell, so
     // they composite inside the CRT pass like Find and the file dock.
     tabs.setDialogAnchor(&shell);
+    // Block commands on the right-click menu (2026-11-20). They go on the
+    // shell's BorlandMenu, not Kate's: the shell is never mapped and the bridge
+    // synthesizes the press, so View::contextMenuAboutToShow never fires and
+    // Kate never builds a menu at all.
+    shell.setBlockMenuActions(tabs.contextBlockAction(QStringLiteral("actionCtxCollapseBlock")),
+                              tabs.contextBlockAction(QStringLiteral("actionCtxExpandBlock")),
+                              tabs.contextBlockAction(QStringLiteral("actionCtxHighlightBlock")),
+                              [&tabs] { tabs.refreshBlockMenuState(); });
     // Editor key commands (arrows, Backspace, Delete, PageUp/PageDown...) are
     // QActions in KTextEditor's action collection, which is NOT parented into
     // the widget tree and so is unreachable from the bridge's widget walk.
@@ -874,6 +882,42 @@ int main(int argc, char** argv)
             probe->move(40, 60);           // over the shell's top-left area
             probe->show();
         });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_CTXRIGHT=x,y forwards a REAL
+    // right-button press through the bridge - the same call a physical click
+    // makes - and CRT_KATE_CTXDUMP=<file> writes the resulting menu's action
+    // names. The editor context menu is a popup, so shell.grab() never includes
+    // it; this is the only way to see what the menu actually carries from
+    // outside the process. Added 2026-11-20 after the block commands were wired
+    // to Kate's contextMenuAboutToShow, which this app never emits.
+    if (const QByteArray ctxAt = qgetenv("CRT_KATE_CTXRIGHT"); !ctxAt.isEmpty()) {
+        const QList<QByteArray> parts = ctxAt.split(',');
+        if (parts.size() == 2) {
+            const int cx = parts[0].toInt();
+            const int cy = parts[1].toInt();
+            QTimer::singleShot(2500, &app, [&bridge, &shell, cx, cy]() {
+                bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
+                                         Qt::RightButton, Qt::NoModifier, cx, cy);
+                QCoreApplication::processEvents();
+                auto* menu = shell.findChild<BorlandMenu*>(QStringLiteral("editorContextMenu"));
+                QStringList names;
+                if (menu) {
+                    for (QAction* a : menu->actions())
+                        names << (a->isSeparator() ? QStringLiteral("---") : a->objectName());
+                }
+                const QByteArray dumpPath = qgetenv("CRT_KATE_CTXDUMP");
+                if (!dumpPath.isEmpty()) {
+                    if (QFile f(QString::fromLocal8Bit(dumpPath));
+                        f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                        const QString line = QStringLiteral("visible=%1 actions=%2\n")
+                                                 .arg(menu && menu->isVisible() ? 1 : 0)
+                                                 .arg(names.join(QLatin1Char('|')));
+                        f.write(line.toUtf8());
+                    }
+                }
+            });
+        }
     }
 
     // Dev aid (unset in normal runs): CRT_KATE_MODAL=about|settings shows the

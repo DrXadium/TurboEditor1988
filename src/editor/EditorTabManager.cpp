@@ -17,7 +17,6 @@
 #include <KSyntaxHighlighting/Theme>
 #include <QFileInfo>
 #include <QAction>
-#include <QMenu>
 #include <KActionCollection>
 #include <QWidget>
 #include <QInputDialog>
@@ -442,7 +441,7 @@ void EditorTabManager::newDocument()
     syncTabs();
     applyTvStyle(view);
     installKeyRouting(view);
-    attachBlockMenu(view);
+    attachBlockTracking(view);
     trackActiveCursor();
 }
 
@@ -462,7 +461,7 @@ void EditorTabManager::openFile(const QUrl& url)
     syncTabs();
     applyTvStyle(view);
     installKeyRouting(view);
-    attachBlockMenu(view);
+    attachBlockTracking(view);
     trackActiveCursor();
     armWatch(doc);
 }
@@ -1200,23 +1199,21 @@ QAction* EditorTabManager::contextBlockAction(const QString& name) const
     return nullptr;
 }
 
-void EditorTabManager::attachBlockMenu(KTextEditor::View* view)
+void EditorTabManager::refreshBlockMenuState()
+{
+    refreshBlockActions();
+}
+
+void EditorTabManager::attachBlockTracking(KTextEditor::View* view)
 {
     if (!view)
         return;
-    // Kate builds its own right-click menu; this appends our block commands to
-    // it rather than replacing anything.
-    connect(view, &KTextEditor::View::contextMenuAboutToShow, this,
-            [this](KTextEditor::View* v, QMenu* menu) {
-                if (!menu || v != activeView())
-                    return;
-                refreshBlockActions();
-                menu->addSeparator();
-                menu->addAction(m_ctxCollapseBlock);
-                menu->addAction(m_ctxExpandBlock);
-                menu->addAction(m_ctxHighlightBlock);
-            });
-    // The menu state and the highlight band both follow the caret.
+    // NOT View::contextMenuAboutToShow: that signal never fires in this app.
+    // The shell is never mapped and ContentBridge synthesizes the right-button
+    // press, so no QContextMenuEvent is ever produced and Kate never builds its
+    // menu. The menu that appears is ShellWindow's BorlandMenu, which pulls
+    // these same actions in via setBlockMenuActions(). All this hook has to do
+    // is keep their enabled state and the highlight band following the caret.
     connect(view, &KTextEditor::View::cursorPositionChanged, this,
             [this](KTextEditor::View* v, KTextEditor::Cursor) {
                 if (v != activeView())

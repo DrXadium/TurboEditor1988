@@ -139,6 +139,11 @@ public:
     // caret. Null when the name is unknown.
     QAction* contextBlockAction(const QString& name) const;
 
+    // Re-evaluate the three block commands against the caret. ShellWindow calls
+    // this immediately before the right-click menu pops, because the menu acts
+    // on the caret as it stood when the button went down.
+    void refreshBlockMenuState();
+
     // Restore a saved set of files (2026-11-20). Opens each URL and then DROPS
     // the pristine untitled tab the constructor created, because openFile()
     // appends: without this the restored file lands in tab 1 while activeIndex 0
@@ -327,6 +332,6 @@ private:
     void refreshBlockActions();
     void applyBlockHighlight();
     void clearBlockHighlightRange();
-    void attachBlockMenu(KTextEditor::View* view);
+    void attachBlockTracking(KTextEditor::View* view);
     static constexpr int kMaxHistory = 200;
 };

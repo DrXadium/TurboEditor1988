@@ -219,6 +219,10 @@ add_executable(tst_blockmenu tests/tst_blockmenu.cpp)
 target_link_libraries(tst_blockmenu PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_blockmenu COMMAND tst_blockmenu)
 
+add_executable(tst_ctxblock tests/tst_ctxblock.cpp)
+target_link_libraries(tst_ctxblock PRIVATE crt-editor crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_ctxblock COMMAND tst_ctxblock)
+
 # 2026-11-20: pure file-change decision logic for the external-change prompt.
 add_executable(tst_filechange tests/tst_filechange.cpp)
 target_link_libraries(tst_filechange PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

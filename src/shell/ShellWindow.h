@@ -10,6 +10,7 @@
 class MenuBar;
 class TabStrip;
 class FKeyStatusBar;
+class QAction;
 class BorlandStyle;
 class BorlandMenu;
 class ContentBridge;
@@ -82,6 +83,15 @@ public:
     // shell-local point it returns the word and its range, or an invalid
     // SpellWord when the click is not on a word.
     void setSpellWordResolver(std::function<SpellWord(const QPoint&)> fn);
+
+    // Block commands for the right-click menu (2026-11-20). Kate's own
+    // contextMenuAboutToShow never fires here: the shell is never mapped and
+    // ContentBridge synthesizes the press, so the menu that actually appears is
+    // this shell's BorlandMenu. The actions stay owned by EditorTabManager;
+    // refresh re-evaluates their enabled state against the caret before the
+    // menu pops, and must not delete them.
+    void setBlockMenuActions(QAction* collapse, QAction* expand, QAction* highlight,
+                             std::function<void()> refresh);
     // Ask the resolver for the word at \p shellLocal (invalid when unset).
     SpellWord spellWordAt(const QPoint& shellLocal) const;
     // Dictionary the spell section speaks. The composition root sets it from
@@ -145,6 +155,10 @@ private:
     QWidget* m_keyboardOwner = nullptr;      // dock/modal that owns the keyboard
     std::function<bool(const QKeySequence&)> m_editorShortcut;
     std::function<SpellWord(const QPoint&)> m_spellResolver;
+    std::function<void()> m_blockRefresh;
+    QAction* m_blockCollapse = nullptr;
+    QAction* m_blockExpand = nullptr;
+    QAction* m_blockHighlight = nullptr;
     QString m_spellLang;
     Minimap* m_minimap = nullptr;
     class BottomBand* m_bottomBand = nullptr;
