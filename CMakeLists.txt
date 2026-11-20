@@ -138,6 +138,8 @@ add_library(crt-editor STATIC
   src/editor/GoToLineDialog.h
   src/editor/FileChangeTracker.cpp
   src/editor/FileChangeTracker.h
+  src/editor/ReloadDialog.cpp
+  src/editor/ReloadDialog.h
   src/editor/StatusSelectors.cpp
   src/editor/StatusSelectors.h
   src/editor/tvtheme/tvtheme.qrc
@@ -169,6 +171,11 @@ add_test(NAME tst_nonprintable COMMAND tst_nonprintable)
 add_executable(tst_filechange tests/tst_filechange.cpp)
 target_link_libraries(tst_filechange PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_filechange COMMAND tst_filechange)
+
+# 2026-11-20: the reload/keep modal itself.
+add_executable(tst_reloaddlg tests/tst_reloaddlg.cpp)
+target_link_libraries(tst_reloaddlg PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_reloaddlg COMMAND tst_reloaddlg)
 
 # 2026-11-19: Edit-menu line tools + Word Wrap.
 add_executable(tst_linetools tests/tst_linetools.cpp)
