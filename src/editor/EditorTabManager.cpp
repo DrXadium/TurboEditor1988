@@ -843,6 +843,35 @@ QString EditorTabManager::affixLines(const QString& text, const QString& affix, 
     return lines.join(QLatin1Char('\n'));
 }
 
+QString EditorTabManager::stripEdgeText(const QString& text, const QString& needle,
+                                        bool atEnd)
+{
+    if (needle.isEmpty())
+        return text;
+    QStringList lines = text.split(QLatin1Char('\n'));
+    // Same phantom-segment rule as affixLines: a trailing \n's empty tail is
+    // not a line, so it never gets stripped.
+    const int count = text.endsWith(QLatin1Char('\n')) ? lines.size() - 1
+                                                       : lines.size();
+    for (int i = 0; i < count; ++i) {
+        QString& line = lines[i];
+        // A CRLF's \r belongs to the terminator: strip before it.
+        QString cr;
+        if (line.endsWith(QLatin1Char('\r'))) {
+            cr = QLatin1Char('\r');
+            line.chop(1);
+        }
+        if (atEnd) {
+            if (line.endsWith(needle))
+                line.chop(needle.size());
+        } else if (line.startsWith(needle)) {
+            line.remove(0, needle.size());
+        }
+        line += cr;
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
 QString EditorTabManager::removeLineBreaksText(const QString& text)
 {
     if (text.isEmpty())

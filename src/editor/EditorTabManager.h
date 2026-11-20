@@ -83,6 +83,10 @@ public:
     // space and leaves no stray space where the text began or ended with one.
     static QString affixLines(const QString& text, const QString& affix, bool atEnd);
     static QString removeLineBreaksText(const QString& text);
+    // stripEdgeText() is affixLines' remove mode: it takes ONE leading (Start)
+    // or trailing (End) occurrence of `needle` off every line. Only the edge is
+    // stripped, once, so a match in the middle of a line survives.
+    static QString stripEdgeText(const QString& text, const QString& needle, bool atEnd);
 
     // The Edit menu's line tools, applied to the active view (selection if
     // present, else whole doc). addToLines() collects the affix in the house

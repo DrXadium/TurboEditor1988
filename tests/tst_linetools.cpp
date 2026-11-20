@@ -62,6 +62,49 @@ private slots:
                  QStringLiteral(";"));
     }
 
+    // ---- stripEdgeText (2026-11-19, remove mode) --------------------------
+
+    void strip_edge_removes_the_start_of_each_line() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("// a\n// b"),
+                                                 QStringLiteral("// "), false),
+                 QStringLiteral("a\nb"));
+    }
+
+    void strip_edge_removes_the_end_of_each_line() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("a ;\nb ;"),
+                                                 QStringLiteral(" ;"), true),
+                 QStringLiteral("a\nb"));
+    }
+
+    void strip_edge_removes_only_the_leading_match() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("// a // b"),
+                                                 QStringLiteral("// "), false),
+                 QStringLiteral("a // b"));
+    }
+
+    void strip_edge_skips_the_phantom_last_line() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("a\n"),
+                                                 QStringLiteral("a"), false),
+                 QStringLiteral("\n"));
+    }
+
+    void strip_edge_keeps_the_carriage_return() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("// x\r\ny"),
+                                                 QStringLiteral("// "), false),
+                 QStringLiteral("x\r\ny"));
+    }
+
+    void strip_edge_on_empty_string_is_identity() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("// a"), QString(), false),
+                 QStringLiteral("// a"));
+    }
+
+    void strip_edge_with_no_match_is_identity() {
+        QCOMPARE(EditorTabManager::stripEdgeText(QStringLiteral("x"),
+                                                 QStringLiteral("// "), false),
+                 QStringLiteral("x"));
+    }
+
     void remove_breaks_joins_with_one_space() {
         QCOMPARE(EditorTabManager::removeLineBreaksText(QStringLiteral("one\ntwo")),
                  QStringLiteral("one two"));
