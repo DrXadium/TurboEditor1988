@@ -176,6 +176,74 @@ private slots:
         QCoreApplication::processEvents();
         QCOMPARE(field->text(), QStringLiteral("abc"));
     }
+
+    // Reported 2026-11-21: "double clicking on .. doesn't move you up a
+    // directory". QML's MouseArea emits only press/release pairs - Qt's own
+    // MouseButtonDblClick synthesis never runs for a synthesized event, so the
+    // dock never saw the double-click and descendInto() was dead code. The
+    // bridge must synthesize it: the second press on the same spot within the
+    // double-click interval becomes DblClick (Qt's own rule), routed exactly
+    // like a press.
+    void a_second_bridge_press_synthesizes_a_double_click() {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+
+        // A plain widget that counts DblClick deliveries (the real dock's
+        // handler runs descendInto() off the same event type).
+        auto* probe = new QWidget(&shell);
+        probe->setGeometry(40, 40, 120, 60);
+        probe->show();
+        int dblClicks = 0;
+        class DblProbe : public QObject
+        {
+        public:
+            int* n;
+            bool eventFilter(QObject*, QEvent* ev) override
+            {
+                if (ev->type() == QEvent::MouseButtonDblClick)
+                    ++*n;
+                return false;
+            }
+        };
+        auto* pr = new DblProbe;
+        pr->n = &dblClicks;
+        probe->installEventFilter(pr);
+
+        const int x = 100, y = 70;
+        // Release BETWEEN the two presses (QML sends a full click pair), so the
+        // probe must also prove a stale release does NOT re-arm the pairing -
+        // the mutation "skip pairing on release" otherwise hides behind it.
+        auto click = [&bridge, x, y] {
+            bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                     Qt::LeftButton, Qt::NoModifier, x, y);
+            bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                     Qt::NoButton, Qt::NoModifier, x, y);
+        };
+        click();
+        QCoreApplication::processEvents();
+        QVERIFY2(dblClicks == 0, "a single click synthesized a double-click");
+
+        // Second press at the same coordinates immediately: double-click.
+        click();
+        QCoreApplication::processEvents();
+        QVERIFY2(dblClicks == 1,
+                 qPrintable(QStringLiteral("the second press did not become a "
+                                           "double-click (saw %1)").arg(dblClicks)));
+
+        // A press far away in time/space must not double-click: the bridge
+        // only pairs presses on the SAME spot within the interval.
+        QTest::qWait(400);   // beyond Qt's 400 ms double-click interval
+        click();
+        QCoreApplication::processEvents();
+        QVERIFY2(dblClicks == 1,
+                 qPrintable(QStringLiteral("a stale press still counted as a "
+                                           "double-click (%1)").arg(dblClicks)));
+    }
 };
 
 int main(int argc, char** argv)

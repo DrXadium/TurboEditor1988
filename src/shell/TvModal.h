@@ -71,6 +71,8 @@ protected:
     void paintEvent(QPaintEvent*) override;
     void keyPressEvent(QKeyEvent*) override;
     void resizeEvent(QResizeEvent*) override;
+    // Claims/releases the shell's keyboard on Show/Hide (see .cpp).
+    bool eventFilter(QObject* watched, QEvent* ev) override;
 
 private:
     struct Button {

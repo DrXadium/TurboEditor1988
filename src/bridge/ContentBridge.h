@@ -3,6 +3,8 @@
 #include <QtGlobal>   // qEnvironmentVariableIsSet (noSweep verification aid)
 #include <QObject>
 #include <QImage>
+#include <QPointer>
+#include <QPoint>
 #include <QQuickImageProvider>
 #include <QQuickItem>   // full type required for the sourceItem property's moc meta-type
 
@@ -95,6 +97,13 @@ private:
     int m_frameSerial = 0;
     QQuickItem* m_sourceItem = nullptr;
     QList<QWidget*> m_popups;
+    // Double-click synthesis (QML emits only press/release pairs): the last
+    // press's shell-local position, target widget and timestamp - the second
+    // press on the same spot within QApplication::doubleClickInterval() becomes
+    // QEvent::MouseButtonDblClick (Qt's own rule, applied to synthesized input).
+    QPoint m_lastPressPos{ -1, -1 };
+    qint64 m_lastPressMs = 0;
+    QPointer<QWidget> m_lastPressTarget;
 };
 
 // Serves ContentBridge::frame() to QML as "image://bridge/<id>".

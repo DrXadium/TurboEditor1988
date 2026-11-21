@@ -23,6 +23,10 @@
 #include "src/editor/EditorTabManager.h"
 #include "src/shell/TvCheckBox.h"
 #include "src/shell/TvTabBar.h"
+#include "src/shell/TvLineEdit.h"
+#include "src/shell/ShellWindow.h"
+#include "src/bridge/ContentBridge.h"
+#include <QMouseEvent>
 
 namespace {
 
@@ -113,6 +117,9 @@ private slots:
     void the_selection_chip_needs_a_selection();
     void an_empty_pattern_disables_the_action_buttons();
     void the_dialog_opens_on_the_find_field_with_the_last_pattern();
+    // 2026-11-21 bug round: block caret + keyboard ownership in this modal.
+    void the_fields_are_tv_line_edits_with_a_block_caret();
+    void modal_shows_own_the_keyboard();
 
     // Task 5: Find Next across the three scopes.
     void find_next_selects_the_first_match();
@@ -425,6 +432,7 @@ void TstFindDlg::an_empty_pattern_disables_the_action_buttons()
 // selected, so typing replaces it. Ctrl+H lands in Replace with instead.
 void TstFindDlg::the_dialog_opens_on_the_find_field_with_the_last_pattern()
 {
+
     EditorTabManager tabs;
     {
         FindReplaceDialog first(&tabs);
@@ -456,6 +464,119 @@ void TstFindDlg::the_dialog_opens_on_the_find_field_with_the_last_pattern()
              qPrintable(QStringLiteral("setInitialField(1) left the Find what field marked "
                                        "active (%1 vs %2 ring px)")
                             .arg(findAfter).arg(replaceAfter)));
+}
+
+// Reported 2026-11-21: "none of the input fields on these dialogs shows the
+// mouse cursor position". The Find/Replace fields are plain QLineEdits, and
+// Qt paints no caret in a never-active window - the exact reason TvLineEdit
+// exists (see its header). Both fields must be TvLineEdits that paint the
+// DOS block caret when they hold key focus.
+void TstFindDlg::the_fields_are_tv_line_edits_with_a_block_caret()
+{
+    EditorTabManager tabs;
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    auto* find = qobject_cast<TvLineEdit*>(dlg.findField());
+    QVERIFY2(find, "the find field is not a TvLineEdit");
+    auto* repl = qobject_cast<TvLineEdit*>(dlg.replaceField());
+    QVERIFY2(repl, "the replace field is not a TvLineEdit");
+
+    // Unfocused: no caret cell (nothing flickers behind an inactive field).
+    QVERIFY(find->caretRect().isEmpty());
+
+    // Clicked: focus follows, and the caret cell exists inside the field.
+    const QPoint p = find->mapTo(find->window(), find->rect().center());
+    QMouseEvent press(QEvent::MouseButtonPress, p, p, Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(find, &press);
+    QCoreApplication::processEvents();
+    QVERIFY2(find->holdsKeyFocus(), "clicking did not give the find field key focus");
+    const QRect caret = find->caretRect();
+    QVERIFY2(!caret.isEmpty(), "focused find field reports no caret cell");
+    QVERIFY2(find->rect().contains(caret.topLeft()),
+             "caret cell lies outside the find field");
+
+    // ...and it is actually INK (blink off for a deterministic probe).
+    find->setCaretBlinkEnabled(false);
+    find->setCaretColors(QColor(0xFF, 0xFF, 0xFF), QColor(0x00, 0x00, 0xAA));
+    const QImage img = find->grab().toImage();
+    int white = 0;
+    for (int y = caret.top(); y <= caret.bottom() && y < img.height(); ++y)
+        for (int x = caret.left(); x <= caret.right() && x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (c.red() > 240 && c.green() > 240 && c.blue() > 240)
+                ++white;
+        }
+    QVERIFY2(white >= 4,
+             qPrintable(QStringLiteral("no block caret painted (%1 white px in the cell)")
+                            .arg(white)));
+}
+
+// Reported 2026-11-21: "backspacing ... also backspaces in the editor" on
+// Find/Replace. The modal must claim the keyboard while shown (the file dock
+// already does - same contract), so ContentBridge stops offering the keystroke
+// to the editor behind it, and must release it on close.
+void TstFindDlg::modal_shows_own_the_keyboard()
+{
+    ShellWindow shell;
+    shell.resize(900, 700);
+    EditorTabManager tabs;
+    shell.setEditorWidget(tabs.containerWidget());
+    shell.show();
+    ContentBridge bridge;
+    bridge.setShellWindow(&shell);
+    QCoreApplication::processEvents();
+    tabs.containerWidget()->grab();
+
+    KTextEditor::Document* doc = tabs.activeDocument();
+    QVERIFY(doc);
+    doc->setText(QStringLiteral("alpha beta"));
+    QVERIFY(tabs.activeView());
+    tabs.activeView()->setCursorPosition(KTextEditor::Cursor(0, 10));
+
+    int editorShortcutCalls = 0;
+    shell.setEditorShortcutHandler([&](const QKeySequence& seq) {
+        ++editorShortcutCalls;
+        return tabs.triggerActiveViewShortcut(seq);
+    });
+
+    auto* dlg = new FindReplaceDialog(&tabs, &shell);
+    dlg->setGeometry(60, 60, dlg->sizeHint().width(), dlg->sizeHint().height());
+    dlg->show();
+    QCoreApplication::processEvents();
+    QVERIFY2(shell.keyboardIsOwned(),
+             "showing Find/Replace did not claim the keyboard for the modal");
+
+    QLineEdit* field = dlg->findField();
+    QVERIFY(field);
+    const QPoint c = field->mapTo(&shell, field->rect().center());
+    bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                             Qt::NoModifier, c.x(), c.y());
+    bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
+                             Qt::NoModifier, c.x(), c.y());
+    QCoreApplication::processEvents();
+    field->setText(QStringLiteral("needle"));
+
+    const QString before = field->text();
+    const int docBefore = int(doc->text().size());
+    bridge.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier,
+                           QStringLiteral("\b"));
+    QCoreApplication::processEvents();
+
+    QVERIFY2(field->text() == before.chopped(1),
+             qPrintable(QStringLiteral("backspace did not edit the field (text=%1)")
+                            .arg(field->text())));
+    QVERIFY2(int(doc->text().size()) == docBefore,
+             qPrintable(QStringLiteral("backspace also reached the editor (doc %1 -> %2)")
+                            .arg(docBefore).arg(doc->text().size())));
+    QCOMPARE(editorShortcutCalls, 0);
+
+    dlg->reject();
+    QCoreApplication::processEvents();
+    QVERIFY2(!shell.keyboardIsOwned(), "closing Find/Replace left the keyboard claimed");
 }
 
 // ---- Task 5: Find Next -------------------------------------------------

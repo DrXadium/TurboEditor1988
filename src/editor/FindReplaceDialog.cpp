@@ -5,6 +5,7 @@
 #include "src/shell/FieldCell.h"
 #include "src/shell/TvCheckBox.h"
 #include "src/shell/TvTabBar.h"
+#include "src/shell/TvLineEdit.h"
 
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -32,8 +33,15 @@ QLabel* tvLabel(const QString& text)
 FieldCell* makeField(QLineEdit*& edit, const char* name, QWidget* parent)
 {
     auto* cell = new FieldCell(parent);
-    edit = new QLineEdit(cell);
-    edit->setObjectName(QLatin1String(name));
+    // TvLineEdit, not QLineEdit: the shell is never an active window, so Qt
+    // paints no caret in a plain QLineEdit - the DOS block caret is this
+    // field's "you are typing here" (2026-11-21: user found none of these
+    // dialogs showed a cursor position).
+    auto* tv = new TvLineEdit(cell);
+    tv->setObjectName(QLatin1String(name));
+    // DOS block: white ink on the field blue (same as the file dock's fields).
+    tv->setCaretColors(QColor(0xFF, 0xFF, 0xFF), QColor(0x00, 0x00, 0xAA));
+    edit = tv;
     styleAsTvField(edit);
     cell->setEdit(edit);
     return cell;

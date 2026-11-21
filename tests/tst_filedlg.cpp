@@ -2,7 +2,7 @@
 // Task 1 (2026-11-17 GUI pass): Turbo Vision file dialogs drawn ON the app
 // screen (not a separate native popup). Reference: the TV "Save File As"
 // dialog - gray panel, white double-line frame, black drop shadow, yellow
-// labels, blue entry field, teal Files list box, green OK/Cancel/Help, blue
+// labels, blue entry field, teal Files list box, green OK/Cancel, blue
 // path status row.
 //
 // TDD: these tests are written FIRST and must fail because TvFileDock /
@@ -19,6 +19,7 @@
 #include "src/shell/TvLineEdit.h"
 #include "src/bridge/ContentBridge.h"
 #include <QLineEdit>
+#include <QScrollBar>
 #include <QWheelEvent>
 #include <QApplication>
 
@@ -64,6 +65,7 @@ bool isWhite(const QColor& c)
 {
     return c.red() > 240 && c.green() > 240 && c.blue() > 240;
 }
+
 } // namespace
 
 class TstFiledlg : public QObject
@@ -104,7 +106,7 @@ private slots:
         QVERIFY2(teal > 200,
                  qPrintable(QStringLiteral("only %1 teal px - no Files list box").arg(teal)));
 
-        // Green OK / Cancel / Help buttons (#00AA00) present.
+        // Green OK / Cancel buttons (#00AA00) present.
         const int green = countColor(img, QColor(0x00, 0xAA, 0x00), 6);
         QVERIFY2(green > 100,
                  qPrintable(QStringLiteral("only %1 green px - no green buttons").arg(green)));
@@ -298,7 +300,7 @@ private slots:
 
         const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
 
-        for (const QRect& r : {dock.okRect(), dock.cancelRect(), dock.helpRect()}) {
+        for (const QRect& r : {dock.okRect(), dock.cancelRect()}) {
             QVERIFY2(r.isValid(), "button rect is empty");
 
             const QColor right = img.pixelColor(r.right() + 2, r.center().y());
@@ -348,7 +350,7 @@ private slots:
         QVERIFY2(!dock.typeRect().intersects(dock.listRect()), "type box overlaps the list");
         QVERIFY2(!dock.nameRect().intersects(dock.typeRect()), "name and type rows collide");
 
-        for (const QRect& plate : {dock.okRect(), dock.cancelRect(), dock.helpRect()}) {
+        for (const QRect& plate : {dock.okRect(), dock.cancelRect()}) {
             QVERIFY2(!dock.nameRect().intersects(plate), "name box runs into a button");
             QVERIFY2(!dock.typeRect().intersects(plate), "type box runs into a button");
         }
@@ -818,7 +820,7 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(&dock));
 
         const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
-        const QRect plates[] = {dock.okRect(), dock.cancelRect(), dock.helpRect()};
+        const QRect plates[] = {dock.okRect(), dock.cancelRect()};
         for (const QRect& p : plates) {
             QVERIFY2(!p.isNull(), "a plate was never laid out");
             const QPoint probes[] = {
@@ -1094,7 +1096,7 @@ private slots:
         QCoreApplication::processEvents();
 
         QVERIFY2(dock.scrollOffset() == 0, "list does not start at the top");
-        const QRect thumb = dock.stripRect();
+        const QRect thumb = dock.stripTrackRect();
         QVERIFY2(!thumb.isEmpty(), "no scroll strip");
 
         // Press on the thumb, drag to the far right, release.
@@ -1147,6 +1149,142 @@ private slots:
         QApplication::sendEvent(&dock, &plainWheel);
         QCoreApplication::processEvents();
         QCOMPARE(dock.horizontalOffset(), 0);
+    }
+
+    // 2026-11-21: user removed the inert Help plate from both file dialogs.
+    // Only OK and Cancel remain, both live, neither overlapping.
+    void the_dock_has_no_help_plate()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(760, 560);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+
+        QVERIFY2(dock.findChild<QWidget*>(QStringLiteral("tvFileDockHelp")) == nullptr,
+                 "the Help plate is still on the dock");
+        QVERIFY2(!dock.okRect().isNull(), "OK lost its geometry");
+        QVERIFY2(!dock.cancelRect().isNull(), "Cancel lost its geometry");
+        QVERIFY2(!dock.okRect().intersects(dock.cancelRect()),
+                 "OK and Cancel now overlap after Help's removal");
+
+        // No Help TEXT: scan only the plate BAND (the rows OK and Cancel
+        // occupy), not the whole lower half - the recents/type dropdown cells
+        // are green too and drown the signal (they put 3800 green px in this
+        // window). Two plates live in exactly two rects.
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        int green = 0;
+        for (const QRect& plate : { dock.okRect(), dock.cancelRect() }) {
+            const QRect clip = plate.intersected(img.rect());
+            for (int y = clip.top(); y <= clip.bottom(); ++y)
+                for (int x = clip.left(); x <= clip.right(); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (c.green() > 100 && c.red() < 80 && c.blue() < 80)
+                        ++green;
+                }
+        }
+        // Two plates' worth of green. A Help plate back on screen would add a
+        // THIRD rect of its own that neither OK nor Cancel covers, so this
+        // bound only ever moves if the two plates themselves change - and the
+        // sibling-overlap check above already forbids that.
+        QVERIFY2(green > 150,
+                 qPrintable(QStringLiteral("the two plates barely paint (%1 green px)")
+                                .arg(green)));
+        dock.reject();
+    }
+
+    // Reported 2026-11-21: double-clicking ".." must move UP a directory.
+    void double_clicking_parent_moves_up_a_directory()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir(dir.path()).mkdir(QStringLiteral("sub")));
+        const QString sub = QFileInfo(dir.filePath(QStringLiteral("sub"))).absoluteFilePath();
+
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        QCoreApplication::processEvents();
+
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                             QStringLiteral("Open File"), sub);
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock->files().contains(QStringLiteral("..")), "no .. entry listed");
+
+        const int parent = dock->files().indexOf(QStringLiteral(".."));
+        QVERIFY(parent >= 0);
+        const QRect cell = dock->rowRect(parent);
+        QVERIFY2(!cell.isNull(), ".. cell has no geometry");
+        // Bridge coordinates are SHELL-local: the cell lives in the dock.
+        const QPoint p = cell.center() + dock->pos();
+
+        // Through the BRIDGE (the production path): QML only ever sends
+        // press/release pairs, so the bridge itself must turn the second press
+        // into MouseButtonDblClick - a raw DblClick event would test the dock
+        // but not the gesture the user actually performs.
+        auto press = [&bridge, dock, p] {
+            bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                     Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+            bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                     Qt::NoButton, Qt::NoModifier, p.x(), p.y());
+        };
+        press();   // first click: selects the row
+        QCoreApplication::processEvents();
+        QCOMPARE(dock->editText(), QStringLiteral(".."));
+
+        press();   // second click, same spot, inside the interval: double
+        QCoreApplication::processEvents();
+
+        QCOMPARE(QFileInfo(dock->directory()).canonicalFilePath(),
+                 QFileInfo(dir.path()).canonicalFilePath());
+        QVERIFY2(dock->editText().isEmpty(),
+                 qPrintable(QStringLiteral("name box not cleared after up-nav (text=%1)")
+                                .arg(dock->editText())));
+        dock->reject();
+    }
+
+    // Reported 2026-11-21: the file list has no horizontal scrollbar widget,
+    // so sideways scrolling is impossible without knowing the Shift+wheel
+    // trick. A real horizontal bar must exist, own a range, and drag.
+    void the_file_list_has_a_working_horizontal_scrollbar()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (int i = 0; i < 60; ++i) {
+            QFile f(dir.filePath(QStringLiteral("a_name_very_long_enough_to_need_side_scroll_%1.txt")
+                                     .arg(i, 2, 10, QLatin1Char('0'))));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+        }
+
+        TvFileDock dock;
+        dock.setDirectory(dir.path());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        QScrollBar* bar = dock.findChild<QScrollBar*>(QStringLiteral("fileListHBar"));
+        QVERIFY2(bar, "no horizontal scrollbar on the file list");
+        QVERIFY2(bar->isVisible(), "the horizontal scrollbar is hidden");
+        QVERIFY2(bar->width() > 40, "the horizontal scrollbar is too thin to grab");
+        QVERIFY2(bar->orientation() == Qt::Horizontal, "wrong orientation");
+        QVERIFY2(bar->maximum() > bar->minimum(),
+                 "the horizontal scrollbar has no range to scroll");
+
+        // Drag the thumb: the names must move sideways.
+        const int before = dock.horizontalOffset();
+        const int mid = (bar->minimum() + bar->maximum()) / 2;
+        bar->setValue(mid);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.horizontalOffset() != before,
+                 qPrintable(QStringLiteral("setting the bar to %1 did not move the names (offset=%2)")
+                                .arg(mid).arg(dock.horizontalOffset())));
+        QVERIFY2(dock.horizontalOffset() > 0, "names still at 0 after dragging to mid-range");
+        dock.reject();
     }
 };
 

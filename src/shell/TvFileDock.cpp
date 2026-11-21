@@ -4,6 +4,7 @@
 #include "TabListMenu.h"
 #include "TvPlate.h"
 #include "TvLineEdit.h"
+#include "TextScrollBar.h"
 #include "ShellWindow.h"
 #include <QAction>
 #include <QMenu>
@@ -35,6 +36,13 @@ const QColor kGreen(0x00, 0xAA, 0x00);
 const QColor kGreenBright(0x55, 0xFF, 0x55);
 const QColor kBlue(0x00, 0x00, 0xAA);
 const int kScrollStrip = 7;      // height of the teal scroll strip under the list
+// 2026-11-21, horizontal scrollbar: the strip is now a widget whose geometry
+// lives in layoutChildren (bar + strip under the list), so the NAME ROWS end
+// where the strip begins: listBottom - kScrollStrip. Every read of the row
+// band goes through these two helpers - inlining the old arithmetic is how
+// the strip and the rows drift apart.
+// Row band = the list rect minus the strip at its bottom.
+inline int listBodyBottom(const QRect& list) { return list.bottom() - kScrollStrip; }
 // The drop shadow is the panel's own rect offset down-right by this much, so
 // the panel also insets by it: the shadow then reaches the widget edge exactly
 // and the gutter around it is left unpainted (the CRT background shows through,
@@ -77,6 +85,18 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     connect(m_typeEdit, &QLineEdit::textChanged, this,
             [this](const QString& text) { setFilter(text); });
 
+    // Horizontal scrollbar under the Files box (2026-11-21: "the horizontal
+    // scrollbar doesn't work in the file list" - there was no bar at all, only
+    // a Shift+wheel trick). BorlandStyle already repaints every QScrollBar as
+    // a TextScrollBar, so it wears the TV glyph language for free.
+    m_hBar = new TextScrollBar(Qt::Horizontal, this);
+    m_hBar->setObjectName(QStringLiteral("fileListHBar"));
+    m_hBar->setSingleStep(qMax(8, fontMetrics().horizontalAdvance(QLatin1Char('M'))));
+    connect(m_hBar, &QScrollBar::valueChanged, this,
+            [this](int v) { setHorizontalOffset(v); });
+    m_hBar->show();
+    syncHorizontalBar();
+
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new TvPlate(text, this);
         b->setObjectName(QLatin1String(name));
@@ -89,7 +109,6 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     };
     m_ok = makeButton(QStringLiteral("OK"), "tvFileDockOk");
     m_cancel = makeButton(QStringLiteral("Cancel"), "tvFileDockCancel");
-    m_help = makeButton(QStringLiteral("Help"), "tvFileDockHelp");
     connect(m_ok, &QPushButton::clicked, this, &TvFileDock::accept);
     connect(m_cancel, &QPushButton::clicked, this, &TvFileDock::reject);
     connect(m_edit, &QLineEdit::returnPressed, this, &TvFileDock::accept);
@@ -496,10 +515,13 @@ void TvFileDock::layoutChildren()
 
     const int bh = ch + 6;
     m_okRect = QRect(btnX, m_listRect.top(), btnW, bh);
+    // Cancel sits under OK, kept clear of the list's bottom edge (the old
+    // third Help slot anchored it there; with Help gone the pair is spaced
+    // from OK and clamped to the frame).
     m_cancelRect = QRect(btnX, m_listRect.top() + 3 * (bh + 4), btnW, bh);
-    m_helpRect = QRect(btnX, m_listRect.bottom() - bh + 1, btnW, bh);
-    if (m_cancelRect.bottom() > m_helpRect.top())
-        m_cancelRect.moveTop(qMax(m_okRect.bottom() + 4, m_helpRect.top() - bh - 4));
+    const int lowest = m_listRect.bottom() - bh + 1;
+    if (m_cancelRect.bottom() > lowest)
+        m_cancelRect.moveTop(qMax(m_okRect.bottom() + 4, lowest - bh + 1));
 
     if (m_pathEdit)
         m_pathEdit->setGeometry(m_pathRect.adjusted(2, 2, -2, -2));
@@ -511,8 +533,17 @@ void TvFileDock::layoutChildren()
         m_ok->setGeometry(m_okRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
     if (m_cancel)
         m_cancel->setGeometry(m_cancelRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
-    if (m_help)
-        m_help->setGeometry(m_helpRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
+    // Horizontal bar sits in the strip's ROW, to the right of the vertical
+    // strip's clickable slice (see stripTrackRect), so the box's bottom row
+    // carries both scroll controls without stealing height from the rows.
+    if (m_hBar) {
+        const int barH = kScrollStrip;
+        const int slice = kScrollStrip + 1;
+        m_hBar->setGeometry(m_listRect.left() + slice,
+                            m_listRect.bottom() - barH + 1,
+                            qMax(24, m_listRect.width() - slice - slice), barH);
+        syncHorizontalBar();
+    }
 }
 
 int TvFileDock::visibleRows() const
@@ -520,29 +551,45 @@ int TvFileDock::visibleRows() const
     const int rowH = cellH();
     if (rowH <= 0)
         return 1;
-    return qMax(1, (m_listRect.height() - kScrollStrip) / rowH);
+    // Row band excludes the scroll strip at the box's bottom edge (the band
+    // helper keeps paint, hit-test and this count on the same arithmetic).
+    return qMax(1, (listBodyBottom(m_listRect) - m_listRect.top() + 1) / rowH);
 }
 
 QRect TvFileDock::stripRect() const
 {
     if (m_listRect.isEmpty())
         return QRect();
+    // The strip's ROW: teal track (vertical scroll) on the left slice, the
+    // horizontal bar takes the rest - both live in the list's bottom row, so
+    // neither steals height from the name rows.
     return QRect(m_listRect.left(), m_listRect.bottom() - kScrollStrip + 1,
                  m_listRect.width(), kScrollStrip);
 }
 
+QRect TvFileDock::stripTrackRect() const
+{
+    // The vertical strip's own clickable slice, left of the horizontal bar.
+    const QRect row = stripRect();
+    if (row.isEmpty())
+        return QRect();
+    return QRect(row.left(), row.top(), kScrollStrip, row.height());
+}
+
 QRect TvFileDock::stripThumbRect() const
 {
-    const QRect track = stripRect();
+    const QRect track = stripTrackRect();   // the vertical slice only
     if (track.isEmpty() || m_files.isEmpty())
         return QRect();
     const int perCol = visibleRows();
     const int total = qMax(1, m_files.size());
+    // Same rules as before the horizontal bar split the strip row: a thumb
+    // proportional to the visible share, moved by m_scroll.
     const int thumbW = qMax(8, track.width() * qMin(total, 2 * perCol) / total);
     const int maxScroll = qMax(1, total - 2 * perCol);
     const int x = track.left()
                   + (track.width() - thumbW) * qBound(0, m_scroll, maxScroll) / maxScroll;
-    return QRect(x, track.top() + 1, thumbW, qMax(2, kScrollStrip - 2));
+    return QRect(x, track.top() + 1, thumbW, qMax(2, track.height() - 2));
 }
 
 int TvFileDock::maxHorizontalOffset() const
@@ -562,7 +609,22 @@ void TvFileDock::setHorizontalOffset(int px)
     if (next == m_hOffset)
         return;
     m_hOffset = next;
+    if (m_hBar && m_hBar->value() != m_hOffset)
+        m_hBar->setValue(m_hOffset);   // echo back; valueChanged no-ops if equal
     update();
+}
+
+// Range/value for the bar: 0..maxHorizontalOffset(), value = m_hOffset.
+// Called after any listing change (setDirectory/setFilter/refreshFiles) and
+// from layoutChildren(), so a bar born after a listing starts consistent.
+void TvFileDock::syncHorizontalBar()
+{
+    if (!m_hBar)
+        return;
+    m_hBar->setRange(0, maxHorizontalOffset());
+    m_hBar->setPageStep(qMax(1, m_listRect.width() / 4));
+    if (m_hBar->value() != m_hOffset)
+        m_hBar->setValue(m_hOffset);
 }
 
 void TvFileDock::scrollByPage(int pages)
@@ -602,7 +664,7 @@ int TvFileDock::rowAt(const QPoint& p) const
 {
     if (!m_listRect.contains(p))
         return -1;
-    if (p.y() >= m_listRect.bottom() - kScrollStrip)
+    if (p.y() > listBodyBottom(m_listRect))
         return -1;
     const int rowH = cellH();
     const int row = (p.y() - m_listRect.top()) / rowH;
@@ -669,7 +731,7 @@ void TvFileDock::paintEvent(QPaintEvent*)
     p.fillRect(m_frameRect.translated(kShadowOffset, kShadowOffset), kBlack);
     p.fillRect(m_frameRect, kPanelGray);
 
-    // The OK / Cancel / Help plates own their block shadows and their press
+    // The OK / Cancel plates own their block shadows and their press
     // travel (TvPlate paints both), so this pass draws none of them.
     // White double-line frame with the title in the top row (shared with
     // every other TV modal - see TvFrame::drawDoubleFrame).
@@ -733,7 +795,7 @@ void TvFileDock::paintEvent(QPaintEvent*)
 
     // ---- Files box: teal field, divider, two name columns, scroll strip ----
     p.fillRect(m_listRect, kTeal);
-    const int stripTop = m_listRect.bottom() - kScrollStrip + 1;
+    const int stripTop = listBodyBottom(m_listRect) + 1;
     const int listBodyH = stripTop - m_listRect.top();
     const int half = m_listRect.width() / 2;
     // Dark-blue divider between the two columns (reference: a solid vertical
@@ -762,10 +824,9 @@ void TvFileDock::paintEvent(QPaintEvent*)
     }
     p.restore();
 
-    // Scroll strip: teal track with a green thumb sized to the visible share.
-    // The thumb is draggable and the track pages on click (2026-11-20) - it used
-    // to be a painted indicator with no hit handling at all, which is why the
-    // user reported "the horizontal scroll does not work in the file list".
+    // Scroll strip: teal track + green thumb for VERTICAL scrolling, in the
+    // strip's row left of the horizontal bar (the bar is a child widget that
+    // paints itself over the rest of that row).
     p.fillRect(stripRect(), kTeal);
     const QRect thumb = stripThumbRect();
     if (!thumb.isEmpty())
@@ -800,7 +861,6 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
     }
     if (m_okRect.contains(pos)) { accept(); return; }
     if (m_cancelRect.contains(pos)) { reject(); return; }
-    if (m_helpRect.contains(pos)) { return; }   // no help topic in this build
     // The green cells go DOWN on press and fire on release, so the push is
     // visible before the menu takes the pointer.
     if (m_nameDropRect.contains(pos)) {
@@ -814,8 +874,10 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
         return;
     }
     // The strip under the Files box is a real scroll control now: pressing the
-    // thumb grabs it, pressing the track pages toward the click.
-    if (stripRect().contains(pos)) {
+    // thumb grabs it, pressing the track pages toward the click. The CLICK
+    // target is stripTrackRect (the vertical slice) - the rest of the strip's
+    // row belongs to the horizontal bar, a child widget with its own handler.
+    if (stripTrackRect().contains(pos)) {
         const QRect thumb = stripThumbRect();
         if (thumb.contains(pos)) {
             m_draggingStrip = true;
@@ -846,7 +908,7 @@ void TvFileDock::mouseMoveEvent(QMouseEvent* ev)
         QWidget::mouseMoveEvent(ev);
         return;
     }
-    const QRect track = stripRect();
+    const QRect track = stripTrackRect();   // drag maps across the vertical slice
     const QRect thumb = stripThumbRect();
     const int span = qMax(1, track.width() - thumb.width());
     const int perCol = visibleRows();
@@ -901,9 +963,10 @@ void TvFileDock::mouseDoubleClickEvent(QMouseEvent* ev)
 void TvFileDock::wheelEvent(QWheelEvent* ev)
 {
     // Sideways first: Shift+wheel (and a real horizontal wheel) scrolls long
-    // names. The two-column list has no horizontal scrollbar of its own, and
-    // clipped names were the other half of "the horizontal scroll does not
-    // work in the file list".
+    // names. The dedicated horizontal bar (fileListHBar) does the same job
+    // with a visible control; this stays for muscle memory and for wheel mice
+    // with no Shift habit. Both funnel through setHorizontalOffset(), so the
+    // bar's thumb stays in step.
     const int dx = ev->angleDelta().x();
     const bool sideways = (ev->modifiers() & Qt::ShiftModifier) || (dx != 0);
     if (sideways) {

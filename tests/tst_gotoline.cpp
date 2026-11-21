@@ -16,6 +16,10 @@
 
 #include "src/editor/EditorTabManager.h"
 #include "src/editor/GoToLineDialog.h"
+#include "src/shell/ShellWindow.h"
+#include "src/shell/TvLineEdit.h"
+#include "src/bridge/ContentBridge.h"
+#include <QImage>
 
 class TstGoToLine : public QObject
 {
@@ -161,6 +165,87 @@ private slots:
         EditorTabManager m;                   // no document at all
         m.goToLine(5);                        // must not crash or touch anything
         QVERIFY(true);
+    }
+
+    // Reported 2026-11-21: "go to line also passes backspace back to the
+    // editor" and "none of the input fields ... shows the mouse cursor
+    // position". One slot covers both: the field must be a TvLineEdit with a
+    // block caret, and showing the dialog must claim the keyboard so the
+    // bridge stops feeding Backspace to the editor behind it.
+    void field_is_a_tv_line_edit_and_the_modal_owns_the_keyboard() {
+        ShellWindow shell;
+        shell.resize(900, 700);
+        EditorTabManager tabs;
+        shell.setEditorWidget(tabs.containerWidget());
+        shell.show();
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        QCoreApplication::processEvents();
+        tabs.containerWidget()->grab();
+
+        KTextEditor::Document* doc = tabs.activeDocument();
+        QVERIFY(doc);
+        doc->setText(QStringLiteral("alpha beta"));
+        QVERIFY(tabs.activeView());
+        tabs.activeView()->setCursorPosition(KTextEditor::Cursor(0, 10));
+
+        int editorShortcutCalls = 0;
+        shell.setEditorShortcutHandler([&](const QKeySequence& seq) {
+            ++editorShortcutCalls;
+            return tabs.triggerActiveViewShortcut(seq);
+        });
+
+        // GoToLineDialog parented to the shell (production shape:
+        // TvModal::exec reparents the modal to its anchor), shown directly so
+        // the show/hide ownership path is what the assertion exercises.
+        GoToLineDialog dlg(10);
+        dlg.setParent(&shell);
+        dlg.show();
+        QCoreApplication::processEvents();
+        QVERIFY2(shell.keyboardIsOwned(),
+                 "showing Go to Line did not claim the keyboard");
+
+        auto* tv = qobject_cast<TvLineEdit*>(dlg.field());
+        QVERIFY2(tv, "the Go to Line field is not a TvLineEdit");
+        dlg.field()->setText(QStringLiteral("42"));
+
+        // Caret: focused field reports a cell and paints ink there.
+        const QPoint p = dlg.field()->mapTo(&shell, dlg.field()->rect().center());
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                                 Qt::NoModifier, p.x(), p.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
+                                 Qt::NoModifier, p.x(), p.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(tv->holdsKeyFocus(), "click did not focus the Go to Line field");
+        const QRect caret = tv->caretRect();
+        QVERIFY2(!caret.isEmpty(), "focused Go to Line field reports no caret cell");
+        tv->setCaretBlinkEnabled(false);
+        tv->setCaretColors(QColor(0xFF, 0xFF, 0xFF), QColor(0x00, 0x00, 0xAA));
+        const QImage img = tv->grab().toImage();
+        int white = 0;
+        for (int y = caret.top(); y <= caret.bottom() && y < img.height(); ++y)
+            for (int x = caret.left(); x <= caret.right() && x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() > 240 && c.green() > 240 && c.blue() > 240)
+                    ++white;
+            }
+        QVERIFY2(white >= 4,
+                 qPrintable(QStringLiteral("no block caret painted (%1 white px)").arg(white)));
+
+        // Backspace edits the field, never the editor.
+        const int docBefore = int(doc->text().size());
+        bridge.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier,
+                               QStringLiteral("\b"));
+        QCoreApplication::processEvents();
+        QCOMPARE(dlg.field()->text(), QStringLiteral("4"));
+        QVERIFY2(int(doc->text().size()) == docBefore,
+                 qPrintable(QStringLiteral("backspace also reached the editor (doc %1 -> %2)")
+                                .arg(docBefore).arg(doc->text().size())));
+        QCOMPARE(editorShortcutCalls, 0);
+
+        dlg.reject();
+        QCoreApplication::processEvents();
+        QVERIFY2(!shell.keyboardIsOwned(), "closing Go to Line left the keyboard claimed");
     }
 };
 

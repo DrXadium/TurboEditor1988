@@ -164,7 +164,7 @@ add_test(NAME tst_zoomtools COMMAND tst_zoomtools)
 
 # 2026-11-19 (second round): View > Go.
 add_executable(tst_gotoline tests/tst_gotoline.cpp)
-target_link_libraries(tst_gotoline PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+target_link_libraries(tst_gotoline PRIVATE crt-editor crt-bridge Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_gotoline COMMAND tst_gotoline)
 
 # 2026-11-20: Edit > Select All / Deselect All.
@@ -265,7 +265,7 @@ add_test(NAME tst_find COMMAND tst_find)
 
 # Find and Replace (2026-11-18) test: the dialog's chrome, controls and layout.
 add_executable(tst_finddlg tests/tst_finddlg.cpp)
-target_link_libraries(tst_finddlg PRIVATE crt-editor crt-shell Qt6::Test Qt6::Widgets KF6::TextEditor)
+target_link_libraries(tst_finddlg PRIVATE crt-editor crt-shell crt-bridge Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_finddlg COMMAND tst_finddlg)
 
 # Status-line selectors: F-row indicators + dropdowns (spell, encoding, doc

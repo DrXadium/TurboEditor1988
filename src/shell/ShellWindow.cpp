@@ -804,9 +804,18 @@ void ShellWindow::setKeyboardOwner(QWidget* owner)
 bool ShellWindow::keyboardIsOwned() const
 {
     // Ownership lasts only while the owner is on screen. Hiding is the normal
-    // end of a dock or modal, and hideEvent also clears it - this is the
-    // belt-and-braces check for an owner destroyed without a hide.
-    return m_keyboardOwner && m_keyboardOwner->isVisible();
+    // end of a dock or modal, and both TvFileDock::hideEvent and TvModal's
+    // Show/Hide filter also clear it - this is the belt-and-braces check for
+    // an owner destroyed or hidden without either.
+    //
+    // isHidden(), NOT isVisible() (handoff trap #3): the shell renders
+    // offscreen and is never mapped, and child visibility under it is
+    // unreliable in both directions - an owner that IS shown can report
+    // isVisible()==false, which would let every keystroke leak past the guard
+    // to the menu and the editor behind the dialog (the 2026-11-21 report:
+    // "backspacing ... also backspaces in the editor"). isHidden() tracks the
+    // explicit show()/hide() pair these dialogs use.
+    return m_keyboardOwner && !m_keyboardOwner->isHidden();
 }
 
 QWidget* ShellWindow::keyFocusWidget() const

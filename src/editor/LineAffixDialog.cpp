@@ -3,6 +3,7 @@
 
 #include "src/shell/FieldCell.h"
 #include "src/shell/TvCheckBox.h"
+#include "src/shell/TvLineEdit.h"
 
 #include <QGridLayout>
 #include <QLabel>
@@ -30,8 +31,12 @@ LineAffixDialog::LineAffixDialog(Mode mode, QWidget* parent)
     label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
 
     m_cell = new FieldCell(body);
-    m_field = new QLineEdit(m_cell);
-    m_field->setObjectName(QStringLiteral("lineAffixField"));
+    // TvLineEdit (caret), same as Find/Replace and Go to Line - the shell is
+    // never an active window, so a plain QLineEdit draws no caret here.
+    auto* tv = new TvLineEdit(m_cell);
+    tv->setObjectName(QStringLiteral("lineAffixField"));
+    tv->setCaretColors(QColor(0xFF, 0xFF, 0xFF), QColor(0x00, 0x00, 0xAA));
+    m_field = tv;
     styleAsTvField(m_field);
     m_cell->setEdit(m_field);
     m_cell->setActive(true);   // the only field: it is always the typing target

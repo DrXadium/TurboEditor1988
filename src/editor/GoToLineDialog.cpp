@@ -2,6 +2,7 @@
 #include "GoToLineDialog.h"
 
 #include "src/shell/FieldCell.h"
+#include "src/shell/TvLineEdit.h"
 
 #include <QGridLayout>
 #include <QIntValidator>
@@ -28,8 +29,14 @@ GoToLineDialog::GoToLineDialog(int lineCount, QWidget* parent)
     label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
 
     m_cell = new FieldCell(body);
-    m_field = new QLineEdit(m_cell);
-    m_field->setObjectName(QStringLiteral("goLineField"));
+    m_cell = new FieldCell(body);
+    // TvLineEdit: the shell is never an active window, so a plain QLineEdit
+    // draws no caret (2026-11-21 - "none of the input fields shows the mouse
+    // cursor position"). The DOS block caret is drawn by the field itself.
+    auto* tv = new TvLineEdit(m_cell);
+    tv->setObjectName(QStringLiteral("goLineField"));
+    tv->setCaretColors(QColor(0xFF, 0xFF, 0xFF), QColor(0x00, 0x00, 0xAA));
+    m_field = tv;
     styleAsTvField(m_field);
     m_cell->setEdit(m_field);
     m_cell->setActive(true);   // the only field: it is always the typing target

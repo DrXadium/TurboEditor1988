@@ -15,6 +15,7 @@
 #include <QPushButton>
 #include "src/shell/TvModal.h"
 #include "src/shell/AboutModal.h"
+#include "src/shell/ShellWindow.h"
 #include "src/AppIdentity.h"
 #include "src/settings/SettingsDialog.h"
 #include "src/settings/CrtSettings.h"
@@ -107,6 +108,11 @@ private slots:
     // itself with the platform font, not the polished one, and came out
     // short.
     void a_modal_is_measured_with_the_polished_font();
+    // 2026-11-21: keyboard ownership is now claimed by TvModal itself on Show
+    // and released on Hide (not only by exec()'s round loop), because tests
+    // and dev aids show modals directly and a keystroke then leaked to the
+    // editor behind the dialog.
+    void showing_a_modal_directly_claims_the_keyboard_and_hiding_releases_it();
 };
 
 // The chrome the file dock established, on a bare modal: gray panel inside a
@@ -669,6 +675,54 @@ void TstTvModal::a_modal_is_measured_with_the_polished_font()
                             .arg(body->height()).arg(body->sizeHint().height())));
 
     qApp->setStyleSheet(old);
+}
+
+// Reported 2026-11-21: Find/Replace and Go to Line "pass backspace back to
+// the editor". The house modal must claim the shell's keyboard the moment it
+// is SHOWN - through exec() or directly (tests and the CRT_KATE_MODAL dev aid
+// show modals without the round loop) - and release it on Hide, so
+// ContentBridge stops offering keystrokes to the editor behind the dialog.
+void TstTvModal::showing_a_modal_directly_claims_the_keyboard_and_hiding_releases_it()
+{
+    ShellWindow shell;
+    shell.resize(800, 600);
+    shell.show();
+    QCoreApplication::processEvents();
+    QVERIFY2(!shell.keyboardIsOwned(), "the shell starts owned?!");
+
+    {
+        // Parented to the shell, like production: TvModal::exec reparents the
+        // modal to its anchor, and the Show/Hide filter looks the shell up via
+        // window() - an unparented modal's window() is ITSELF, so it has no
+        // shell to claim (correctly: there is no shell in sight).
+        TvModal m(&shell);
+        m.resize(320, 200);
+        m.show();
+        QCoreApplication::processEvents();
+        QVERIFY2(shell.keyboardIsOwned(),
+                 "showing a modal directly did not claim the keyboard");
+        QVERIFY2(shell.keyboardOwner() == &m,
+                 "the claimed owner is not the modal itself");
+
+        m.hide();
+        QCoreApplication::processEvents();
+        QVERIFY2(!shell.keyboardIsOwned(),
+                 "hiding the modal left the keyboard claimed");
+    }
+
+    // A second modal over the same shell: ownership moves with the visible
+    // modal and clears when it goes, so a stack of dialogs cannot strand the
+    // owner pointer on a dead widget.
+    {
+        TvModal second(&shell);
+        second.resize(320, 200);
+        second.show();
+        QCoreApplication::processEvents();
+        QVERIFY(shell.keyboardOwner() == &second);
+        second.hide();
+        QCoreApplication::processEvents();
+        QVERIFY(!shell.keyboardIsOwned());
+    }
 }
 
 QTEST_MAIN(TstTvModal)

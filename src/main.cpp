@@ -1570,12 +1570,11 @@ int main(int argc, char** argv)
         });
     }
 
-    // Dev aid (unset in normal runs): CRT_KATE_CLICKPROBE=dockhelp sends a
-    // press+release through the bridge at the dock's Help plate - a plate that
-    // deliberately does NOT close its dialog, so a capture taken afterwards
-    // shows whether the plate came back to rest. This host has no pointer tool;
-    // the bridge IS the input, and the values match QML exactly (press
-    // buttons=LeftButton, release buttons=NoButton).
+    // Dev aid (unset in normal runs): CRT_KATE_CLICKPROBE=dockok sends a
+    // press+release through the bridge at the dock's OK plate (the old
+    // dockhelp target went away with the Help plate, 2026-11-21). This host
+    // has no pointer tool; the bridge IS the input, and the values match QML
+    // exactly (press buttons=LeftButton, release buttons=NoButton).
     if (const QByteArray what = qgetenv("CRT_KATE_CLICKPROBE"); !what.isEmpty()) {
         QTimer::singleShot(1600, &app, [&app, &shell, &bridge, what]() {
             // Grab AFTER the release: a capture taken before the click proves
@@ -1613,9 +1612,7 @@ int main(int argc, char** argv)
             if (!dock)
                 return;
             QRect target;
-            if (what == "dockhelp")
-                target = dock->helpRect();
-            else if (what == "dockok")
+            if (what == "dockok")
                 target = dock->okRect();
             else
                 return;

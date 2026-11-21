@@ -11,6 +11,7 @@
 #include "../shell/MenuBar.h"
 #include <QKeyEvent>
 #include <QApplication>
+#include <QDateTime>
 #include <QFile>
 #include <QAction>
 
@@ -161,6 +162,25 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // shell's. (Posting at the shell makes QMainWindow::event() swallow it, so
     // we must send to the child with child-local coords + matching global.)
     const QPoint shellLocal{int(x), int(y)};
+    // QML's MouseArea only ever emits press/release pairs - Qt's own
+    // MouseButtonDblClick synthesis never runs for these synthesized events, so
+    // widgets that act on a double-click (the file dock's ".." row, see
+    // TvFileDock::mouseDoubleClickEvent) never saw one. Synthesize it here:
+    // the second press on the SAME spot within the double-click interval
+    // becomes DblClick, the same rule Qt applies to real input.
+    QEvent::Type effectiveType = static_cast<QEvent::Type>(type);
+    if (effectiveType == QEvent::MouseButtonPress) {
+        const int interval = QApplication::doubleClickInterval();
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const bool isDouble = m_lastPressPos == shellLocal
+                              && (now - m_lastPressMs) <= interval
+                              && m_lastPressTarget == m_shell->childAt(shellLocal);
+        m_lastPressPos = shellLocal;
+        m_lastPressMs = now;
+        m_lastPressTarget = m_shell->childAt(shellLocal);
+        if (isDouble)
+            effectiveType = QEvent::MouseButtonDblClick;
+    }
     // Popups are top-level windows, not shell children, so childAt() can never
     // reach them. Resolve visible popups FIRST: a move over an open dropdown
     // must land in the popup (QMenu's hover highlight + the spec-7 status
@@ -171,7 +191,9 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // itself when it receives a press outside its rect. This app synthesizes
     // mouse events rather than relying on the popup's mouse grab, so without
     // this the dropdown stayed open when the user clicked the editor.
-    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress) {
+    // Popup-dismiss + dev-aid branches still key off the ORIGINAL type (a
+    // synthesized DblClick behaves as the press it came from there too).
+    if (effectiveType == QEvent::MouseButtonPress) {
         for (QWidget* popup : std::as_const(m_popups)) {
             if (!popup || !popup->isVisible())
                 continue;
@@ -203,7 +225,7 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // these events are synthesized, so no QContextMenuEvent is ever produced.
     // Raised directly, the same way the menu bar is driven. A press that landed
     // in an open popup is left alone so dropdown dismissal still works.
-    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
+    if (effectiveType == QEvent::MouseButtonPress
         && static_cast<Qt::MouseButton>(button) == Qt::RightButton
         && !target
         && m_shell->isEditorArea(hit)) {
@@ -218,8 +240,8 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // forwarded press resolved to and where focus went. A click that "does
     // nothing" is almost always a hit-test disagreement, and the shell is never
     // mapped so there is no other way to see it.
-    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
-        || static_cast<QEvent::Type>(type) == QEvent::MouseButtonRelease) {
+    if (effectiveType == QEvent::MouseButtonPress
+        || effectiveType == QEvent::MouseButtonRelease) {
         const QByteArray logPath = qgetenv("CRT_KATE_MOUSELOG");
         if (!logPath.isEmpty()) {
             if (QFile f(QString::fromLocal8Bit(logPath));
@@ -229,9 +251,11 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
                 // the shell's own focus child - that is what keyTarget() uses.
                 const QWidget* focused = m_shell->focusWidget();
                 f.write(QStringLiteral("%1 shell=%2,%3 button=%4 buttons=%5 hit=%6 focus=%7\n")
-                            .arg(static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress
+                            .arg(effectiveType == QEvent::MouseButtonPress
                                      ? QStringLiteral("press")
-                                     : QStringLiteral("release"))
+                                     : effectiveType == QEvent::MouseButtonDblClick
+                                           ? QStringLiteral("dblclick")
+                                           : QStringLiteral("release"))
                             .arg(shellLocal.x()).arg(shellLocal.y())
                             .arg(button).arg(buttons)
                             .arg(hit ? (hit->objectName().isEmpty()
@@ -255,7 +279,7 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // at the origin, so the same bug was invisible there.
     const QPoint local = target->mapFromGlobal(shellGlobal);
     const QPoint global = target->mapToGlobal(local);
-    auto* ev = new QMouseEvent(static_cast<QEvent::Type>(type),
+    auto* ev = new QMouseEvent(effectiveType,
                                QPointF(local), QPointF(global),
                                static_cast<Qt::MouseButton>(button),
                                static_cast<Qt::MouseButtons>(buttons),
@@ -265,8 +289,10 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
     // A press also moves keyboard focus to the widget under the cursor - the
     // synthesized click does not run Qt's automatic focus-on-click, so without
     // this, clicking from the menu into the editor left keys going to whatever
-    // held focus before.
-    if (static_cast<QEvent::Type>(type) == QEvent::MouseButtonPress) {
+    // held focus before. A synthesized DblClick moves focus too (it IS a press
+    // in the user's gesture).
+    if (effectiveType == QEvent::MouseButtonPress
+        || effectiveType == QEvent::MouseButtonDblClick) {
         for (QWidget* w2 = target; w2; w2 = w2->parentWidget()) {
             if (w2->focusPolicy() & Qt::ClickFocus) {
                 w2->setFocus(Qt::MouseFocusReason);

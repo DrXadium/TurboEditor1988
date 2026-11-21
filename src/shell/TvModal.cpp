@@ -4,6 +4,7 @@
 #include "TvPlate.h"
 #include "ShellWindow.h"
 
+#include <QEvent>
 #include <QEventLoop>
 #include <QFontMetrics>
 #include <QKeyEvent>
@@ -41,6 +42,13 @@ TvModal::TvModal(QWidget* parent)
 {
     setAutoFillBackground(false);   // paintEvent owns the panel
     setFocusPolicy(Qt::StrongFocus);
+    // Every house modal owns the keyboard while it is on screen: shown through
+    // exec() (which claims it for the round loop) OR directly by a test/dev
+    // aid. Without this, ContentBridge keeps offering keystrokes to the menu
+    // and the editor BEHIND the dialog - the 2026-11-21 report: "backspacing
+    // in the ... field also backspaces in the editor". Same contract as
+    // TvFileDock::showEvent (ShellWindow::setKeyboardOwner).
+    installEventFilter(this);
 
     // Every metric below - cellWidth(), cellHeight(), sizeHint(), the plate row
     // and the body's rect - comes from fontMetrics(), and a widget only wears
@@ -56,6 +64,24 @@ void TvModal::setTitle(const QString& title)
 {
     m_title = title;
     update();
+}
+
+bool TvModal::eventFilter(QObject* watched, QEvent* ev)
+{
+    // Claim on show, release on hide - only for THIS modal: a modal that
+    // shows its own children (Find/Replace's fields inside the body) must not
+    // have its ownership reset by a child's Show/Hide.
+    if (watched == this) {
+        if (ev->type() == QEvent::Show) {
+            if (auto* shell = qobject_cast<ShellWindow*>(window()))
+                shell->setKeyboardOwner(this);
+        } else if (ev->type() == QEvent::Hide) {
+            if (auto* shell = qobject_cast<ShellWindow*>(window()))
+                if (shell->keyboardOwner() == this)
+                    shell->setKeyboardOwner(nullptr);
+        }
+    }
+    return QWidget::eventFilter(watched, ev);
 }
 
 void TvModal::setBody(QWidget* body)
@@ -268,9 +294,11 @@ int TvModal::exec(QWidget* anchor, TvModal* modal)
     modal->setFocus(Qt::OtherFocusReason);
     // The modal owns the keyboard for its whole run: no menu shortcut, no
     // editor shortcut may fire behind it (2026-11-20, same rule as the file
-    // dock). Cleared below, whatever role ended the loop.
+    // dock). The constructor's Show/Hide filter already claims it the moment
+    // modal->show() runs; this is belt-and-braces for modals that were shown
+    // and hidden before exec(). Cleared below, whatever role ended the loop.
     auto* shell = qobject_cast<ShellWindow*>(anchor);
-    if (shell)
+    if (shell && shell->keyboardOwner() != modal)
         shell->setKeyboardOwner(modal);
     loop.exec();
     if (shell && shell->keyboardOwner() == modal)

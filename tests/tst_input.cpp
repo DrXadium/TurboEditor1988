@@ -503,6 +503,85 @@ private slots:
         QCoreApplication::processEvents();
     }
 
+    // Reported 2026-11-21: "backspacing in the path input and file name input
+    // and file type also backspaces in the editor". EVERY focused field of the
+    // dock must eat its own Backspace - the editor behind the dialog must not
+    // lose a character.
+    void backspace_in_every_dock_field_stays_in_the_field() {
+        ShellWindow w;
+        w.resize(900, 700);
+        EditorTabManager tabs;
+        w.setEditorWidget(tabs.containerWidget());
+        w.show();
+        ContentBridge b;
+        b.setShellWindow(&w);
+        QCoreApplication::processEvents();
+        tabs.containerWidget()->grab();
+
+        KTextEditor::Document* doc = tabs.activeDocument();
+        QVERIFY2(doc, "no active document");
+        doc->setText(QStringLiteral("alpha beta"));
+        QVERIFY(tabs.activeView());
+        tabs.activeView()->setCursorPosition(KTextEditor::Cursor(0, 10));
+        const int docBefore = int(doc->text().size());
+
+        int editorShortcutCalls = 0;
+        w.setEditorShortcutHandler([&](const QKeySequence& seq) {
+            ++editorShortcutCalls;
+            return tabs.triggerActiveViewShortcut(seq);
+        });
+
+        TvFileDock* dock = TvFileDock::openOn(&w, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        struct FieldProbe {
+            const char* name;
+            QString seed;
+            QString expectedAfter;
+        };
+        const FieldProbe probes[] = {
+            { "tvFileDockPath", QStringLiteral("/tmp/newfil"),
+              QStringLiteral("/tmp/newfi") },
+            { "tvFileDockEdit", QStringLiteral("report.tx"),
+              QStringLiteral("report.t") },
+            { "tvFileDockType", QStringLiteral("*.md"),
+              QStringLiteral("*.m") },
+        };
+        for (const FieldProbe& fp : probes) {
+            auto* field = dock->findChild<QLineEdit*>(QLatin1String(fp.name));
+            QVERIFY2(field, qPrintable(QStringLiteral("no field %1")
+                                           .arg(QLatin1String(fp.name))));
+            const QPoint pt = field->mapTo(&w, field->rect().center());
+            b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                Qt::LeftButton, Qt::NoModifier, pt.x(), pt.y());
+            b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::NoButton,
+                                Qt::NoButton, Qt::NoModifier, pt.x(), pt.y());
+            QCoreApplication::processEvents();
+            field->setText(fp.seed);
+
+            b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier,
+                              QStringLiteral("\b"));
+            QCoreApplication::processEvents();
+
+            QVERIFY2(field->text() == fp.expectedAfter,
+                     qPrintable(QStringLiteral("backspace did not edit %1 (text=%2, wanted %3)")
+                                    .arg(QLatin1String(fp.name), field->text(),
+                                         fp.expectedAfter)));
+            QVERIFY2(int(doc->text().size()) == docBefore,
+                     qPrintable(QStringLiteral("backspace in %1 reached the editor "
+                                               "(doc %2 -> %3)")
+                                    .arg(QLatin1String(fp.name))
+                                    .arg(docBefore).arg(doc->text().size())));
+        }
+        QCOMPARE(editorShortcutCalls, 0);
+
+        dock->reject();
+        QCoreApplication::processEvents();
+    }
+
     // While a dock owns the keyboard, NO app-level shortcut may fire behind it:
     // before 2026-11-20, Ctrl+S opened Kate's NATIVE save dialog behind File >
     // Open (measured: the watchdog caught the stack at

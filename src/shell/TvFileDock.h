@@ -6,6 +6,7 @@
 
 class QLineEdit;
 class QPushButton;
+class QScrollBar;
 class QMouseEvent;
 class QKeyEvent;
 class TvLineEdit;
@@ -21,7 +22,7 @@ class TvLineEdit;
 // Layout follows the reference "Save File As" screenshot: gray panel, white
 // double-line frame with the title in the top row, black offset drop shadow,
 // yellow labels, a blue entry field with a green stub, a teal two-column Files
-// box with a divider and a scroll strip, green OK / Cancel / Help buttons, and
+// box with a divider and a scroll strip, green OK / Cancel buttons, and
 // a blue path status row along the bottom.
 class TvFileDock : public QWidget
 {
@@ -95,14 +96,24 @@ public:
     QRect frameRect() const { return m_frameRect; }
     // The scroll strip under the Files box (a draggable vertical thumb).
     QRect stripRect() const;
+    // The vertical strip's clickable slice inside stripRect()'s row (the rest
+    // of that row is the horizontal scrollbar - see layoutChildren).
+    QRect stripTrackRect() const;
     // Vertical scroll position (list index of the first row) and the sideways
     // offset of long names, both exposed so the drag behaviour is testable
     // without a pointer.
     int scrollOffset() const { return m_scroll; }
     int horizontalOffset() const { return m_hOffset; }
     void setHorizontalOffset(int px);
+    // The horizontal bar under the Files box (Kate-style, TV glyph look).
+    // Range = 0..maxHorizontalOffset(); value = the sideways offset of the
+    // names in pixels. Public for tests and hit-testing.
+    QScrollBar* horizontalScrollBarWidget() const { return m_hBar; }
     // Scroll the list by whole pages (the strip's track click).
     void scrollByPage(int pages);
+    // Painted rect of list[index] - exposed so tests can drive clicks/double
+    // clicks at a named entry (e.g. "..") instead of guessing coordinates.
+    QRect rowRect(int index) const;
     // The character cell the dock lays everything out on (exposed for tests
     // and for anything that has to line up with the frame).
     int cellWidth() const { return cellW(); }
@@ -112,8 +123,6 @@ public:
     QWidget* activeField() const { return m_activeField; }
     QRect okRect() const { return m_okRect; }
     QRect cancelRect() const { return m_cancelRect; }
-    QRect helpRect() const { return m_helpRect; }
-
     // Show a dock over `anchor` and return it (not modal: the caller decides).
     static TvFileDock* openOn(QWidget* anchor, Mode mode, const QString& title,
                               const QString& dir = QString(),
@@ -158,6 +167,7 @@ private:
                             const QString& dir, const QString& filter,
                             const QStringList& recents);
 
+    // Reports the painted rect of list[index] (tests drive clicks through it).
     void refreshFiles();
     QStringList filterGlobs() const;           // "Text files (*.txt)" -> {"*.txt"}
     bool matchesFilter(const QString& name) const;
@@ -173,10 +183,10 @@ private:
     int rowAt(const QPoint& p) const;      // -1 when the point is not on a row
     int columnAt(const QPoint& p) const;   // 0 = left column, 1 = right
     int rowIndex(int column, int row) const;   // list index for a cell
-    QRect rowRect(int index) const;            // painted rect of list[index]
     QRect stripThumbRect() const;              // the green thumb in the strip
     int maxHorizontalOffset() const;           // widest name vs the column width
     void ensureVisible(int index);
+    void syncHorizontalBar();                  // range/value -> m_hBar
 
     Mode m_mode = Open;
     QString m_title = QStringLiteral("Open File");
@@ -193,6 +203,7 @@ private:
     // The strip is a real thumb: press grabs it, move maps x to m_scroll.
     bool m_draggingStrip = false;
     int m_stripGrabDx = 0;
+    QScrollBar* m_hBar = nullptr;              // sideways scroll for long names
 
     TvLineEdit* m_edit = nullptr;
     TvLineEdit* m_pathEdit = nullptr;
@@ -200,7 +211,6 @@ private:
     QWidget* m_activeField = nullptr;
     QPushButton* m_ok = nullptr;
     QPushButton* m_cancel = nullptr;
-    QPushButton* m_help = nullptr;
 
     QRect m_frameRect;
     QRect m_listRect;
@@ -219,7 +229,6 @@ private:
     DropCell m_pressedDrop = DropCell::None;
     QRect m_okRect;
     QRect m_cancelRect;
-    QRect m_helpRect;
     QRect m_statusRect;
     QRect m_pathLabelRect;    // "Path"
     QRect m_filesLabelRect;   // "Files"
