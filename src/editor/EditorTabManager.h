@@ -144,6 +144,21 @@ public:
     // on the caret as it stood when the button went down.
     void refreshBlockMenuState();
 
+    // Block markers (2026-11-20): the View menu's one switch for all block
+    // decoration. Hidden by default, and applied at view creation rather than
+    // only when the toggle fires, so a newly opened file comes up clean too.
+    //
+    // The lever is Kate's own per-view action `view_folding_markers`, NOT
+    // View::setConfigValue: measured twice, a config write combined with a fold
+    // segfaults this app, while triggering the action does not.
+    void setBlockMarkersVisible(bool visible);
+    bool blockMarkersVisible() const;
+
+    // Look up one of Kate's per-view actions by object name. Public because the
+    // view's action collection is the only place these live (findChild on the
+    // view returns null for them) and the menu wiring lives outside this class.
+    QAction* viewActionByName(const QString& name) const;
+
     // Restore a saved set of files (2026-11-20). Opens each URL and then DROPS
     // the pristine untitled tab the constructor created, because openFile()
     // appends: without this the restored file lands in tab 1 while activeIndex 0

@@ -121,11 +121,15 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     minimap->setCheckable(true);
     minimap->setChecked(false);   // TV-revision: minimap off by default
     minimap->setStatusTip(QStringLiteral("Toggle the document minimap"));
-    QAction* foldBar = added(view, QStringLiteral("Show &Folding Bar"),
+    // Block markers (2026-11-20): one switch for all block decoration - the
+    // gutter markers and the rule Kate draws on a block's opening line. HIDDEN
+    // by default at the user's request. The object name stays actionViewFoldBar
+    // so the composition root's lookup and the existing menu tests keep working.
+    QAction* foldBar = added(view, QStringLiteral("Show &Block Markers"),
                              QStringLiteral("actionViewFoldBar"));
     foldBar->setCheckable(true);
-    foldBar->setChecked(true);
-    foldBar->setStatusTip(QStringLiteral("Toggle the code folding bar"));
+    foldBar->setChecked(false);
+    foldBar->setStatusTip(QStringLiteral("Toggle the block markers"));
     // 2026-11-20: the folding ("nesting") commands. Each drives Kate's own
     // per-view action; folding state is per VIEW, so they are per tab for free.
     // Collapse All is Kate's "Fold Toplevel Nodes" - outermost blocks only, as

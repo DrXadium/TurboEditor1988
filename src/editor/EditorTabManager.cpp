@@ -442,6 +442,10 @@ void EditorTabManager::newDocument()
     applyTvStyle(view);
     installKeyRouting(view);
     attachBlockTracking(view);
+    // Block markers are hidden by default (2026-11-20). Applied HERE, at view
+    // creation, so a newly opened file comes up clean as well as the restored
+    // ones - and so the write never races a fold.
+    setBlockMarkersVisible(false);
     trackActiveCursor();
 }
 
@@ -462,6 +466,10 @@ void EditorTabManager::openFile(const QUrl& url)
     applyTvStyle(view);
     installKeyRouting(view);
     attachBlockTracking(view);
+    // Block markers are hidden by default (2026-11-20). Applied HERE, at view
+    // creation, so a newly opened file comes up clean as well as the restored
+    // ones - and so the write never races a fold.
+    setBlockMarkersVisible(false);
     trackActiveCursor();
     armWatch(doc);
 }
@@ -1202,6 +1210,26 @@ QAction* EditorTabManager::contextBlockAction(const QString& name) const
 void EditorTabManager::refreshBlockMenuState()
 {
     refreshBlockActions();
+}
+
+QAction* EditorTabManager::viewActionByName(const QString& name) const
+{
+    return viewAction(activeView(), name.toLatin1().constData());
+}
+
+void EditorTabManager::setBlockMarkersVisible(bool visible)
+{
+    // setActionOn drives the action with trigger() until the checked flag
+    // matches, which is the only route that reaches Kate's rendering. A direct
+    // setConfigValue("folding-bar", ...) is NOT used here: measured twice, it
+    // segfaults when combined with a fold in the same turn.
+    setActionOn(viewAction(activeView(), "view_folding_markers"), visible);
+}
+
+bool EditorTabManager::blockMarkersVisible() const
+{
+    QAction* a = viewAction(activeView(), "view_folding_markers");
+    return a && a->isChecked();
 }
 
 void EditorTabManager::attachBlockTracking(KTextEditor::View* view)

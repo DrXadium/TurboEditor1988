@@ -219,8 +219,8 @@ private slots:
             { QStringLiteral("Zoom Out"), QStringLiteral("Decrease the text size") },
             { QStringLiteral("Reset Zoom"), QStringLiteral("Restore the default text size") },
             { QStringLiteral("Show Minimap"), QStringLiteral("Toggle the document minimap") },
-            { QStringLiteral("Show Folding Bar"),
-              QStringLiteral("Toggle the code folding bar") },
+            { QStringLiteral("Show Block Markers"),
+              QStringLiteral("Toggle the block markers") },
         };
         FKeyStatusBar bar;
         bar.resize(900, 26);

@@ -608,8 +608,11 @@ int main(int argc, char** argv)
             });
         if (QAction* fold = act("actionViewFoldBar"))
             QObject::connect(fold, &QAction::triggered, fold, [&tabs, fold](bool) {
-                if (auto* v = tabs.activeView())
-                    v->setConfigValue(QStringLiteral("folding-bar"), fold->isChecked());
+                // One writer only. This used to call View::setConfigValue, which
+                // is NOT safe here: measured, a config write combined with a fold
+                // segfaults the app. EditorTabManager drives Kate's own
+                // view_folding_markers action instead.
+                tabs.setBlockMarkersVisible(fold->isChecked());
             });
         if (QAction* wrap = act("actionViewWordWrap")) {
             QObject::connect(wrap, &QAction::triggered, wrap, [&tabs, wrap](bool) {
