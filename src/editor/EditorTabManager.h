@@ -9,6 +9,7 @@
 #include <QStackedWidget>
 #include <QFileSystemWatcher>
 #include <functional>
+class QIcon;
 // HistoryEntry holds a Cursor by value, so the definition is needed here.
 #include <ktexteditor/cursor.h>
 #include "FileChangeTracker.h"
@@ -153,6 +154,14 @@ public:
     // segfaults this app, while triggering the action does not.
     void setBlockMarkersVisible(bool visible);
     bool blockMarkersVisible() const;
+
+    // Gutter fold marker (2026-11-20): recompute + apply the `▶`/`▼` marks on
+    // the active document, or clear them when the Show Block Markers toggle is
+    // off / the document has no syntax mode. Called from setBlockMarkersVisible,
+    // on textChanged, and on tab switch so the marks always track the toggle,
+    // the content and the active tab. See FoldIndicator.h for which lines get
+    // marked.
+    void refreshFoldIndicator();
 
     // Look up one of Kate's per-view actions by object name. Public because the
     // view's action collection is the only place these live (findChild on the
@@ -348,5 +357,13 @@ private:
     void applyBlockHighlight();
     void clearBlockHighlightRange();
     void attachBlockTracking(KTextEditor::View* view);
+    // Gutter fold marker: clear existing Bookmark marks then add one per
+    // foldable line, and set the `▶`/`▼` icon. No-op (clears) without a mode.
+    void applyFoldMarks();
+    // The yellow `▶` (expanded) or `▼` (folded) gutter icon, built once.
+    QIcon foldIcon(bool folded) const;
+    // The shared "text the highlighter owns" skip probe, so currentBlock() and
+    // applyFoldMarks() agree on which positions can open a block.
+    static BlockFinder::SkipProbe blockSkipProbe(KTextEditor::Document* doc);
     static constexpr int kMaxHistory = 200;
 };

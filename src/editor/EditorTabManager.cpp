@@ -29,11 +29,15 @@
 #include <QRegularExpression>
 #include <QFont>
 #include <QFontDatabase>
+#include <QIcon>
+#include <QPixmap>
+#include <QPainter>
 #include <QFile>
 #include <QFileSystemWatcher>
 #include <QMutex>
 #include <QMutexLocker>
 #include "ReloadDialog.h"
+#include "FoldIndicator.h"
 #include "src/shell/TvModal.h"
 
 // Register the bundled TV face so the editor can actually resolve it. The font
@@ -482,6 +486,9 @@ void EditorTabManager::setActiveIndex(int index)
     m_container->setCurrentIndex(index);
     syncTabs();
     trackActiveCursor();
+    // Marks live on the Document: switching tabs must show the newly active
+    // document's fold marks (and clear them if markers are off for it).
+    refreshFoldIndicator();
 }
 
 // Task 21: the tab chip's green square closes that tab. Indices shift with the
@@ -1075,16 +1082,21 @@ BlockFinder::Block EditorTabManager::currentBlock() const
     for (int i = 0; i < doc->lines(); ++i)
         lines.append(doc->line(i));
 
-    // Same rule the colour passes use: text the highlighter owns (a string or a
-    // comment) is not structure, so a '{' there opens nothing.
-    const auto skip = [doc](int line, int col) {
+    return BlockFinder::findBlockStartingAt(lines, v->cursorPosition().line(),
+                                            blockSkipProbe(doc));
+}
+
+// Same rule the colour passes use: text the highlighter owns (a string, a
+// comment or a char literal) is not structure, so a '{' there opens nothing.
+// Shared by currentBlock() and applyFoldMarks() so the two never disagree.
+BlockFinder::SkipProbe EditorTabManager::blockSkipProbe(KTextEditor::Document* doc)
+{
+    return [doc](int line, int col) {
         const auto st = doc->defaultStyleAt(KTextEditor::Cursor(line, col));
         return st == KSyntaxHighlighting::Theme::TextStyle::Comment
                || st == KSyntaxHighlighting::Theme::TextStyle::String
                || st == KSyntaxHighlighting::Theme::TextStyle::Char;
     };
-
-    return BlockFinder::findBlockStartingAt(lines, v->cursorPosition().line(), skip);
 }
 
 bool EditorTabManager::canActOnBlock() const
@@ -1224,12 +1236,85 @@ void EditorTabManager::setBlockMarkersVisible(bool visible)
     // setConfigValue("folding-bar", ...) is NOT used here: measured twice, it
     // segfaults when combined with a fold in the same turn.
     setActionOn(viewAction(activeView(), "view_folding_markers"), visible);
+    // One switch, one meaning: the same flag also drives our `▶` gutter marks
+    // and the icon strip that draws them (see refreshFoldIndicator).
+    refreshFoldIndicator();
 }
 
 bool EditorTabManager::blockMarkersVisible() const
 {
     QAction* a = viewAction(activeView(), "view_folding_markers");
     return a && a->isChecked();
+}
+
+QIcon EditorTabManager::foldIcon(bool folded) const
+{
+    // Built once and cached: a DOS-yellow triangle in the gutter, matching the
+    // line numbers so it reads as gutter chrome rather than as text.
+    static const QIcon expanded = [] {
+        QPixmap pm(16, 16);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setPen(QColor(QStringLiteral("#ffff55")));
+        p.setFont(QFont(QStringLiteral("Monospace"), 10));
+        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("\xe2\x96\xb6")); // ▶
+        return QIcon(pm);
+    }();
+    static const QIcon collapsed = [] {
+        QPixmap pm(16, 16);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setPen(QColor(QStringLiteral("#ffff55")));
+        p.setFont(QFont(QStringLiteral("Monospace"), 10));
+        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("\xe2\x96\xbc")); // ▼
+        return QIcon(pm);
+    }();
+    return folded ? collapsed : expanded;
+}
+
+void EditorTabManager::applyFoldMarks()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = v ? v->document() : nullptr;
+    if (!doc)
+        return;
+    // Folding needs a syntax mode: an untitled / None-mode document is not
+    // foldable, so it never carries marks.
+    if (!canFold()) {
+        doc->clearMarks();
+        return;
+    }
+
+    QVector<QString> lines;
+    lines.reserve(doc->lines());
+    for (int i = 0; i < doc->lines(); ++i)
+        lines.append(doc->line(i));
+    const QVector<int> foldable =
+        FoldIndicator::foldableLines(lines, blockSkipProbe(doc));
+
+    doc->clearMarks();
+    for (const int line : foldable) {
+        // `folded` per line: the line right after the opener is hidden when the
+        // block is collapsed.
+        const bool folded = (line + 1 < doc->lines()) && !v->isLineVisible(line + 1);
+        doc->setMarkIcon(KTextEditor::Document::Bookmark, foldIcon(folded));
+        doc->setMark(line, KTextEditor::Document::Bookmark);
+    }
+}
+
+void EditorTabManager::refreshFoldIndicator()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = v ? v->document() : nullptr;
+    if (!doc || !v)
+        return;
+    if (!blockMarkersVisible()) {
+        doc->clearMarks();
+        v->setConfigValue(QStringLiteral("icon-bar"), false);
+        return;
+    }
+    applyFoldMarks();
+    v->setConfigValue(QStringLiteral("icon-bar"), true);
 }
 
 void EditorTabManager::attachBlockTracking(KTextEditor::View* view)
@@ -1249,6 +1334,13 @@ void EditorTabManager::attachBlockTracking(KTextEditor::View* view)
                 refreshBlockActions();
                 if (m_blockHighlight)
                     applyBlockHighlight();
+            });
+    // Re-apply the gutter fold marks whenever this document's text changes, so
+    // a stale `▶` never sits next to a line that no longer opens a block.
+    connect(view->document(), &KTextEditor::Document::textChanged, this,
+            [this](KTextEditor::Document* doc) {
+                if (doc == activeDocument())
+                    refreshFoldIndicator();
             });
 }
 

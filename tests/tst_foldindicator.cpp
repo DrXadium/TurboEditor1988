@@ -12,13 +12,23 @@
 #include <QtTest>
 #include <QVector>
 #include <QString>
+#include <QAction>
+#include <KTextEditor/Document>
+#include <KTextEditor/View>
 #include "src/editor/FoldIndicator.h"
+#include "src/editor/EditorTabManager.h"
 
 using namespace FoldIndicator;
 
 class TstFoldIndicator : public QObject
 {
     Q_OBJECT
+
+    void initTestCase()
+    {
+        if (qgetenv("QT_QPA_PLATFORM").isEmpty())
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
 
     // Mode-Nothing: no position is a string or a comment.
     static BlockFinder::SkipProbe nothingSkipped()
@@ -87,6 +97,58 @@ private slots:
         };
         const QVector<int> got = foldableLines(lines, skip);
         QCOMPARE(got, QVector<int>({ 2 }));
+    }
+
+    // --- Coupling to the Show Block Markers toggle (Task 2) -----------------
+    // The gutter `▶` is a BLOCK MARKER, so it appears only when the one toggle
+    // is on, and `icon-bar` (the strip that draws it) follows the same flag.
+
+    // A: markers OFF -> no marks, no strip. (Clean gutter by default.)
+    void markers_off_leaves_no_marks_and_no_strip()
+    {
+        EditorTabManager tabs;
+        tabs.activeDocument()->setHighlightingMode(QStringLiteral("C++"));
+        tabs.activeDocument()->setText(QStringLiteral(
+            "void f()\n"
+            "{\n"
+            "    x();\n"
+            "}\n"));
+        tabs.setBlockMarkersVisible(false);
+        QVERIFY2(tabs.activeDocument()->marks().isEmpty(),
+                 "markers off must leave no gutter marks");
+        QCOMPARE(tabs.activeView()->configValue(QStringLiteral("icon-bar")).toBool(),
+                 false);
+    }
+
+    // B: markers ON with a foldable block -> mark on the opener, strip on.
+    void markers_on_marks_the_fold_opener_and_turns_the_strip_on()
+    {
+        EditorTabManager tabs;
+        tabs.activeDocument()->setHighlightingMode(QStringLiteral("C++"));
+        tabs.activeDocument()->setText(QStringLiteral(
+            "void f()\n"
+            "{\n"
+            "    x();\n"
+            "}\n"));
+        tabs.setBlockMarkersVisible(true);
+        QVERIFY2(tabs.activeDocument()->marks().contains(1),
+                 "the block opener (line 1 = '{') must carry a mark");
+        QCOMPARE(tabs.activeView()->configValue(QStringLiteral("icon-bar")).toBool(),
+                 true);
+    }
+
+    // C: markers ON but a mode-less document -> NO marks (folding needs a mode).
+    void markers_on_a_modeless_document_gets_no_marks()
+    {
+        EditorTabManager tabs;   // untitled, highlighting mode = None by default
+        tabs.activeDocument()->setText(QStringLiteral(
+            "void f()\n"
+            "{\n"
+            "    x();\n"
+            "}\n"));
+        tabs.setBlockMarkersVisible(true);
+        QVERIFY2(tabs.activeDocument()->marks().isEmpty(),
+                 "a mode-less document must never carry fold marks");
     }
 };
 
