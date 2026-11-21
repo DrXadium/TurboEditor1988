@@ -148,6 +148,7 @@ add_library(crt-editor STATIC
   src/editor/BracketColorizer.h
   src/editor/StringColorizer.cpp
   src/editor/BlockFinder.cpp
+  src/editor/FoldIndicator.cpp
   src/editor/StringColorizer.h
   src/editor/ColourWiring.cpp
   src/editor/ColourWiring.h
@@ -213,6 +214,11 @@ add_test(NAME tst_theme COMMAND tst_theme)
 add_executable(tst_blockfinder tests/tst_blockfinder.cpp)
 target_link_libraries(tst_blockfinder PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_blockfinder COMMAND tst_blockfinder)
+
+# 2026-11-20: the pure foldable-line computation behind the gutter fold marker.
+add_executable(tst_foldindicator tests/tst_foldindicator.cpp)
+target_link_libraries(tst_foldindicator PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_foldindicator COMMAND tst_foldindicator)
 
 # 2026-11-20: the block commands + context-menu actions.
 add_executable(tst_blockmenu tests/tst_blockmenu.cpp)
