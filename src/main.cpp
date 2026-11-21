@@ -614,6 +614,13 @@ int main(int argc, char** argv)
                 // view_folding_markers action instead.
                 tabs.setBlockMarkersVisible(fold->isChecked());
             });
+        // Block markers are per view (view_folding_markers), so the check must
+        // follow the tab on screen or the menu lies after every switch - the
+        // same contract actionViewWordWrap honours below. Also keeps the gutter
+        // `▶` marks and icon-bar in step with the visible tab.
+        if (QAction* foldSync = act("actionViewFoldBar"))
+            QObject::connect(&tabs, &EditorTabManager::activeViewChanged, foldSync,
+                             [&tabs, foldSync] { foldSync->setChecked(tabs.blockMarkersVisible()); });
         if (QAction* wrap = act("actionViewWordWrap")) {
             QObject::connect(wrap, &QAction::triggered, wrap, [&tabs, wrap](bool) {
                 tabs.setWordWrap(wrap->isChecked());

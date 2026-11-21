@@ -1295,13 +1295,22 @@ void EditorTabManager::applyFoldMarks()
         FoldIndicator::foldableLines(lines, blockSkipProbe(doc));
 
     doc->clearMarks();
+    // setMarkIcon is GLOBAL per mark TYPE (Mark stores only line + type - no
+    // per-line icon), so the glyph cannot differ line by line. Set it ONCE from
+    // the document's fold state: `▼` if ANY foldable block is collapsed, else
+    // `▶`. Setting it inside the loop would let the last line's state overwrite
+    // every mark (measured defect: collapsing block A left a stale ▶ when an
+    // unfolded block B came later in the document).
+    bool anyFolded = false;
     for (const int line : foldable) {
-        // `folded` per line: the line right after the opener is hidden when the
-        // block is collapsed.
-        const bool folded = (line + 1 < doc->lines()) && !v->isLineVisible(line + 1);
-        doc->setMarkIcon(KTextEditor::Document::Bookmark, foldIcon(folded));
-        doc->setMark(line, KTextEditor::Document::Bookmark);
+        if ((line + 1 < doc->lines()) && !v->isLineVisible(line + 1)) {
+            anyFolded = true;
+            break;
+        }
     }
+    doc->setMarkIcon(KTextEditor::Document::Bookmark, foldIcon(anyFolded));
+    for (const int line : foldable)
+        doc->setMark(line, KTextEditor::Document::Bookmark);
 }
 
 void EditorTabManager::refreshFoldIndicator()

@@ -188,6 +188,69 @@ private slots:
         QVERIFY2(before != after,
                  "collapsing must swap the ▶ gutter glyph for a ▼");
     }
+
+    // E: the glyph is document-global (setMarkIcon is per mark TYPE, not per
+    // line), so with TWO foldable blocks, collapsing the FIRST must still flip
+    // the glyph to ▼ - not be overwritten by the last (unfolded) block's state.
+    void collapsing_one_of_two_blocks_still_flips_the_global_glyph()
+    {
+        EditorTabManager tabs;
+        tabs.activeDocument()->setHighlightingMode(QStringLiteral("C++"));
+        tabs.activeDocument()->setText(QStringLiteral(
+            "void a()\n"
+            "{\n"
+            "    x();\n"
+            "}\n"
+            "void b()\n"
+            "{\n"
+            "    y();\n"
+            "}\n"));
+        tabs.setBlockMarkersVisible(true);
+        // Both openers are foldable: lines 1 ('{' of a) and 5 ('{' of b).
+        QVERIFY(tabs.activeDocument()->marks().contains(1));
+        QVERIFY(tabs.activeDocument()->marks().contains(5));
+
+        const auto iconPixels = [](const QIcon& ic) {
+            QPixmap pm = ic.pixmap(16, 16);
+            QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
+            QByteArray bytes;
+            bytes.append(reinterpret_cast<const char*>(img.constBits()),
+                         static_cast<int>(img.sizeInBytes()));
+            return bytes;
+        };
+        const QByteArray before = iconPixels(tabs.activeDocument()->markIcon(
+            KTextEditor::Document::Bookmark));
+
+        // Collapse the FIRST block only (line 1); leave the second (line 5) open.
+        tabs.activeView()->setCursorPosition(KTextEditor::Cursor(1, 0));
+        tabs.collapseBlock();
+
+        const QByteArray after = iconPixels(tabs.activeDocument()->markIcon(
+            KTextEditor::Document::Bookmark));
+        QVERIFY2(before != after,
+                 "collapsing the first of two blocks must flip the global ▶ to ▼");
+    }
+
+    // F: the marker state is per-view and follows the active tab (the same
+    // contract setNonprintables/word wrap honour), so the menu checkbox - which
+    // mirrors blockMarkersVisible() on activeViewChanged - never lies.
+    void marker_state_follows_the_active_tab()
+    {
+        EditorTabManager tabs;                // index 0: constructor's tab
+        tabs.newDocument();                   // index 1: the one we toggle
+        tabs.activeDocument()->setHighlightingMode(QStringLiteral("C++"));
+        tabs.setBlockMarkersVisible(true);
+        QVERIFY2(tabs.blockMarkersVisible(), "the toggled tab must be on");
+
+        tabs.newDocument();                   // index 2: fresh tab, markers off
+        QVERIFY2(!tabs.blockMarkersVisible(), "a fresh tab must start off");
+
+        tabs.setActiveIndex(1);               // back to the toggled tab
+        QVERIFY2(tabs.blockMarkersVisible(), "state must follow back to tab 1");
+
+        tabs.setActiveIndex(0);               // the untouched first tab
+        QVERIFY2(!tabs.blockMarkersVisible(), "tab 0 was never toggled");
+    }
 };
 
 QTEST_MAIN(TstFoldIndicator)
