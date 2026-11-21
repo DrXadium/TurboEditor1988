@@ -128,12 +128,25 @@ public:
     bool currentBlockIsFolded() const;
     void collapseBlock();
     void expandBlock();
+    // Clicking the gutter fold marker (the ▶/▼ in the icon strip) must fold or
+    // unfold that LINE's block, not whatever line the caret happens to be on.
+    // These move the caret onto `line` first, then run the same collapse/expand
+    // the block menu uses. Installed by the FoldClickRouter event filter on
+    // KateIconBorder (see EditorTabManager.cpp).
+    void collapseBlockAtLine(int line);
+    void expandBlockAtLine(int line);
 
     // The red-on-yellow band over the current block. Off by default; the user
     // toggles it from the right-click menu. Cleared when the caret leaves the
     // block or the tab changes, so it never highlights a stale region.
     void setBlockHighlight(bool on);
     bool blockHighlight() const { return m_blockHighlight; }
+    // Clicking a gutter fold marker highlights that block (a green band with
+    // yellow text) so the user can see which block they just folded or
+    // unfolded. Clicking back into the text area clears it. This is transient
+    // and independent of the persistent Highlight Block menu toggle.
+    void highlightClickedBlock(int line);
+    void clearClickedBlockHighlight();
 
     // One of actionCtxCollapseBlock / actionCtxExpandBlock /
     // actionCtxHighlightBlock, created with the views and kept in sync with the
@@ -162,6 +175,13 @@ public:
     // the content and the active tab. See FoldIndicator.h for which lines get
     // marked.
     void refreshFoldIndicator();
+    // Swap the shared ▶/▼ glyph after a fold/unfold WITHOUT re-scanning the
+    // document, clearing marks or writing the icon-bar config. The fold
+    // commands run per click; a full refresh on each one churns Kate's layout
+    // cache (setConfigValue -> updateConfig -> KateLayoutCache::clear) hard
+    // enough to crash in ~QTextLayout (measured 2026-11-21). Only the shared
+    // glyph changes on a fold - the marks stay on the same lines.
+    void updateFoldGlyph();
 
     // Look up one of Kate's per-view actions by object name. Public because the
     // view's action collection is the only place these live (findChild on the
@@ -356,11 +376,12 @@ private:
     void refreshBlockActions();
     void applyBlockHighlight();
     void clearBlockHighlightRange();
+    void applyBlockRange(const BlockFinder::Block& b);
     void attachBlockTracking(KTextEditor::View* view);
     // Gutter fold marker: clear existing Bookmark marks then add one per
     // foldable line, and set the `▶`/`▼` icon. No-op (clears) without a mode.
     void applyFoldMarks();
-    // The yellow `▶` (expanded) or `▼` (folded) gutter icon, built once.
+    // The yellow `▼` (expanded) or `▶` (folded) gutter icon, built once.
     QIcon foldIcon(bool folded) const;
     // The shared "text the highlighter owns" skip probe, so currentBlock() and
     // applyFoldMarks() agree on which positions can open a block.

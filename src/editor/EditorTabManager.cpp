@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QFocusEvent>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QClipboard>
 #include "EditorTabManager.h"
 #include "FindReplaceDialog.h"
@@ -32,6 +33,7 @@
 #include <QIcon>
 #include <QPixmap>
 #include <QPainter>
+#include <QPainterPath>
 #include <QFile>
 #include <QFileSystemWatcher>
 #include <QMutex>
@@ -418,6 +420,117 @@ public:
 private:
     EditorTabManager* m_mgr;
 };
+
+// Clicking a gutter fold marker (the ▶/▼ in the icon strip) folds or unfolds
+// that line's block. KateIconBorder does not fold on click in this build (a
+// 181-point sweep folded nothing), so we intercept the press ourselves: map the
+// click to a line with View::coordinatesToCursor and drive the same
+// collapse/expand the block menu uses. Installed on the icon-border widget.
+class FoldClickRouter : public QObject
+{
+public:
+    FoldClickRouter(KTextEditor::View* view, EditorTabManager* mgr)
+        : QObject(view), m_view(view), m_mgr(mgr)
+    {
+        // Both the fold strip (KateIconBorder) and the text area
+        // (KateViewInternal) are children of the view, created with it.
+        for (QWidget* w : view->findChildren<QWidget*>()) {
+            const QByteArray cls = w->metaObject()->className();
+            if (cls.contains("KateIconBorder")) {
+                w->installEventFilter(this);
+                m_border = w;
+            } else if (cls.contains("KateViewInternal")) {
+                w->installEventFilter(this);
+                m_text = w;
+            }
+        }
+    }
+
+    bool eventFilter(QObject* watched, QEvent* ev) override
+    {
+        if (ev->type() == QEvent::MouseButtonPress) {
+            auto* me = static_cast<QMouseEvent*>(ev);
+            if (me->button() == Qt::LeftButton) {
+                // A click back in the text area clears the click-highlight.
+                if (watched == m_text) {
+                    m_mgr->clearClickedBlockHighlight();
+                    return false;   // let the click place the caret as usual
+                }
+                // The press arrives in icon-border-local coords. Convert to
+                // view coords, then to a document line.
+                auto* border = qobject_cast<QWidget*>(watched);
+                if (border) {
+                    const QPoint viewPt = border->mapTo(m_view, me->pos());
+                    // The icon strip lives in the gutter, LEFT of the text
+                    // area. coordinatesToCursor needs an x inside the text
+                    // area to resolve the line correctly (a gutter x resolves
+                    // to line 0). Keep the press's y - that is the line - and
+                    // substitute a text-area x.
+                    const int textX = m_view->textAreaRect().left() + 5;
+                    const KTextEditor::Cursor c =
+                        m_view->coordinatesToCursor(QPoint(textX, viewPt.y()));
+                    int line = c.line();
+                    // coordinatesToCursor can return an invalid line for a
+                    // beat after a fold, while the view is still relaying out
+                    // (measured: it recovers on the next turn). Fall back to
+                    // an arithmetic y -> line so a quick second click still
+                    // lands on the right line.
+                    if (line < 0)
+                        line = lineAtViewY(viewPt.y());
+                    // Only a marked line (a foldable opener) reacts. Kate's
+                    // mark at that line means the glyph is there.
+                    if (line >= 0 && m_view->document()
+                        && m_view->document()->marks().contains(line)) {
+                        const bool folded = !m_view->isLineVisible(line + 1);
+                        if (folded)
+                            m_mgr->expandBlockAtLine(line);
+                        else
+                            m_mgr->collapseBlockAtLine(line);
+                        // Show which block was just folded/unfolded: green band,
+                        // yellow text. Cleared by the next text-area click.
+                        m_mgr->highlightClickedBlock(line);
+                        return true;   // consumed: don't let Kate move the caret
+                    }
+                }
+            }
+        }
+        return QObject::eventFilter(watched, ev);
+    }
+
+private:
+    // Map a view-space y to a document line without coordinatesToCursor: the
+    // first displayed line plus the row the y falls in, using a line height
+    // measured from two visible lines' coordinates. Returns -1 if unavailable.
+    int lineAtViewY(int y) const
+    {
+        const int first = m_view->firstDisplayedLine();
+        const KTextEditor::Cursor a(first, 0);
+        const QPoint pa = m_view->cursorToCoordinate(a);
+        if (pa.y() < 0)
+            return -1;
+        // Line height from the next visible line, if there is one.
+        int lineH = 16;
+        for (int n = first + 1; n <= m_view->lastDisplayedLine(); ++n) {
+            const QPoint pn = m_view->cursorToCoordinate(KTextEditor::Cursor(n, 0));
+            if (pn.y() >= 0 && pn.y() > pa.y()) {
+                lineH = pn.y() - pa.y();
+                break;
+            }
+        }
+        if (lineH <= 0)
+            return -1;
+        const int row = (y - pa.y()) / lineH;
+        int line = first + row;
+        if (line < 0 || line > m_view->lastDisplayedLine())
+            return -1;
+        return line;
+    }
+
+    KTextEditor::View* m_view;
+    EditorTabManager* m_mgr;
+    QWidget* m_border = nullptr;
+    QWidget* m_text = nullptr;
+};
 } // namespace
 
 void EditorTabManager::installKeyRouting(KTextEditor::View* view)
@@ -425,6 +538,7 @@ void EditorTabManager::installKeyRouting(KTextEditor::View* view)
     if (!view)
         return;
     new UndoKeyRouter(view, this);
+    new FoldClickRouter(view, this);
 }
 
 void EditorTabManager::newDocument()
@@ -1122,7 +1236,7 @@ void EditorTabManager::collapseBlock()
         a->trigger();
     refreshBlockActions();
     applyBlockHighlight();
-    refreshFoldIndicator();   // the opener's `▶` becomes a `▼`
+    updateFoldGlyph();        // the opener's `▼` becomes a `▶` (glyph only)
 }
 
 void EditorTabManager::expandBlock()
@@ -1133,7 +1247,29 @@ void EditorTabManager::expandBlock()
         a->trigger();
     refreshBlockActions();
     applyBlockHighlight();
-    refreshFoldIndicator();   // the opener's `▼` becomes a `▶`
+    updateFoldGlyph();        // the opener's `▶` becomes a `▼` (glyph only)
+}
+
+// The gutter fold marker click path: act on the block that OPENS at `line`,
+// not on the caret's current block. Move the caret there first (so the shared
+// collapse/expand logic, which reads currentBlock(), sees the right line), then
+// run it. A line with no foldable block is a no-op (currentBlock().invalid).
+void EditorTabManager::collapseBlockAtLine(int line)
+{
+    KTextEditor::View* v = activeView();
+    if (!v || line < 0)
+        return;
+    v->setCursorPosition(KTextEditor::Cursor(line, 0));
+    collapseBlock();
+}
+
+void EditorTabManager::expandBlockAtLine(int line)
+{
+    KTextEditor::View* v = activeView();
+    if (!v || line < 0)
+        return;
+    v->setCursorPosition(KTextEditor::Cursor(line, 0));
+    expandBlock();
 }
 
 void EditorTabManager::clearBlockHighlightRange()
@@ -1157,26 +1293,58 @@ void EditorTabManager::setBlockHighlight(bool on)
 
 void EditorTabManager::applyBlockHighlight()
 {
+    KTextEditor::View* v = activeView();
+    if (!m_blockHighlight || !v || !v->document()) {
+        clearBlockHighlightRange();
+        return;
+    }
+    const BlockFinder::Block b = currentBlock();
+    applyBlockRange(b);
+}
+
+// Paint `b` as one band over whole lines. Shared by the persistent Highlight
+// Block toggle and the transient click-to-highlight so both use the same
+// green-on-yellow palette.
+void EditorTabManager::applyBlockRange(const BlockFinder::Block& b)
+{
     clearBlockHighlightRange();
     KTextEditor::View* v = activeView();
-    if (!m_blockHighlight || !v || !v->document())
-        return;
-    const BlockFinder::Block b = currentBlock();
-    if (!b.valid)
+    if (!b.valid || !v || !v->document())
         return;
 
     // Whole lines, so the band reads as one block rather than stopping mid-line.
     const int lastLine = qMin(b.endLine, v->document()->lines() - 1);
     const int lastLen = v->document()->line(lastLine).size();
     auto attr = KTextEditor::Attribute::Ptr(new KTextEditor::Attribute);
-    // DOS red on DOS yellow: the palette the rest of the editor uses.
-    attr->setBackground(QColor(QStringLiteral("#aa0000")));
+    // Dark DOS green behind bright DOS yellow. The user asked for a green block
+    // band with yellow text; yellow on a DARK green stays legible, whereas
+    // yellow on the brighter #00AA00 does not.
+    attr->setBackground(QColor(QStringLiteral("#005500")));
     attr->setForeground(QColor(QStringLiteral("#ffff55")));
     auto* r = v->document()->newMovingRange(
         KTextEditor::Range(b.startLine, 0, lastLine, lastLen));
     r->setAttribute(attr);
     m_blockHighlightRange = r;
     v->repaint();
+}
+
+void EditorTabManager::highlightClickedBlock(int line)
+{
+    KTextEditor::View* v = activeView();
+    if (!v || !v->document() || line < 0)
+        return;
+    QVector<QString> lines;
+    lines.reserve(v->document()->lines());
+    for (int i = 0; i < v->document()->lines(); ++i)
+        lines.append(v->document()->line(i));
+    const BlockFinder::Block b =
+        BlockFinder::findBlockStartingAt(lines, line, blockSkipProbe(v->document()));
+    applyBlockRange(b);
+}
+
+void EditorTabManager::clearClickedBlockHighlight()
+{
+    clearBlockHighlightRange();
 }
 
 void EditorTabManager::buildBlockActions()
@@ -1253,25 +1421,54 @@ QIcon EditorTabManager::foldIcon(bool folded) const
 {
     // Built once and cached: a DOS-yellow triangle in the gutter, matching the
     // line numbers so it reads as gutter chrome rather than as text.
-    static const QIcon expanded = [] {
+    //
+    // Drawn as a QPainterPath triangle, NOT as a font glyph (`▶`/`▼`). Measured
+    // defect (2026-11-21): the font-drawn `▶` antialiases its FLAT VERTICAL left
+    // edge to ~alpha 72, which over the DOS-blue background composites to a dim
+    // #5407AA bar immediately left of the solid triangle - the "whatever is to
+    // the left of it" Xadium reported. Drawing the triangle geometrically with a
+    // crisp vertical edge sitting ON a pixel boundary gives a fully opaque left
+    // edge with a transparent neighbour (no sliver), and sidesteps font-atlas
+    // resolution so the cached icon is always the triangle.
+    static const QIcon rightPointing = [] {
         QPixmap pm(16, 16);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
-        p.setPen(QColor(QStringLiteral("#ffff55")));
-        p.setFont(QFont(QStringLiteral("Monospace"), 10));
-        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("\xe2\x96\xb6")); // ▶
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(QStringLiteral("#ffff55")));
+        // Right-pointing triangle: flat left edge at x=2 (a pixel boundary),
+        // apex at x=13, centred vertically. Inset 2 keeps clear of the edge so
+        // the antialiased tip does not spill either.
+        QPainterPath path;
+        path.moveTo(2, 3);
+        path.lineTo(13, 8);
+        path.lineTo(2, 13);
+        path.closeSubpath();
+        p.drawPath(path);
         return QIcon(pm);
     }();
-    static const QIcon collapsed = [] {
+    static const QIcon downPointing = [] {
         QPixmap pm(16, 16);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
-        p.setPen(QColor(QStringLiteral("#ffff55")));
-        p.setFont(QFont(QStringLiteral("Monospace"), 10));
-        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("\xe2\x96\xbc")); // ▼
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(QStringLiteral("#ffff55")));
+        // Down-pointing triangle: flat top edge at y=3, apex at y=13.
+        QPainterPath path;
+        path.moveTo(3, 3);
+        path.lineTo(13, 3);
+        path.lineTo(8, 13);
+        path.closeSubpath();
+        p.drawPath(path);
         return QIcon(pm);
     }();
-    return folded ? collapsed : expanded;
+    // Direction follows the user's reading (2026-11-21): a FOLDED block shows
+    // the right-pointing `\u25b6` ("closed, click to open"), and an OPEN block shows
+    // the down-pointing `\u25bc` ("open, content drops down"). This is the reverse of
+    // the first implementation.
+    return folded ? rightPointing : downPointing;
 }
 
 void EditorTabManager::applyFoldMarks()
@@ -1297,9 +1494,9 @@ void EditorTabManager::applyFoldMarks()
     doc->clearMarks();
     // setMarkIcon is GLOBAL per mark TYPE (Mark stores only line + type - no
     // per-line icon), so the glyph cannot differ line by line. Set it ONCE from
-    // the document's fold state: `▼` if ANY foldable block is collapsed, else
-    // `▶`. Setting it inside the loop would let the last line's state overwrite
-    // every mark (measured defect: collapsing block A left a stale ▶ when an
+    // the document's fold state: `▶` if ANY foldable block is collapsed, else
+    // `▼`. Setting it inside the loop would let the last line's state overwrite
+    // every mark (measured defect: collapsing block A left a stale ▼ when an
     // unfolded block B came later in the document).
     bool anyFolded = false;
     for (const int line : foldable) {
@@ -1321,11 +1518,38 @@ void EditorTabManager::refreshFoldIndicator()
         return;
     if (!blockMarkersVisible()) {
         doc->clearMarks();
-        v->setConfigValue(QStringLiteral("icon-bar"), false);
+        // Only write the config when it actually changes. A redundant
+        // setConfigValue still routes through KateConfig::setValue ->
+        // ViewPrivate::updateConfig -> KateLayoutCache::clear(), and that
+        // clear crashes intermittently in ~QTextLayout (measured 2026-11-21).
+        if (v->configValue(QStringLiteral("icon-bar")).toBool())
+            v->setConfigValue(QStringLiteral("icon-bar"), false);
         return;
     }
     applyFoldMarks();
-    v->setConfigValue(QStringLiteral("icon-bar"), true);
+    if (!v->configValue(QStringLiteral("icon-bar")).toBool())
+        v->setConfigValue(QStringLiteral("icon-bar"), true);
+}
+
+void EditorTabManager::updateFoldGlyph()
+{
+    KTextEditor::View* v = activeView();
+    KTextEditor::Document* doc = v ? v->document() : nullptr;
+    if (!doc || !v || !blockMarkersVisible() || !canFold())
+        return;
+    // The fold commands do not add or remove marks - the same opener lines stay
+    // marked - so we only need to decide the shared glyph: `▶` if ANY marked
+    // opener is folded, else `▼`. Iterate the existing marks (O(marks)) rather
+    // than re-scanning every line, and never touch the config here.
+    bool anyFolded = false;
+    for (auto it = doc->marks().cbegin(); it != doc->marks().cend(); ++it) {
+        const int line = it.key();
+        if ((line + 1 < doc->lines()) && !v->isLineVisible(line + 1)) {
+            anyFolded = true;
+            break;
+        }
+    }
+    doc->setMarkIcon(KTextEditor::Document::Bookmark, foldIcon(anyFolded));
 }
 
 void EditorTabManager::attachBlockTracking(KTextEditor::View* view)
@@ -1347,7 +1571,7 @@ void EditorTabManager::attachBlockTracking(KTextEditor::View* view)
                     applyBlockHighlight();
             });
     // Re-apply the gutter fold marks whenever this document's text changes, so
-    // a stale `▶` never sits next to a line that no longer opens a block.
+    // a stale `▼` never sits next to a line that no longer opens a block.
     connect(view->document(), &KTextEditor::Document::textChanged, this,
             [this](KTextEditor::Document* doc) {
                 if (doc == activeDocument())

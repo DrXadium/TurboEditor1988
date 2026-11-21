@@ -540,7 +540,26 @@ void TstTvKit::pressing_a_stepper_highlights_it_and_release_reverts_without_a_sh
     // cell has come back up before we sample it.
     sb.repaint();
     QCoreApplication::processEvents();
-    const QImage up2 = grab(sb);
+    // The grab itself can also come back one resize stale on a loaded run: the
+    // widget is 120 wide but the grab is 74, so probe.x()=118 falls outside the
+    // image and pixelColor reads invalid (0,0,0) - "the cell did not return to
+    // rest". Re-grab until the image actually contains the probe (i.e. reflects
+    // the real widget size), bounded so a genuinely broken widget still fails.
+    QImage up2;
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        sb.repaint();
+        QCoreApplication::processEvents();
+        up2 = grab(sb);
+        if (probe.x() < up2.width() && probe.y() < up2.height())
+            break;
+        QTest::qWait(10);
+    }
+    QVERIFY2(probe.x() < up2.width() && probe.y() < up2.height(),
+             qPrintable(QStringLiteral("the grab never reached the probe - probe=%1,%2 "
+                                       "image=%3x%4 widget=%5x%6")
+                            .arg(probe.x()).arg(probe.y())
+                            .arg(up2.width()).arg(up2.height())
+                            .arg(sb.width()).arg(sb.height())));
     const QColor back = up2.pixelColor(probe);
     fprintf(stderr, "T6 probe=%d,%d up=%d,%d %dx%d size=%dx%d back=%d,%d,%d\n",
             probe.x(), probe.y(), up.x(), up.y(), up.width(), up.height(), sb.width(),

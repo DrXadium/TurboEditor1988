@@ -20,6 +20,8 @@
 #include <QQuickItem>
 #include <QtQuick/qquickitemgrabresult.h>
 #include <QTimer>
+#include <QFile>
+#include <KTextEditor/View>
 #include <memory>
 #include "src/shell/ShellWindow.h"
 #include "src/AppIdentity.h"
