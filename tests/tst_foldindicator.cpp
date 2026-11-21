@@ -13,6 +13,10 @@
 #include <QVector>
 #include <QString>
 #include <QAction>
+#include <QImage>
+#include <QByteArray>
+#include <QPixmap>
+#include <QIcon>
 #include <KTextEditor/Document>
 #include <KTextEditor/View>
 #include "src/editor/FoldIndicator.h"
@@ -149,6 +153,40 @@ private slots:
         tabs.setBlockMarkersVisible(true);
         QVERIFY2(tabs.activeDocument()->marks().isEmpty(),
                  "a mode-less document must never carry fold marks");
+    }
+
+    // D: collapsing the block swaps the opener's `▶` for a `▼`.
+    void collapsing_the_block_swaps_the_gutter_glyph()
+    {
+        EditorTabManager tabs;
+        tabs.activeDocument()->setHighlightingMode(QStringLiteral("C++"));
+        tabs.activeDocument()->setText(QStringLiteral(
+            "void f()\n"
+            "{\n"
+            "    x();\n"
+            "}\n"));
+        tabs.setBlockMarkersVisible(true);
+        QVERIFY(tabs.activeDocument()->marks().contains(1));
+
+        const auto iconPixels = [](const QIcon& ic) {
+            QPixmap pm = ic.pixmap(16, 16);
+            QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
+            QByteArray bytes;
+            const uchar* bits = img.constBits();
+            bytes.append(reinterpret_cast<const char*>(bits),
+                         static_cast<int>(img.sizeInBytes()));
+            return bytes;
+        };
+        const QByteArray before = iconPixels(tabs.activeDocument()->markIcon(
+            KTextEditor::Document::Bookmark));
+
+        tabs.activeView()->setCursorPosition(KTextEditor::Cursor(1, 0));
+        tabs.collapseBlock();   // folded now -> the mark's icon must become `▼`
+
+        const QByteArray after = iconPixels(tabs.activeDocument()->markIcon(
+            KTextEditor::Document::Bookmark));
+        QVERIFY2(before != after,
+                 "collapsing must swap the ▶ gutter glyph for a ▼");
     }
 };
 

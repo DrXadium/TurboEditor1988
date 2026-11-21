@@ -1122,6 +1122,7 @@ void EditorTabManager::collapseBlock()
         a->trigger();
     refreshBlockActions();
     applyBlockHighlight();
+    refreshFoldIndicator();   // the opener's `▶` becomes a `▼`
 }
 
 void EditorTabManager::expandBlock()
@@ -1132,6 +1133,7 @@ void EditorTabManager::expandBlock()
         a->trigger();
     refreshBlockActions();
     applyBlockHighlight();
+    refreshFoldIndicator();   // the opener's `▼` becomes a `▶`
 }
 
 void EditorTabManager::clearBlockHighlightRange()
