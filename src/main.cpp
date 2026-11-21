@@ -23,6 +23,7 @@
 #include <QFile>
 #include <KTextEditor/View>
 #include <memory>
+#include <functional>
 #include "src/shell/ShellWindow.h"
 #include "src/AppIdentity.h"
 #include "src/shell/TabStrip.h"
@@ -192,6 +193,161 @@ int main(int argc, char** argv)
     };
     wireScrollbars();
     QTimer::singleShot(0, &shell, wireScrollbars);
+
+    // Minimap (2026-11-21): a Kate-style scrollbar minimap beside the editor.
+    // The widget is a dumb view - crt-shell does not link KTextEditor - so the
+    // composition root feeds it the active document's lines and visible range,
+    // and routes its clicks back into the view. Everything is re-pointed when
+    // the active view changes: the same "frozen on the first view" bug class
+    // the painted scrollbars and the L:C band had.
+    QList<QMetaObject::Connection> minimapConns;
+    QTimer minimapDebounce;   // Kate also coalesces minimap repaints
+    minimapDebounce.setSingleShot(true);
+    minimapDebounce.setInterval(300);
+
+    // The view's real vertical bar: verticalScrollBar() can be an empty
+    // wrapper in this build while the KateScrollBar child carries the range
+    // (handoff trap 7). Same pick rule as wireScrollbars() above.
+    auto docVerticalBar = [](KTextEditor::View* v) -> QScrollBar* {
+        if (!v)
+            return nullptr;
+        QScrollBar* accessor = v->verticalScrollBar();
+        if (accessor && accessor->maximum() > accessor->minimum())
+            return accessor;
+        for (QScrollBar* b : v->findChildren<QScrollBar*>())
+            if (b->orientation() == Qt::Vertical && b->maximum() > b->minimum())
+                return b;
+        return accessor;
+    };
+
+
+    // Lines are fed only when the document actually changes (the 300 ms
+    // textChanged debounce calls this); the viewport is re-read on every call
+    // so the 33 ms sync can follow scrolling without copying the document.
+    auto feedMinimapLines = [&shell, &tabs]() {
+        Minimap* mini = shell.minimap();
+        if (!mini || mini->isHidden())
+            return;
+        KTextEditor::View* v = tabs.activeView();
+        if (!v || !v->document()) {
+            mini->setLines(QStringList());
+            return;
+        }
+        KTextEditor::Document* d = v->document();
+        QStringList preview;
+        const int lineCount = d->lines();
+        preview.reserve(lineCount);
+        for (int i = 0; i < lineCount; ++i)
+            preview << d->line(i);
+        mini->setLines(preview);
+    };
+
+    auto refreshMinimap = [&shell, &tabs, &docVerticalBar, &feedMinimapLines]() {
+        Minimap* mini = shell.minimap();
+        // isHidden(), not isVisible(): the shell is rendered offscreen and is
+        // never mapped, so every child reports isVisible() == false even while
+        // it paints. isHidden() is the explicit "Show Minimap" switch.
+        if (!mini || mini->isHidden())
+            return;   // the preview costs a full document copy - stay idle
+        KTextEditor::View* v = tabs.activeView();
+        if (!v || !v->document()) {
+            mini->setLines(QStringList());
+            mini->setViewport(0, 0);
+            return;
+        }
+        // Lines only when the document changed (the 33 ms sync must not copy
+        // the whole document every frame).
+        KTextEditor::Document* d = v->document();
+        if (mini->lines().size() != d->lines())
+            feedMinimapLines();
+        // Viewport: FIRST line from firstDisplayedLine() (it tracks the view's
+        // real scroll), visible COUNT from the bar's pageStep (a measured probe
+        // showed lastDisplayedLine() returns the last WRITTEN line - it made
+        // the thumb ~2.4x too tall - and the KateScrollBar's value() is FROZEN
+        // at 0 while the view scrolls, so feeding first from the bar pinned the
+        // highlight to the top no matter where the document was). Hybrid: the
+        // view knows the position, the bar knows the page size.
+        QScrollBar* bar = docVerticalBar(v);
+        const int total = d->lines();
+        const int first = qBound(0, v->firstDisplayedLine(), qMax(0, total - 1));
+        const int page = (bar && bar->pageStep() > 0) ? bar->pageStep()
+                                                      : qMax(1, v->visibleLines());
+        const int visible = qBound(1, page, total - first);
+        mini->setViewport(first, visible);
+    };
+    auto repointMinimap = [&shell, &tabs, &refreshMinimap, &minimapConns, &minimapDebounce]() {
+        for (const QMetaObject::Connection& c : minimapConns)
+            QObject::disconnect(c);
+        minimapConns.clear();
+        Minimap* mini = shell.minimap();
+        if (!mini)
+            return;
+        KTextEditor::View* v = tabs.activeView();
+        if (v && v->document())
+            minimapConns << QObject::connect(
+                v->document(), &KTextEditor::Document::textChanged, mini,
+                [&minimapDebounce]() { minimapDebounce.start(); });
+        if (v) {
+            // The preview's thumb follows the scroll position. Watch every
+            // vertical bar on the view: the accessor may be the empty wrapper.
+            QList<QScrollBar*> bars = v->findChildren<QScrollBar*>();
+            if (QScrollBar* accessor = v->verticalScrollBar())
+                bars << accessor;
+            for (QScrollBar* b : bars)
+                if (b->orientation() == Qt::Vertical)
+                    minimapConns << QObject::connect(
+                        b, &QScrollBar::valueChanged, mini,
+                        [&refreshMinimap](int) { refreshMinimap(); });
+        }
+        refreshMinimap();
+    };
+    QObject::connect(&minimapDebounce, &QTimer::timeout, &shell,
+                     [&feedMinimapLines, &refreshMinimap] {
+                         feedMinimapLines();   // text changed: re-read the document
+                         refreshMinimap();
+                     });
+    QObject::connect(&tabs, &EditorTabManager::activeViewChanged, &shell,
+                     [&repointMinimap](KTextEditor::View*) { repointMinimap(); });
+    QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
+                     [&repointMinimap](const QStringList&, int) { repointMinimap(); });
+    repointMinimap();
+
+    // Minimap -> editor: the end rows page, the preview jumps to the clicked
+    // line, the wheel scrolls. Clicks land on source lines, never on pixels.
+    if (Minimap* mini = shell.minimap()) {
+        QObject::connect(mini, &Minimap::pageRequested, &shell,
+                         [&tabs, &docVerticalBar](int pages) {
+                             if (QScrollBar* bar = docVerticalBar(tabs.activeView()))
+                                 bar->triggerAction(pages < 0
+                                                        ? QAbstractSlider::SliderPageStepSub
+                                                        : QAbstractSlider::SliderPageStepAdd);
+                         });
+        QObject::connect(mini, &Minimap::lineActivated, &shell, [&tabs](int line) {
+            if (KTextEditor::View* v = tabs.activeView()) {
+                const KTextEditor::Cursor c(qMax(0, line), 0);
+                v->setCursorPosition(c);
+                v->setScrollPosition(c);
+            }
+        });
+        QObject::connect(mini, &Minimap::scrollLinesRequested, &shell,
+                         [&tabs, &refreshMinimap](int lines) {
+                             // Scroll the VIEW, not the scrollbar widget. A
+                             // measured trace showed bar->setValue() is a no-op
+                             // at the document end (value already at maximum)
+                             // and does not move the view when Kate owns the
+                             // scroll - so the wheel felt dead over the strip.
+                             // setScrollPosition() is the same reliable path
+                             // lineActivated() already uses.
+                             KTextEditor::View* v = tabs.activeView();
+                             if (!v)
+                                 return;
+                             const int cur = v->cursorPosition().line();
+                             const int target = qBound(0, cur + lines, v->document()->lines() - 1);
+                             v->setCursorPosition(KTextEditor::Cursor(target, 0));
+                             v->setScrollPosition(KTextEditor::Cursor(target, 0));
+                             refreshMinimap();
+                         });
+    }
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [&shell](const QStringList& titles, int active) {
                          if (TabStrip* strip = shell.tabStrip())
@@ -604,10 +760,26 @@ int main(int argc, char** argv)
         on(act("actionViewZoomOut"), [&tabs] { tabs.setZoom(-1); });
         on(act("actionViewZoomReset"), [&tabs] { tabs.setZoom(0); });
         if (QAction* mm = act("actionViewMinimap"))
-            QObject::connect(mm, &QAction::triggered, mm, [&shell, mm](bool) {
-                if (auto* mini = shell.minimap())
+            QObject::connect(mm, &QAction::triggered, mm,
+                             [&shell, mm, &refreshMinimap, &crtSettings](bool) {
+                if (auto* mini = shell.minimap()) {
                     mini->setVisible(mm->isChecked());
+                    // Persist so the choice survives a restart (user 2026-11-21).
+                    crtSettings.setMinimapVisible(mm->isChecked());
+                    // Feed it on the turn it appears: the widget was idle while
+                    // hidden, and a deferred feed also lets the row re-layout
+                    // to the strip's real width first.
+                    if (mm->isChecked())
+                        QTimer::singleShot(0, mini, [&refreshMinimap] { refreshMinimap(); });
+                }
             });
+        // Restore the persisted minimap state at startup: check the action and
+        // show the strip if it was on last run, then feed it once. The default
+        // (never saved) stays OFF, so a fresh install behaves as before.
+        if (crtSettings.minimapVisible())
+            if (QAction* mmRestore = act("actionViewMinimap"))
+                if (!mmRestore->isChecked())
+                    mmRestore->trigger();   // checkable: flips it on + shows the strip
         if (QAction* fold = act("actionViewFoldBar"))
             QObject::connect(fold, &QAction::triggered, fold, [&tabs, fold](bool) {
                 // One writer only. This used to call View::setConfigValue, which
@@ -858,6 +1030,19 @@ int main(int argc, char** argv)
     QTimer frameTimer;
     QObject::connect(&frameTimer, &QTimer::timeout, &bridge, &ContentBridge::update);
     frameTimer.start(33);
+
+    // Minimap thumb follows the document on EVERY scroll path (measured
+    // 2026-11-21): KateScrollBar::valueChanged only fires when WE call
+    // setValue(); when Kate scrolls the view itself (arrow keys, wheel over
+    // the editor) the value changes with no signal, so the highlight froze.
+    // The frame tick already runs at ~30 fps and is in scope with the feed, so
+    // re-read the scroll position here: it is cheap (no document copy when
+    // the viewport is unchanged) and catches keyboard, wheel, and drag alike.
+    QTimer minimapSync;
+    minimapSync.setInterval(33);
+    QObject::connect(&minimapSync, &QTimer::timeout, &shell,
+                     [&refreshMinimap] { refreshMinimap(); });
+    minimapSync.start();
 
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, []() { QCoreApplication::exit(1); },
@@ -1155,6 +1340,216 @@ int main(int argc, char** argv)
                 d->setHighlightingMode(QString::fromUtf8(mode));
             }
             Q_UNUSED(app);
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_MINIMAP=1 seeds a longer sample
+    // document and switches View > Show Minimap on, so CRT_KATE_RAWSHOT /
+    // CRT_KATE_SHOT capture the strip with a realistic preview instead of an
+    // empty buffer.
+    if (qEnvironmentVariableIsSet("CRT_KATE_MINIMAP")) {
+        QTimer::singleShot(700, &app, [&app, &tabs, &shell]() {
+            if (KTextEditor::View* v = tabs.activeView()) {
+                KTextEditor::Document* d = v->document();
+                QString sample;
+                for (int i = 0; i < 12; ++i) {
+                    sample += QStringLiteral(
+                                  "#include <stdio.h>\n"
+                                  "// a muted comment that runs on for a while\n"
+                                  "int main(void) {\n"
+                                  "    const char* s = \"green string\";\n"
+                                  "    int n = 42;\n"
+                                  "    if (n > 0) printf(\"%s %d\\n\", s, n);\n"
+                                  "    for (int i = 0; i < n; ++i) n -= i;\n"
+                                  "    return 0;\n"
+                                  "}\n");
+                }
+                d->setText(sample);
+                d->setHighlightingMode(QStringLiteral("C++"));
+            }
+            if (auto* mb = shell.findChild<MenuBar*>())
+                if (QAction* a = mb->findChild<QAction*>(QStringLiteral("actionViewMinimap")))
+                    if (!a->isChecked())
+                        a->trigger();   // checkable: trigger() flips it on
+            Q_UNUSED(app);
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_PERSIST_SET=1 toggles the
+    // minimap on (like a user click) and quits, so the next launch's startup
+    // restore can be checked. CRT_KATE_PERSIST_READ=<report.txt> writes the
+    // startup state (action checked + widget visible) and quits. Together they
+    // prove View > Show Minimap survives a restart (run on a fresh config dir).
+    if (qEnvironmentVariableIsSet("CRT_KATE_PERSIST_SET")) {
+        QTimer::singleShot(700, &app, [&app, &shell]() {
+            if (auto* mb = shell.findChild<MenuBar*>())
+                if (QAction* a = mb->findChild<QAction*>(QStringLiteral("actionViewMinimap")))
+                    if (!a->isChecked())
+                        a->trigger();   // flips on + persists via the wired handler
+            QTimer::singleShot(300, &app, [] { QCoreApplication::exit(0); });
+        });
+    }
+    if (const QByteArray readOut = qgetenv("CRT_KATE_PERSIST_READ"); !readOut.isEmpty()) {
+        QTimer::singleShot(1100, &app, [&app, &shell, readOut]() {
+            QByteArray s;
+            if (auto* mb = shell.findChild<MenuBar*>())
+                if (QAction* a = mb->findChild<QAction*>(QStringLiteral("actionViewMinimap"))) {
+                    s += "actionChecked=" + QByteArray::number(int(a->isChecked())) + " ";
+                    s += "checkedLabel=" + QByteArray::number(int(a->isChecked())) + " ";
+                }
+            if (Minimap* m = shell.minimap())
+                s += "widgetHidden=" + QByteArray::number(int(m->isHidden())) + " "
+                     + "mmLines=" + QByteArray::number(m->lines().size());
+            s += "\n";
+            QFile f(QString::fromUtf8(readOut));
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                f.write(s);
+            QCoreApplication::exit(0);
+        });
+    }
+
+
+    // Dev aid (unset in normal runs): CRT_KATE_MMPROBE=<report.txt> clicks the
+    // minimap through the PRODUCTION input path (ContentBridge::forwardMouseEvent,
+    // the same call QML makes) and writes the resulting scroll positions there.
+    if (const QByteArray probeOut = qgetenv("CRT_KATE_MMPROBE"); !probeOut.isEmpty()) {
+        QTimer::singleShot(700, &app, [&app, &tabs, &shell, &bridge, probeOut]() {
+            if (KTextEditor::View* v = tabs.activeView()) {
+                QString sample;
+                for (int i = 0; i < 300; ++i)
+                    sample += QStringLiteral("line %1 of the probe document\n").arg(i * 8);
+                v->document()->setText(sample);
+            }
+            if (auto* mb = shell.findChild<MenuBar*>())
+                if (QAction* a = mb->findChild<QAction*>(QStringLiteral("actionViewMinimap")))
+                    if (!a->isChecked())
+                        a->trigger();
+            QTimer::singleShot(600, &app, [&app, &tabs, &shell, &bridge, probeOut]() {
+                Minimap* mini = shell.minimap();
+                KTextEditor::View* v = tabs.activeView();
+                QByteArray report;
+                if (mini && v) {
+                    report += "before=" + QByteArray::number(v->firstDisplayedLine())
+                              + " lines=" + QByteArray::number(mini->lines().size());
+                    const QRect body = mini->bodyRect();
+                    const QPoint p = mini->mapTo(
+                        &shell, QPoint(body.center().x(), body.top() + body.height() * 3 / 4));
+                    report += " click=" + QByteArray::number(p.x()) + ","
+                              + QByteArray::number(p.y());
+                    bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                             Qt::LeftButton, Qt::NoModifier, p.x(), p.y());
+                    bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                             Qt::NoButton, Qt::NoModifier, p.x(), p.y());
+                }
+                QTimer::singleShot(300, &app,
+                                   [&app, &tabs, &shell, &bridge, report, probeOut]() {
+                    QByteArray out = report;
+                    KTextEditor::View* v = tabs.activeView();
+                    if (v)
+                        out += " afterClick=" + QByteArray::number(v->firstDisplayedLine())
+                               + " cursor=" + QByteArray::number(v->cursorPosition().line());
+                    // ... then the bottom (page-down) button, same input path.
+                    if (Minimap* mini = shell.minimap()) {
+                        const QPoint q = mini->mapTo(&shell, mini->bottomButtonRect().center());
+                        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                                 Qt::LeftButton, Qt::NoModifier, q.x(), q.y());
+                        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                                 Qt::NoButton, Qt::NoModifier, q.x(), q.y());
+                    }
+                    QTimer::singleShot(300, &app, [&app, &tabs, out, probeOut]() mutable {
+                        if (KTextEditor::View* v = tabs.activeView())
+                            out += " afterPage=" + QByteArray::number(v->firstDisplayedLine());
+                        out += "\n";
+                        QFile f(QString::fromUtf8(probeOut));
+                        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                            f.write(out);
+                        QCoreApplication::exit(0);
+                    });
+                });
+            });
+        });
+    }
+
+    // Dev aid (unset in normal runs): CRT_KATE_MMTRACK=<report.txt> scrolls the
+    // view with the real arrow keys and logs, per step, what the VIEW says the
+    // top line is vs what the MINIMAP was fed. Breaks the feed path if the
+    // thumb does not follow the document.
+    if (const QByteArray trackOut = qgetenv("CRT_KATE_MMTRACK"); !trackOut.isEmpty()) {
+        QTimer::singleShot(900, &app, [&app, &tabs, &shell, &bridge, trackOut]() {
+            if (KTextEditor::View* v = tabs.activeView()) {
+                QString sample;
+                for (int i = 0; i < 300; ++i)
+                    sample += QStringLiteral("line %1 of the tracked document\n").arg(i * 8);
+                v->document()->setText(sample);
+            }
+            if (auto* mb = shell.findChild<MenuBar*>())
+                if (QAction* a = mb->findChild<QAction*>(QStringLiteral("actionViewMinimap")))
+                    if (!a->isChecked())
+                        a->trigger();
+
+            auto snapshot = [&tabs, &shell]() {
+                QByteArray s;
+                KTextEditor::View* v = tabs.activeView();
+                if (v) {
+                    s += "viewTop=" + QByteArray::number(v->firstDisplayedLine())
+                         + " viewCursor=" + QByteArray::number(v->cursorPosition().line());
+                }
+                if (QScrollBar* b = [&tabs]() -> QScrollBar* {
+                        KTextEditor::View* vv = tabs.activeView();
+                        if (!vv) return nullptr;
+                        for (QScrollBar* c : vv->findChildren<QScrollBar*>())
+                            if (c->orientation() == Qt::Vertical
+                                && c->maximum() > c->minimum())
+                                return c;
+                        return nullptr;
+                    }())
+                    s += " bar=" + QByteArray::number(b->value()) + "/"
+                         + QByteArray::number(b->maximum())
+                         + " page=" + QByteArray::number(b->pageStep());
+                if (Minimap* m = shell.minimap())
+                    s += " mmFeedTopY=" + QByteArray::number(m->viewportRect().top())
+                         + " mmFeedH=" + QByteArray::number(m->viewportRect().height());
+                return s;
+            };
+
+            // One flat recursive lambda: each step sends arrow keys, snapshots
+            // the view-vs-minimap state, then re-invokes itself after a delay.
+            // Flat (not nested) so no lambda captures a reference to a local
+            // that dies when an outer singleShot lambda returns.
+            struct Step {
+                std::function<void(int)> run;
+            };
+            auto step = std::make_shared<Step>();
+            step->run = [step, &app, &tabs, snapshot, trackOut](int n) {
+                QByteArray label = (n == 0)
+                    ? QByteArrayLiteral("step0 (cursor=0, top)")
+                    : QByteArrayLiteral("step") + QByteArray::number(n)
+                          + (n == 1 ? QByteArrayLiteral(" (bar=mid)")
+                                    : QByteArrayLiteral(" (bar=end)"));
+                QByteArray line = label + ":" + snapshot() + "\n";
+                QFile f(QString::fromUtf8(trackOut));
+                if (f.open(QIODevice::Append)) f.write(line);
+                if (n >= 2) {            // all three snapshots captured
+                    QCoreApplication::exit(0);
+                    return;
+                }
+                // Drive the real scrollbar: n==1 -> mid, n==2 -> end.
+                if (KTextEditor::View* v = tabs.activeView()) {
+                    for (QScrollBar* b : v->findChildren<QScrollBar*>())
+                        if (b->orientation() == Qt::Vertical
+                            && b->maximum() > b->minimum()) {
+                            const int target = (n == 0) ? b->maximum() / 2
+                                                        : b->maximum();
+                            b->setValue(target);
+                            break;
+                        }
+                }
+                QTimer::singleShot(400, &app, [step, n] { step->run(n + 1); });
+            };
+            // Reset cursor to top so the bar starts at 0.
+            if (KTextEditor::View* v = tabs.activeView())
+                v->setCursorPosition(KTextEditor::Cursor(0, 0));
+            QTimer::singleShot(500, &app, [step] { step->run(0); });
         });
     }
 

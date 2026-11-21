@@ -64,6 +64,7 @@ void CrtSettings::resetToDefaults()
     m_fontSize = kFontSize;
     m_autosaveIntervalSeconds = kAutosaveIntervalSeconds;
     m_backgroundColor = kBackgroundColor;
+    m_minimapVisible = false;
 }
 
 bool CrtSettings::scanlinesEnabled() const
@@ -99,6 +100,7 @@ CRT_SET(double, RasterizationIntensity, m_rasterizationIntensity, rasterizationI
 CRT_SET(QColor, FontColor, m_fontColor, fontColorChanged)
 CRT_SET(int, FontSize, m_fontSize, fontSizeChanged)
 CRT_SET(QColor, BackgroundColor, m_backgroundColor, backgroundColorChanged)
+CRT_SET(bool, MinimapVisible, m_minimapVisible, minimapVisibleChanged)
 // Clamped to the spin box range: 0/negative would mean "never" or a hot loop.
 void CrtSettings::setAutosaveIntervalSeconds(int v)
 {
@@ -184,6 +186,7 @@ bool CrtSettings::load()
                 kAutosaveIntervalSeconds).toInt(),
         1, 3600);
     m_backgroundColor = s.value(QStringLiteral("backgroundColor"), kBackgroundColor).value<QColor>();
+    m_minimapVisible = s.value(QStringLiteral("minimapVisible"), false).toBool();
     s.endGroup();
 
     // Notify all listeners of the bulk reload (values likely changed).
@@ -207,6 +210,7 @@ bool CrtSettings::load()
     emit fontSizeChanged();
     emit autosaveIntervalSecondsChanged();
     emit backgroundColorChanged();
+    emit minimapVisibleChanged();
     emit scanlinesEnabledChanged();
     return true;
 }
@@ -250,6 +254,7 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("fontSize"), m_fontSize);
     s.setValue(QStringLiteral("autosaveIntervalSeconds"), m_autosaveIntervalSeconds);
     s.setValue(QStringLiteral("backgroundColor"), m_backgroundColor);
+    s.setValue(QStringLiteral("minimapVisible"), m_minimapVisible);
     s.endGroup();
     s.sync();
     return s.status() == QSettings::NoError;

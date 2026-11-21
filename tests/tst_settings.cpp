@@ -320,6 +320,37 @@ private slots:
         QVERIFY(s.autosaveIntervalSeconds() <= 3600);
     }
 
+    // Minimap visibility persists (user report 2026-11-21): toggling
+    // View > Show Minimap must survive a restart. Default stays OFF (the
+    // TV-revision rule that the minimap is hidden unless asked for).
+    void minimap_visible_defaults_off_and_roundtrips() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        {
+            CrtSettings s;
+            QCOMPARE(s.minimapVisible(), false);   // default off
+            s.setStorePath(store);
+            s.setMinimapVisible(true);
+            QCOMPARE(s.minimapVisible(), true);
+            QVERIFY2(s.save(), "save() returned false");
+        }
+
+        CrtSettings loaded;
+        loaded.setStorePath(store);
+        QVERIFY(loaded.load());
+        QCOMPARE(loaded.minimapVisible(), true);
+
+        // ... and OFF round-trips too (turning it back off must stick).
+        loaded.setMinimapVisible(false);
+        QVERIFY(loaded.save());
+        CrtSettings reloaded;
+        reloaded.setStorePath(store);
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.minimapVisible(), false);
+    }
+
     // The dialog exposes the setting as a spin box seeded from the settings
     // value and wired back into it (the live path main.cpp reads).
     void settings_dialog_offers_an_autosave_interval_spin() {
