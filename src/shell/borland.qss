@@ -105,6 +105,31 @@ QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel {
     background: transparent;
     color: #000000;
 }
+/* KTextEditor's inline message bar. The crash-recovery prompt ("The file was
+ * not closed properly." / View Changes / Recover Data / Discard) is one of
+ * these, NOT a QDialog — so the modal rules above never reached it and it
+ * inherited the global QWidget rule (blue field, editor-yellow ink), which is
+ * what made it look unstyled. Same house panel as the modals: grey field, black
+ * ink, TV plates on the action buttons. STYLE ONLY: the bar, its buttons and
+ * KTextEditor's behaviour (and the swap data it protects) are untouched. */
+KateMessageWidget, KMessageWidget {
+    background-color: #AAAAAA;
+    color: #000000;
+}
+KateMessageWidget QLabel, KMessageWidget QLabel {
+    background: transparent;
+    color: #000000;
+}
+/* The crash-recovery bar's action plates (View Changes / Recover Data /
+ * Discard) are painted by BorlandStyle::drawPrimitive(PE_PanelButtonTool), NOT
+ * by QSS: a `border` paints a full-height arm (black at the top-right and
+ * bottom-left where the reference shows grey) and Qt ignores box-shadow. There
+ * is deliberately NO QSS rule matching these buttons - ANY QSS rule routes the
+ * widget through QStyleSheetStyle, which owns the panel and never calls the
+ * style engine (proved: PE_PanelButtonTool is not invoked while a rule exists).
+ * The black label ink comes from the bar's `color: #000000`, inherited by the
+ * button's text. */
+
 /* Editor placeholder glyph text: yellow like editor text (spec 4). Also
    never black — spec 1 bans pure black inside the window. */
 QLabel#editorPlaceholder { background: transparent; color: #FFFF55; }

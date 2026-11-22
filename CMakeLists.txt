@@ -258,6 +258,13 @@ add_test(NAME tst_splitview COMMAND tst_splitview)
 add_executable(agi_dialogshots .relay/agi_shots.cpp)
 target_link_libraries(agi_dialogshots PRIVATE crt-editor Qt6::Widgets KF6::TextEditor)
 
+# Dev aid (not a gate suite): renders the crash-recovery message bar (KTextEditor's
+# KateMessageWidget) so its styling can be iterated without a real crash swap.
+add_executable(agi_recoverybar .relay/agi_recoverybar.cpp)
+target_link_libraries(agi_recoverybar PRIVATE Qt6::Widgets)
+target_compile_definitions(agi_recoverybar PRIVATE
+    CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
 # 2026-11-20: the external-change watcher wiring (real files, real watcher).
 add_executable(tst_reload tests/tst_reload.cpp)
 target_link_libraries(tst_reload PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

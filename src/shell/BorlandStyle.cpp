@@ -15,6 +15,10 @@ const QColor kBlack(0x00, 0x00, 0x00);
 const QColor kHotRed(0xAA, 0x00, 0x00);
 const QColor kSelectGreen(0x00, 0xAA, 0x00);   // spec 6 menu highlight
 const QColor kMenuGray(0xAA, 0xAA, 0xAA);
+// House block shadow behind the recovery-bar action plates (TvFileDock /
+// TvModal kButtonShadow = 4): the plate is the button rect inset by this on
+// right+bottom, and the black shadow sits at +4,+4 behind it.
+const int kButtonShadow = 4;
 }
 
 BorlandStyle::BorlandStyle(QStyle* base) : QProxyStyle(base) {}
@@ -200,6 +204,28 @@ void BorlandStyle::drawControl(ControlElement ce, const QStyleOption* opt,
         }
         return;
     }
+    if (ce == CE_ToolButtonLabel) {
+        // The recovery bar's action plates carry BLACK label ink on the green
+        // plate. Without a QSS rule the button's text would come from
+        // QPalette::ButtonText (the app's editor yellow here), so paint it black
+        // explicitly. The label option is a QStyleOptionToolButton, not a
+        // QStyleOptionButton - guard the cast (an unguarded deref crashed here)
+        // and delegate layout (icon/arrow/centering) to the base style with a
+        // palette whose text is black.
+        const QWidget* parent = w ? w->parentWidget() : nullptr;
+        const QByteArray cls = parent ? QByteArray(parent->metaObject()->className())
+                                      : QByteArray();
+        if (cls == "KateMessageWidget" || cls == "KMessageWidget") {
+            if (const auto* to = qstyleoption_cast<const QStyleOptionToolButton*>(opt)) {
+                QStyleOptionToolButton o(*to);
+                o.palette.setColor(QPalette::ButtonText, kBlack);
+                QProxyStyle::drawControl(ce, &o, p, w);
+            } else {
+                QProxyStyle::drawControl(ce, opt, p, w);
+            }
+            return;
+        }
+    }
     QProxyStyle::drawControl(ce, opt, p, w);
 }
 
@@ -212,6 +238,42 @@ void BorlandStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption* opt,
         // painting - see the CE_MenuItem branch.
         p->fillRect(opt->rect, kMenuGray);
         return;
+    }
+    // The crash-recovery bar's action plates (View Changes / Recover Data /
+    // Discard). The reference plate (TvModal/TvFileDock/TvPlate) casts a black
+    // block shadow as a rect TRANSLATED (+4,+4) BEHIND the green plate, so the
+    // shadow is hidden by the plate at the top-right and bottom-left - those
+    // two corners show the pane's grey, which is what makes it read as a hard
+    // DOS block shadow rather than a border (TvPlate::paintEvent:
+    // fillRect(plate.translated(4,4)) then fillRect(plate)).
+    //
+    // QSS cannot do this: a `border` paints a full-height arm flush to every
+    // plate edge (black in exactly those two corners) and Qt ignores
+    // box-shadow. The style engine runs DURING the button's paint - the one
+    // place an event filter cannot reach, because a filter always runs before
+    // the handler and is overwritten. So the notch is painted here.
+    //
+    // Scoped to buttons whose PARENT is the message bar so every other
+    // QToolButton in the app keeps its normal panel.
+    if (pe == PE_PanelButtonTool) {
+        const QWidget* parent = w ? w->parentWidget() : nullptr;
+        const QByteArray cls = parent ? QByteArray(parent->metaObject()->className())
+                                      : QByteArray();
+        if (cls == "KateMessageWidget" || cls == "KMessageWidget") {
+            // Button rect = PLATE + the 4px shadow band (TvPlate's model): the
+            // green plate is the rect inset 4px on right+bottom, the black
+            // shadow fills the vacated band at +4,+4, and only the offset L
+            // survives - hidden behind the plate at top-right/bottom-left.
+            const QRect plate = opt->rect.adjusted(0, 0, -kButtonShadow, -kButtonShadow);
+            if (plate.width() > 0 && plate.height() > 0) {
+                p->fillRect(opt->rect, kMenuGray);      // band backdrop / notch grey
+                p->fillRect(plate.translated(kButtonShadow, kButtonShadow), kBlack);
+                p->fillRect(plate, kSelectGreen);
+            }
+            // The label is drawn by CE_ToolButtonLabel (black ink via the
+            // QSS `color` on the bar); nothing to do for the panel here.
+            return;
+        }
     }
     if (pe == PE_Frame || pe == PE_FrameMenu || pe == PE_FrameTabWidget) {
         // Sunken/inset frame around panels.
