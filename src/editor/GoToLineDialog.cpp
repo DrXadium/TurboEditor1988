@@ -29,7 +29,6 @@ GoToLineDialog::GoToLineDialog(int lineCount, QWidget* parent)
     label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
 
     m_cell = new FieldCell(body);
-    m_cell = new FieldCell(body);
     // TvLineEdit: the shell is never an active window, so a plain QLineEdit
     // draws no caret (2026-11-21 - "none of the input fields shows the mouse
     // cursor position"). The DOS block caret is drawn by the field itself.

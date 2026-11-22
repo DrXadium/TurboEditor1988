@@ -1286,6 +1286,57 @@ private slots:
         QVERIFY2(dock.horizontalOffset() > 0, "names still at 0 after dragging to mid-range");
         dock.reject();
     }
+
+    // 2026-11-21 (round 5, FAIL 1): live File > Open showed no caret and
+    // Backspace edited the editor behind the dock. The test suite passed
+    // because EVERY existing test calls shell.show() before
+    // bridge.setShellWindow(&shell); production main.cpp never did. Without a
+    // live parent window, dock->show() delivers no QShowEvent, TvFileDock::
+    // showEvent never runs, the keyboard is never claimed, and focus never
+    // moves into a field. This test reproduces the PRODUCTION ORDER (bridge
+    // first, no prior show) and pins the chain: keyboard claimed, field gets
+    // key focus, caret paints, Backspace stays in the field.
+    void the_production_order_still_claims_the_keyboard_and_focuses_a_field()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        // NOTE: no shell.show() here - that is the production bug.
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);   // the bridge must show() internally
+        QCoreApplication::processEvents();
+
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                             QStringLiteral("Open File"),
+                                             QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        QVERIFY2(shell.keyboardIsOwned(),
+                 "opening the dock in the production order did not claim the keyboard");
+
+        auto* path = qobject_cast<TvLineEdit*>(
+            dock->findChild<QLineEdit*>(QStringLiteral("tvFileDockPath")));
+        QVERIFY2(path, "the path field is not a TvLineEdit");
+
+        const QPoint shellPt = path->mapTo(&shell, path->rect().center());
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(path->holdsKeyFocus(),
+                 "clicking the path field in the production order did not give it key focus");
+        QVERIFY2(!path->caretRect().isEmpty(),
+                 "focused path field reports no caret cell");
+
+        dock->reject();
+        QCoreApplication::processEvents();
+        QVERIFY2(!shell.keyboardIsOwned(),
+                 "closing the dock left the keyboard claimed");
+    }
 };
 
 int main(int argc, char** argv)

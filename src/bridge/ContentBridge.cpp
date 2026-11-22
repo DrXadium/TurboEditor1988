@@ -2,6 +2,7 @@
 #include "ContentBridge.h"
 #include "src/shell/ShellWindow.h"
 #include "src/shell/FKeyStatusBar.h"
+#include "src/shell/TvLineEdit.h"
 #include <QPainter>
 #include <QLayout>
 #include <QMenu>
@@ -25,6 +26,16 @@ void ContentBridge::setShellWindow(ShellWindow* shell)
         // real window (the visible window is the QML CRT scene).
         m_shell->setAttribute(Qt::WA_DontShowOnScreen);
         m_shell->ensurePolished();
+        // Show BEFORE marking offscreen: a child's showEvent (TvFileDock
+        // claims the keyboard, TvModal's Show filter claims it) only fires if
+        // the parent window already exists. Production never called
+        // shell.show() before this, so dock->show() delivered no Show event,
+        // the keyboard was never claimed, and every keystroke leaked to the
+        // editor behind the dialog (the 2026-11-21 live report: no caret, and
+        // Backspace edited the document). Tests already show() first; doing
+        // it here makes the order a guarantee of the bridge, not a caller
+        // convention.
+        m_shell->show();
         // Create the platform window WITHOUT mapping it. QMenuBar's popup
         // path (QMenuBarPrivate::popupAction) reads
         // window()->windowHandle()->screen() when a menu opens; on a shell
@@ -325,12 +336,32 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
         if (!logPath.isEmpty()) {
             if (QFile f(QString::fromLocal8Bit(logPath));
                 f.open(QIODevice::Append | QIODevice::Text)) {
-                f.write(QStringLiteral("key type=%1 target=%2 text=%3\n")
+                const bool owned = m_shell->keyboardIsOwned();
+                const QWidget* owner = m_shell->keyboardOwner();
+                const bool ownerHidden = owner && owner->isHidden();
+                const bool ownerVisible = owner && owner->isVisible();
+                const bool targetIsTv = qobject_cast<TvLineEdit*>(target);
+                const bool targetIsVisible = target->isVisible();
+                const bool targetIsHidden = target->isHidden();
+                const bool targetHoldsKeyFocus = targetIsTv
+                    && static_cast<const TvLineEdit*>(target)->holdsKeyFocus();
+                f.write(QStringLiteral("key type=%1 target=%2 text=%3 owned=%4 owner=%5 ownerHidden=%6 ownerVisible=%7 targetTv=%8 targetVisible=%9 targetHidden=%10 holdsKeyFocus=%11\n")
                             .arg(type)
                             .arg(target->objectName().isEmpty()
                                      ? QString::fromLatin1(target->metaObject()->className())
                                      : target->objectName())
                             .arg(text)
+                            .arg(owned)
+                            .arg(owner ? (owner->objectName().isEmpty()
+                                              ? QString::fromLatin1(owner->metaObject()->className())
+                                              : owner->objectName())
+                                       : QStringLiteral("<null>"))
+                            .arg(ownerHidden)
+                            .arg(ownerVisible)
+                            .arg(targetIsTv)
+                            .arg(targetIsVisible)
+                            .arg(targetIsHidden)
+                            .arg(targetHoldsKeyFocus)
                             .toUtf8());
             }
         }
