@@ -326,6 +326,27 @@ int main(int argc, char** argv)
     // would move focus but leave the minimap on pane 0's document.
     QObject::connect(&shell, &ShellWindow::activePaneChanged, &tabs,
                      [&tabs](int pane) { tabs.setActivePane(pane); });
+    // The split-view wiring (2026-11-21 fix): EditorTabManager opens/closes its
+    // secondary view and emits splitChanged, but nothing told the SHELL to show
+    // pane 1 - so both menu actions looked like no-ops. On open, install the
+    // secondary stack into pane 1 with the split doc's name; on close, collapse.
+    QObject::connect(&tabs, &EditorTabManager::splitChanged, &shell,
+                     [&shell, &tabs](bool open) {
+                         if (open) {
+                             KTextEditor::Document* d = tabs.documentForPane(1);
+                             QString name = QStringLiteral("untitled");
+                             if (d) {
+                                 const QString f = d->url().toLocalFile();
+                                 name = f.isEmpty() ? d->documentName()
+                                                    : QFileInfo(f).fileName();
+                                 if (name.isEmpty())
+                                     name = QStringLiteral("untitled");
+                             }
+                             shell.setSplitEditorWidget(tabs.secondaryContainerWidget(), name);
+                         } else {
+                             shell.clearSplitEditorWidget();
+                         }
+                     });
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [&repointMinimap](const QStringList&, int) { repointMinimap(); });
     repointMinimap();
