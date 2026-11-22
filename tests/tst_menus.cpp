@@ -491,6 +491,8 @@ private slots:
 
         const QStringList required = {
             QStringLiteral("actionFileNew"),   QStringLiteral("actionFileOpen"),
+            // Split view (2026-11-21): File > Open as Split Document...
+            QStringLiteral("actionFileOpenAsSplit"),
             QStringLiteral("actionFileSave"),  QStringLiteral("actionFileSaveAs"),
             QStringLiteral("actionEditUndo"),  QStringLiteral("actionEditRedo"),
             QStringLiteral("actionEditCut"),   QStringLiteral("actionEditCopy"),
@@ -515,6 +517,8 @@ private slots:
             QStringLiteral("actionViewNonprintable"),
             QStringLiteral("actionViewBrackets"),
             QStringLiteral("actionViewGo"),
+            // Split view (2026-11-21): View > Open Document in New View.
+            QStringLiteral("actionViewOpenInNewView"),
             QStringLiteral("actionSessionSave"), QStringLiteral("actionSessionRestore"),
             QStringLiteral("actionSettingsConfigure"),
             QStringLiteral("actionHelpAbout"),
@@ -532,6 +536,13 @@ private slots:
             QAction* a = mb->findChild<QAction*>(name);
             QVERIFY2(a && a->isCheckable(),
                      qPrintable(QStringLiteral("'%1' should be a checkable toggle").arg(name)));
+        }
+        // Split actions are one-shot commands, NOT checkable toggles.
+        for (const QString& name : { QStringLiteral("actionFileOpenAsSplit"),
+                                     QStringLiteral("actionViewOpenInNewView") }) {
+            QAction* a = mb->findChild<QAction*>(name);
+            QVERIFY2(a && !a->isCheckable(),
+                     qPrintable(QStringLiteral("'%1' should be a non-checkable action").arg(name)));
         }
     }
 

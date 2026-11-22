@@ -52,6 +52,9 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     QMenu* file = addMenu(QStringLiteral("File"));
     added(file, QStringLiteral("&New"), QStringLiteral("actionFileNew"));
     added(file, QStringLiteral("&Open..."), QStringLiteral("actionFileOpen"));
+    // Split view (2026-11-21): open a file into the RIGHT pane of a new split.
+    added(file, QStringLiteral("&Open as Split Document..."),
+          QStringLiteral("actionFileOpenAsSplit"));
     file->addSeparator();
     added(file, QStringLiteral("&Save"), QStringLiteral("actionFileSave"));
     added(file, QStringLiteral("Save &As..."), QStringLiteral("actionFileSaveAs"));
@@ -104,6 +107,12 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     added(search, QStringLiteral("Find &Next"), QStringLiteral("actionSearchFindNext"));
 
     QMenu* view = addMenu(QStringLiteral("View"));
+    // Split view (2026-11-21): a second view of the ACTIVE document (own caret/
+    // folds), so the user can look at two places at once. First row of View.
+    QAction* newView = added(view, QStringLiteral("&Open Document in New View"),
+                             QStringLiteral("actionViewOpenInNewView"));
+    newView->setStatusTip(QStringLiteral("Show a second view of this document"));
+    view->addSeparator();
     QAction* zoomIn = added(view, QStringLiteral("Zoom &In"),
                             QStringLiteral("actionViewZoomIn"));
     zoomIn->setStatusTip(QStringLiteral("Increase the text size"));

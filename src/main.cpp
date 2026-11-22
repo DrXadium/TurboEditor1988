@@ -662,6 +662,21 @@ int main(int argc, char** argv)
                 recentFiles.add(f);
             }
         });
+        // File > Open as Split Document (2026-11-21): pick a file and show it
+        // in the RIGHT pane of a new split (max one split; the file also opens
+        // as its own tab, so closing the split never closes the document).
+        on(act("actionFileOpenAsSplit"), [&shell, &tabs, &recentFiles] {
+            const QString f = TvFileDock::getOpenFileName(
+                &shell, QObject::tr("Open File as Split"),
+                QDir::currentPath(), QStringLiteral("All files (*)"),
+                recentFiles.entries());
+            if (!f.isEmpty()) {
+                const QUrl url = QUrl::fromLocalFile(f);
+                tabs.openFile(url);              // make it a tab first
+                tabs.openSplitWithDocument(tabs.activeDocument());
+                recentFiles.add(f);
+            }
+        });
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
         on(act("actionFileSaveAs"), [&shell, &tabs, &recentFiles] {
             QString start = QDir::currentPath();
@@ -756,6 +771,9 @@ int main(int argc, char** argv)
         on(act("actionSearchFindNext"), [&tabs] { tabs.findNext(); });
 
         // View: zoom + checkable toggles
+        // View > Open Document in New View (2026-11-21): a second view of the
+        // ACTIVE document (own caret/folds/scroll), so two places show at once.
+        on(act("actionViewOpenInNewView"), [&tabs] { tabs.openSplitWithActiveDocument(); });
         on(act("actionViewZoomIn"), [&tabs] { tabs.setZoom(+1); });
         on(act("actionViewZoomOut"), [&tabs] { tabs.setZoom(-1); });
         on(act("actionViewZoomReset"), [&tabs] { tabs.setZoom(0); });
