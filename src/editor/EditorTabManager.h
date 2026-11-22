@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QKeySequence>
 #include <QStackedWidget>
+#include <QPointer>
 #include <QFileSystemWatcher>
 #include <functional>
 class QIcon;
@@ -372,12 +373,17 @@ private:
     void finishView(KTextEditor::View* view);
     KTextEditor::View* ensureSecondaryView(KTextEditor::Document* doc);
     void destroySecondaryViews();   // synchronous teardown (see dtor)
+    bool anyLiveSecondary() const;  // true if any pane-1 view is still ALIVE
+                                    // (m_secondaryViews holds QPointers, which
+                                    // null when the shell's pane teardown kills them)
     QList<KTextEditor::Document*> m_docs;
     QList<KTextEditor::View*> m_views;              // pane 0 (primary) view per doc
-    QHash<KTextEditor::Document*, KTextEditor::View*> m_secondaryViews;  // pane 1
+    QHash<KTextEditor::Document*, QPointer<KTextEditor::View>> m_secondaryViews;  // pane 1; QPointer so a view destroyed by the shell's pane teardown self-nulls
     int m_active = -1;
     int m_activePane = 0;                            // which pane owns focus
-    QStackedWidget* m_stack1 = nullptr;              // pane 1's view stack (lazy)
+    QPointer<QStackedWidget> m_stack1;         // pane 1's view stack (lazy); QPointer
+                                               // self-clears if the shell destroys it
+                                               // (clearSplitEditorWidget -> pane1 death)
     KTextEditor::Document* m_splitDoc = nullptr;     // the document shown in pane 1
     QMetaObject::Connection m_cursorConn;
     int m_basePointSize = -1;   // font point size at first view (zoom baseline)

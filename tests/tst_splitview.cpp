@@ -473,6 +473,80 @@ private slots:
         QCOMPARE(w.paneWidget(1)->rightBar()->maximum(), 200);
         QCOMPARE(w.paneWidget(0)->rightBar()->maximum(), 100);
     }
+
+    // Round 9 (LIVE CRASH repro, 2026-11-22): View > Open Document in New View
+    // segfaults after a split was opened and then closed with the pane-1 ■ box,
+    // leaving only a regular view. Root cause: the ■ box drives ONLY the shell's
+    // clearSplitEditorWidget() -> EditorSplitter::closeSplit(), which tears down
+    // the shell's pane1/column widgets but NEVER calls EditorTabManager::closeSplit()
+    // - so m_secondaryViews keeps the now-orphaned view. The next
+    // openSplitWithActiveDocument() -> ensureSecondaryView() finds the doc still in
+    // the map and hands back the STALE view -> segfault. Reproduces the exact wiring
+    // from main.cpp (splitChanged -> shell), then drives the ■ close and a re-open.
+    void reopening_the_split_after_the_close_box_yields_a_live_view() {
+        EditorTabManager tabs;
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);          // pane 0's slot
+        w.show();
+        QCoreApplication::processEvents();
+
+        // The composition-root wiring (main.cpp:335): tabs.splitChanged -> shell.
+        QObject::connect(&tabs, &EditorTabManager::splitChanged, &w,
+                         [&tabs, &w](bool open) {
+                             if (open) {
+                                 KTextEditor::Document* d = tabs.documentForPane(1);
+                                 QString name;
+                                 if (d) {
+                                     const QString f = d->url().toLocalFile();
+                                     name = f.isEmpty() ? d->documentName() : QFileInfo(f).fileName();
+                                 }
+                                 if (name.isEmpty()) name = QStringLiteral("untitled");
+                                 w.setSplitEditorWidget(tabs.secondaryContainerWidget(), name);
+                             } else {
+                                 w.clearSplitEditorWidget();
+                             }
+                         });
+
+        // 1. Open a second view of the active document (the menu action).
+        tabs.openSplitWithActiveDocument();
+        QCoreApplication::processEvents();
+        QVERIFY2(tabs.splitOpen(), "split must open");
+        KTextEditor::View* first = tabs.viewForPane(1);
+        QVERIFY2(first, "pane 1 must hold a view after the first open");
+
+        // 2. Close the split the way the ■ box does: the SHELL's clear path.
+        //    This is the live crash's precondition - only the shell tears down.
+        w.clearSplitEditorWidget();
+        QCoreApplication::processEvents();
+        QVERIFY2(!w.splitOpen(), "shell split must collapse after the ■ box");
+
+        // 3. Re-open: View > Open Document in New View again. Must be SAFE: it
+        //    reuses a still-alive view, or (if the shell destroyed it with pane 1)
+        //    creates a FRESH one - never a dangling pointer. The crash this guards
+        //    was the double-free in ~EditorTabManager (destroySecondaryViews ->
+        //    removeWidget/delete on a view pane-1's teardown already killed),
+        //    proven RED at RC=139 before the QPointer fix.
+        tabs.openSplitWithActiveDocument();
+        QCoreApplication::processEvents();
+
+        // The reopened split must be reported OPEN with a live view (the action
+        // is supposed to have a second view of the active document).
+        QVERIFY2(tabs.splitOpen(), "re-open must report an open split");
+        KTextEditor::View* second = tabs.viewForPane(1);
+        QVERIFY2(second, "re-open must yield a pane-1 view");
+        QVERIFY2(second->parent() != nullptr,
+                 "pane-1 view has no parent (dangling -> the crash)");
+        QCOMPARE(second->document(), tabs.activeDocument());
+        // If it reused the first view, that view must STILL be alive (a dead one
+        // would have a null QPointer, so viewForPane(1) would have returned null).
+        if (second == first)
+            QVERIFY2(first->parent() != nullptr, "reused view died but was returned");
+        // The LIVE-DEATH guarantee: when `tabs` goes out of scope below, its dtor
+        // runs destroySecondaryViews() over whatever state the shell's teardown
+        // left - before the QPointer fix this SIGSEGV'd (RC=139). Completing the
+        // test at RC==0 is itself the regression proof.
+    }
 };
 
 QTEST_MAIN(TstSplitView)

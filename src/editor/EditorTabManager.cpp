@@ -311,17 +311,30 @@ EditorTabManager::~EditorTabManager()
 
 // Synchronously remove + delete every secondary (pane 1) view. No-ops when the
 // hash is already clear.
+//
+// The shell can DESTROY m_stack1 underneath us: setSplitEditorWidget() reparents
+// m_stack1 into pane 1's body layout, and ShellWindow::clearSplitEditorWidget()
+// (the pane-1 ■ box) tears pane 1 down WITHOUT calling tabs.closeSplit() - so
+// m_stack1 may already be a dangling raw pointer when this runs (the live
+// "Open Document in New View segfaults after closing a split" report). A QPointer
+// lets us detect that death: it self-clears when the stack is destroyed. Without
+// it we call removeWidget() on freed memory (SIGSEGV at EditorTabManager.cpp:322,
+// proven by tst_splitview::reopening_the_split_after_the_close_box_yields_a_live_view).
 void EditorTabManager::destroySecondaryViews()
 {
     const auto views = std::as_const(m_secondaryViews);
     m_secondaryViews.clear();   // clear FIRST: a view dtor may re-enter
-    for (KTextEditor::View* v : views) {
+    QStackedWidget* stack = m_stack1.data();   // null if the shell already killed it
+    for (const QPointer<KTextEditor::View>& pv : views) {
+        KTextEditor::View* v = pv;   // null if already destroyed with pane 1
         if (!v)
             continue;
-        if (m_stack1)
-            m_stack1->removeWidget(v);
+        if (stack)
+            stack->removeWidget(v);
         delete v;               // synchronous: safe here, no event loop needed
     }
+    if (!m_stack1)              // the shell destroyed the stack with pane 1
+        m_stack1 = nullptr;     // (QPointer already nulled; keep the raw ptr honest)
     m_splitDoc = nullptr;
 }
 
@@ -381,9 +394,20 @@ KTextEditor::Document* EditorTabManager::documentForPane(int pane) const
     return v ? v->document() : nullptr;
 }
 
+// True when at least one pane-1 view is still alive. m_secondaryViews keeps
+// QPointer values (a view destroyed with pane 1's teardown self-nulls), so
+// isEmpty()/contains() can be stale - a hash of dead keys still has entries.
+bool EditorTabManager::anyLiveSecondary() const
+{
+    for (auto it = m_secondaryViews.constBegin(); it != m_secondaryViews.constEnd(); ++it)
+        if (it.value())
+            return true;
+    return false;
+}
+
 bool EditorTabManager::splitOpen() const
 {
-    return !m_secondaryViews.isEmpty();
+    return anyLiveSecondary();
 }
 
 // Run the per-view setup every pane-0/pane-1 view needs (style, key routing,
@@ -404,8 +428,14 @@ KTextEditor::View* EditorTabManager::ensureSecondaryView(KTextEditor::Document* 
     if (!doc)
         return nullptr;
     auto it = m_secondaryViews.constFind(doc);
-    if (it != m_secondaryViews.end())
-        return it.value();
+    if (it != m_secondaryViews.end()) {
+        if (KTextEditor::View* existing = it.value())
+            return existing;      // still alive: reuse it
+        // The shell destroyed this view with pane 1's teardown (clearSplitEditor-
+        // Widget never calls closeSplit). Fall through and make a FRESH view -
+        // reusing the dead pointer is the live "Open Document in New View" crash.
+        m_secondaryViews.remove(doc);
+    }
     KTextEditor::View* v = doc->createView(nullptr);
     finishView(v);
     secondaryContainerWidget()->addWidget(v);
@@ -446,7 +476,7 @@ void EditorTabManager::openSplitWithDocument(KTextEditor::Document* doc)
     m_splitDoc = doc;
     secondaryContainerWidget()->setCurrentWidget(v);
 
-    const bool wasOpen = !m_secondaryViews.isEmpty();
+    const bool wasOpen = anyLiveSecondary();
     emit splitChanged(wasOpen);
     emit activeViewChanged(activeView());
     trackActiveCursor();
@@ -459,7 +489,10 @@ void EditorTabManager::closeSplit()
 {
     if (m_secondaryViews.isEmpty())
         return;
-    for (KTextEditor::View* v : std::as_const(m_secondaryViews)) {
+    for (const QPointer<KTextEditor::View>& pv : std::as_const(m_secondaryViews)) {
+        KTextEditor::View* v = pv;      // null if the shell already destroyed it
+        if (!v)
+            continue;
         if (m_stack1)
             m_stack1->removeWidget(v);
         v->deleteLater();
@@ -812,7 +845,10 @@ void EditorTabManager::closeTab(int index)
     // Closing a tab collapses the split if that document was showing in the
     // right pane (the split never outlives its document; pane 0 keeps its own
     // document). No-ops when there is no split or a different doc is split.
-    if (m_secondaryViews.contains(doc))
+    // A doc is "split" only while its pane-1 view is ALIVE (a dead QPointer key
+    // must not trigger a teardown against an already-destroyed view).
+    const auto it = m_secondaryViews.constFind(doc);
+    if (it != m_secondaryViews.constEnd() && it.value())
         closeSplit();
     doc = m_docs.takeAt(index);
     KTextEditor::View* view = m_views.takeAt(index);
