@@ -140,8 +140,16 @@ void EditorPane::showCloseBox(bool show)
     if (!m_closeBox)
         return;
     m_closeBox->setVisible(show);
-    if (show)
+    if (show) {
+        // Position it NOW: a pane that already has its final width never sees
+        // another resize, so waiting for updateFrameMargins() left the box at
+        // its default geometry - and since the widget has no paintEvent (the
+        // pane paints the ■ from closeBoxRect), that meant no close control was
+        // drawn at all. update() repaints the glyph on the same turn.
+        updateFrameMargins();
         m_closeBox->raise();
+        update();
+    }
 }
 
 QRect EditorPane::closeBoxRect() const
@@ -184,7 +192,10 @@ void EditorPane::updateFrameMargins()
     layoutTitle();
 
     // The ■ floats in the title row's right cell (one cell in from the corner).
-    if (m_closeBox && m_closeBox->isVisible()) {
+    // isHidden() (not isVisible()): a pane whose ancestor is still hidden must
+    // still get the box's geometry, or it stays at the default rect and the
+    // pane paints no ■ at all once shown (tst_splitview pins this).
+    if (m_closeBox && !m_closeBox->isHidden()) {
         const int cw = cellWidth();
         const int ch = cellHeight();
         const int box = ch;

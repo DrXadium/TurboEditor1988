@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "EditorSplitter.h"
 #include "EditorPane.h"
+#include "BottomBand.h"
 #include "TvFrame.h"
 
 #include <QPainter>
 #include <QPaintEvent>
+#include <QVBoxLayout>
 
 namespace {
 const QColor kFrameWhite(0xFF, 0xFF, 0xFF);
@@ -87,9 +89,39 @@ void EditorSplitter::openSplit()
         m_pane1 = new EditorPane(this);
         m_pane1->setPaneIndex(1);
     }
-    // Insert pane 1 at index 1 (right after pane 0), before the minimap.
-    QSplitter::insertWidget(1, m_pane1);
+    // Each pane sits in a COLUMN with its own band directly below it. Both panes
+    // are wrapped so they keep the SAME height (their text rows stay aligned)
+    // and each gets its own L:C row. Pane 0's band leaves the host layout here;
+    // closeSplit() hands it back. Inserting the columns (not the panes) is what
+    // gives pane 1 a place for its band - before this the band was an unparented
+    // child of the pane and painted as a blob at the pane's top-left.
+    if (!m_col0) {
+        m_col0 = new QWidget(this);
+        auto* v0 = new QVBoxLayout(m_col0);
+        v0->setContentsMargins(0, 0, 0, 0);
+        v0->setSpacing(0);
+        v0->addWidget(m_pane0, 1);
+        v0->addWidget(m_pane0->bottomBand(), 0);
+    }
+    QSplitter::insertWidget(0, m_col0);
+
+    if (!m_col1) {
+        m_col1 = new QWidget(this);
+        auto* v1 = new QVBoxLayout(m_col1);
+        v1->setContentsMargins(0, 0, 0, 0);
+        v1->setSpacing(0);
+        v1->addWidget(m_pane1, 1);
+        v1->addWidget(m_pane1->bottomBand(), 0);
+    }
+    // Insert pane 1's column at index 1 (right after pane 0), before the minimap.
+    QSplitter::insertWidget(1, m_col1);
+    // Reparenting a pane out of the splitter hides it; a hidden item gets zero
+    // space from the column layout (which then hands the whole column to the
+    // band), so both panes must be shown explicitly.
+    m_pane0->show();
     m_pane1->show();
+    m_col0->show();
+    m_col1->show();
     setHandleWidth(m_pane0 ? m_pane0->cellWidth() : 8);
     // Ensure both panes get at least the minimum width.
     applyMinWidth();
@@ -107,6 +139,26 @@ void EditorSplitter::closeSplit()
         m_pane1->setParent(nullptr);
         m_pane1->deleteLater();
         m_pane1 = nullptr;
+    }
+    if (m_col1) {
+        // The column still owns pane 1's band; it dies with the column.
+        m_col1->setParent(nullptr);
+        m_col1->deleteLater();
+        m_col1 = nullptr;
+    }
+    // Restore pane 0 to a direct child and hand its band back to the host
+    // layout (appended, i.e. below the splitter - the unsplit shape).
+    if (m_col0) {
+        if (auto* lay = m_col0->layout())
+            lay->removeWidget(m_pane0);
+        QSplitter::insertWidget(0, m_pane0);
+        if (auto* host = parentWidget()) {
+            if (auto* hostLay = host->layout())
+                hostLay->addWidget(m_pane0->bottomBand());
+        }
+        m_col0->setParent(nullptr);
+        m_col0->deleteLater();
+        m_col0 = nullptr;
     }
     setHandleWidth(0);
     applyMinWidth();

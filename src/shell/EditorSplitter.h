@@ -43,4 +43,10 @@ private:
 
     EditorPane* m_pane0 = nullptr;
     EditorPane* m_pane1 = nullptr;
+    // While split, each pane sits in a column with its BottomBand directly
+    // below it (so each pane shows its own L:C row and both panes keep the same
+    // height). Null while unsplit: pane 0 is then a direct child and its band
+    // lives in the host layout.
+    QWidget* m_col0 = nullptr;
+    QWidget* m_col1 = nullptr;
 };

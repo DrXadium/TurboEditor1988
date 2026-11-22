@@ -45,6 +45,7 @@
 #include "src/shell/AboutModal.h"
 #include "src/editor/FindReplaceDialog.h"
 #include "src/editor/GoToLineDialog.h"
+#include "src/editor/ReloadDialog.h"
 #include "src/shell/TvModal.h"
 #include <QPushButton>
 #include "src/session/SessionManager.h"
@@ -57,6 +58,7 @@
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+
     // User-facing identity. The on-disk identity is deliberately different
     // (AppIdentity::storageDirName) so saved sessions/settings are not orphaned
     // by the rename - see SessionManager and CrtSettings.
@@ -616,6 +618,17 @@ int main(int argc, char** argv)
         });
     }
 
+    // Dev aid (unset in normal runs): CRT_KATE_SPLIT=1 opens a split with the
+    // ACTIVE document at launch (the picker-free View > Open Document in New
+    // View path), so a capture can prove the split chrome - pane titles, the
+    // TvSplitHandle divider, the pane1-only close box, per-pane gutter/caret -
+    // without a pointer tool or the interactive file picker. Same family as
+    // CRT_KATE_BLOCKPROBE and CRT_KATE_FILEDLG. Pair with CRT_KATE_RAWSHOT +
+    // CRT_KATE_RAWSHOT_DELAY to grab the composited window after the split opens.
+    if (qEnvironmentVariableIsSet("CRT_KATE_SPLIT")) {
+        QTimer::singleShot(700, &app, [&tabs] { tabs.openSplitWithActiveDocument(); });
+    }
+
     ContentBridge bridge;
     bridge.setShellWindow(&shell);
     // The spell popout registers itself with the bridge when the section is
@@ -710,9 +723,10 @@ int main(int argc, char** argv)
                 QDir::currentPath(), QStringLiteral("All files (*)"),
                 recentFiles.entries());
             if (!f.isEmpty()) {
-                const QUrl url = QUrl::fromLocalFile(f);
-                tabs.openFile(url);              // make it a tab first
-                tabs.openSplitWithDocument(tabs.activeDocument());
+                // The file must land in the NEW right pane; pane 0 keeps the
+                // document being edited. Plain openFile() would activate the
+                // new tab in pane 0 and the split would mirror it into both.
+                tabs.openFileAsSplit(QUrl::fromLocalFile(f));
                 recentFiles.add(f);
             }
         });
@@ -1192,6 +1206,16 @@ int main(int argc, char** argv)
                 find->findField()->setText(QStringLiteral("needle"));
                 find->replaceField()->setText(QStringLiteral("pin"));
                 modal = find;
+            }
+            else if (which == "reload") {
+                // The File Changed on Disk prompt, shown the way production does
+                // it: parented to the shell (TvModal::exec reparents it to its
+                // anchor). agi_dialogshots renders it standalone, so this is the
+                // only path that proves the restyle inside the real shell.
+                modal = new ReloadDialog(
+                    ReloadDialog::Mode::Modified,
+                    QStringLiteral("/var/home/dr_xadium/projects/CRT_Kate/src/editor/ReloadDialog.cpp"),
+                    &shell);
             }
             else if (which == "goto") {
                 // View > Go, shown WITHOUT the round loop so CRT_KATE_SHOT can

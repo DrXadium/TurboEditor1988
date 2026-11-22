@@ -13,6 +13,8 @@
 #include <QStackedWidget>
 #include <QLabel>
 #include <QPushButton>
+#include <QTemporaryDir>
+#include <QFile>
 
 #include "src/shell/ShellWindow.h"
 #include "src/shell/EditorPane.h"
@@ -184,6 +186,41 @@ private slots:
         QVERIFY(seeded < before);
     }
 
+    // Round 8 (live FAIL 1): File > Open as Split Document must put the picked
+    // file in the NEW right pane only. Production order is open-then-split, and
+    // plain openFile() ACTIVATES the new tab in pane 0 - so the split mirrored
+    // the same file into BOTH panes. openFileAsSplit() must keep pane 0 on the
+    // document the user was editing.
+    void openFileAsSplit_puts_the_file_in_the_right_pane_and_keeps_pane0() {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        const QString path = tmp.filePath(QStringLiteral("split_target.txt"));
+        {
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("alpha\nbeta\n");
+        }
+
+        EditorTabManager tabs;              // constructor seeds 1 doc
+        tabs.newDocument();                 // A - the doc the user is editing
+        const int aIdx = tabs.activeIndex();
+        tabs.setActiveIndex(aIdx);
+        KTextEditor::Document* aDoc = tabs.documents().at(aIdx);
+        const int before = tabs.tabCount();
+
+        tabs.openFileAsSplit(QUrl::fromLocalFile(path));
+
+        QCOMPARE(tabs.tabCount(), before + 1);    // the picked file is a tab
+        QVERIFY2(tabs.splitOpen(), "the split must open on the picked file");
+        QCOMPARE(tabs.documentForPane(0), aDoc);  // pane 0 is NOT hijacked
+        KTextEditor::Document* splitDoc = tabs.documentForPane(1);
+        QVERIFY2(splitDoc, "pane 1 must show the picked file");
+        QVERIFY2(splitDoc != aDoc, "the split must show the NEW file, not pane 0's");
+        QCOMPARE(splitDoc, tabs.documents().last());
+        QTRY_VERIFY2(splitDoc->text().contains(QStringLiteral("alpha")),
+                     "the picked file's contents must load into the right pane");
+    }
+
     void a_second_split_request_does_not_create_a_third_pane_or_view() {
         EditorTabManager tabs;
         tabs.openSplitWithActiveDocument();
@@ -284,6 +321,66 @@ private slots:
         const int n = spy.count();
         w.notePressInWidget(w.paneWidget(0)->bodySlot());
         QCOMPARE(spy.count(), n);
+    }
+
+    // Round 8 (live FAIL 2): pane 1's BottomBand was created as a child of the
+    // pane but never placed in any layout, so it kept default geometry - a
+    // 100x30 blob at the pane's top-left (the "incomplete top line") and NO
+    // body of the pane ever showed in the bottom row. Each pane must carry its
+    // band directly BELOW it, and both bands must sit on the same row so the
+    // two editors stay line-aligned.
+    void each_panes_band_sits_directly_below_its_own_pane() {
+        ShellWindow w;
+        w.resize(800, 600);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        w.setSplitEditorWidget(new QWidget, QStringLiteral("docB.txt"));
+        QVERIFY(w.splitOpen());
+        QCoreApplication::processEvents();
+
+        EditorPane* p0 = w.paneWidget(0);
+        EditorPane* p1 = w.paneWidget(1);
+        QVERIFY(p0 && p1);
+        BottomBand* b0 = p0->bottomBand();
+        BottomBand* b1 = p1->bottomBand();
+        QVERIFY(b0 && b1);
+
+        QVERIFY2(b1->isVisible(), "pane 1's band must be visible while split");
+        QVERIFY2(b0->isVisible(), "pane 0's band must be visible while split");
+
+        // Directly below: the band's top edge is the pane's bottom edge.
+        const QPoint p1Top = p1->mapTo(&w, QPoint(0, 0));
+        const QPoint b1Top = b1->mapTo(&w, QPoint(0, 0));
+        QCOMPARE(b1Top.y(), p1Top.y() + p1->height());
+        QCOMPARE(b1->width(), p1->width());
+
+        // Both panes are the same height and their bands share one row, so the
+        // two editors show the same lines at the same y.
+        QCOMPARE(p0->height(), p1->height());
+        QCOMPARE(b0->mapTo(&w, QPoint(0, 0)).y(), b1Top.y());
+    }
+
+    // Round 8 (live FAIL 2b): showCloseBox(true) used to show the box WITHOUT
+    // positioning it. A pane that already had its final width never saw another
+    // resize, so the box stayed at its default geometry with no paintEvent -
+    // i.e. no close control was drawn at all.
+    void showCloseBox_positions_the_box_immediately() {
+        EditorPane pane;
+        pane.setPaneIndex(1);
+        pane.resize(400, 300);
+        QCoreApplication::processEvents();
+
+        pane.showCloseBox(true);
+        const QRect r = pane.closeBoxRect();
+        QVERIFY2(r.width() == pane.cellHeight(),
+                 qPrintable(QStringLiteral("close box width %1, want %2")
+                                .arg(r.width()).arg(pane.cellHeight())));
+        QVERIFY2(pane.rect().contains(r),
+                 qPrintable(QStringLiteral("close box %1,%2 is outside the pane")
+                                .arg(r.x()).arg(r.y())));
+        QVERIFY2(r.right() > pane.width() / 2, "close box must sit in the right cell");
     }
 
     // Task 6, case 3: each pane's band follows ITS OWN view's caret, so a

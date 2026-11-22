@@ -56,6 +56,10 @@ public:
 
     void newDocument();
     void openFile(const QUrl& url);
+    // File > Open as Split: add `url` as a tab WITHOUT activating it in pane 0,
+    // then show it in the right pane. Plain openFile() activates the new tab,
+    // so the open-then-split order used to mirror one file into both panes.
+    void openFileAsSplit(const QUrl& url);
     void setActiveIndex(int index);
     // Close one tab (the chip's green square). The active index follows the
     // removal; closing the LAST tab leaves one fresh untitled document, so the
@@ -329,6 +333,10 @@ signals:
 
 private:
     KTextEditor::Document* createDoc();
+    // Shared tab creation: builds the document + primary view and registers the
+    // tab. `activate` moves pane 0 onto the new tab (plain File > Open); false
+    // leaves pane 0 exactly where it was (File > Open as Split).
+    KTextEditor::Document* addTabForUrl(const QUrl& url, bool activate);
     void syncTabs();
     // Points the activeCursorPositionChanged signal at the CURRENT view: drops
     // the previous view's connection, re-emits the new view's position, and

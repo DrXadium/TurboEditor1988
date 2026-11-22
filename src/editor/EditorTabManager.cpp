@@ -735,19 +735,28 @@ void EditorTabManager::newDocument()
     trackActiveCursor();
 }
 
-void EditorTabManager::openFile(const QUrl& url)
+// Shared tab creation for File > Open and File > Open as Split. `activate`
+// decides whether pane 0 moves onto the new tab:
+//   true  - plain open: the new file becomes the visible tab (today's behaviour)
+//   false - open-as-split: the tab is added but pane 0 keeps the document the
+//           user was editing, so the split shows the file in the RIGHT pane only.
+// The focus proxy is only re-pointed when activating: a non-active tab must not
+// take pane 0's key path (see newDocument()).
+KTextEditor::Document* EditorTabManager::addTabForUrl(const QUrl& url, bool activate)
 {
     KTextEditor::Document* doc = createDoc();
     if (!doc)
-        return;
+        return nullptr;
     doc->openUrl(url);
     KTextEditor::View* view = doc->createView(nullptr);
     m_docs.append(doc);
     m_views.append(view);
     m_container->addWidget(view);
-    m_container->setFocusProxy(view);   // see newDocument(): focus path for keys
-    m_active = m_docs.size() - 1;
-    m_container->setCurrentIndex(m_active);
+    if (activate) {
+        m_container->setFocusProxy(view);   // see newDocument(): focus path for keys
+        m_active = m_docs.size() - 1;
+        m_container->setCurrentIndex(m_active);
+    }
     syncTabs();
     applyTvStyle(view);
     installKeyRouting(view);
@@ -758,6 +767,25 @@ void EditorTabManager::openFile(const QUrl& url)
     setBlockMarkersVisible(false);
     trackActiveCursor();
     armWatch(doc);
+    return doc;
+}
+
+void EditorTabManager::openFile(const QUrl& url)
+{
+    addTabForUrl(url, /*activate=*/true);
+}
+
+// File > Open as Split Document (round 8 live fix): the picked file becomes a
+// tab and shows in the right pane, while pane 0 stays on the document the user
+// was editing. The production order is open-then-split, and plain openFile()
+// activates the new tab in pane 0 - which made the split mirror the same file
+// into both panes.
+void EditorTabManager::openFileAsSplit(const QUrl& url)
+{
+    KTextEditor::Document* doc = addTabForUrl(url, /*activate=*/false);
+    if (!doc)
+        return;
+    openSplitWithDocument(doc);
 }
 
 void EditorTabManager::setActiveIndex(int index)
