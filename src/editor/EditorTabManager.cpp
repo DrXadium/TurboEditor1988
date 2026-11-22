@@ -292,7 +292,38 @@ void EditorTabManager::applyTvTheme(KTextEditor::View* view)
                  qPrintable(view->theme().name()));
 }
 
-EditorTabManager::~EditorTabManager() = default;
+// Two views of one document (the split's pane 0 + pane 1) are BOTH children of
+// this manager's stacks. Qt's default deleteChildren() destroys the stacks in
+// undefined order; if the primary view dies first it can drop the document's
+// last reference, and the secondary view's destructor then touches the freed
+// Document -> SIGSEGV in ~DocumentPrivate. So tear the secondary views down
+// SYNCHRONOUSLY first (deleteLater never runs without an event loop), then let
+// the primary stack/doc go.
+EditorTabManager::~EditorTabManager()
+{
+    destroySecondaryViews();
+    if (m_stack1) {
+        m_stack1->setParent(nullptr);   // not a manager child; no double-delete
+        delete m_stack1;
+        m_stack1 = nullptr;
+    }
+}
+
+// Synchronously remove + delete every secondary (pane 1) view. No-ops when the
+// hash is already clear.
+void EditorTabManager::destroySecondaryViews()
+{
+    const auto views = std::as_const(m_secondaryViews);
+    m_secondaryViews.clear();   // clear FIRST: a view dtor may re-enter
+    for (KTextEditor::View* v : views) {
+        if (!v)
+            continue;
+        if (m_stack1)
+            m_stack1->removeWidget(v);
+        delete v;               // synchronous: safe here, no event loop needed
+    }
+    m_splitDoc = nullptr;
+}
 
 KTextEditor::Document* EditorTabManager::createDoc()
 {
@@ -315,7 +346,144 @@ KTextEditor::View* EditorTabManager::activeView() const
 {
     if (m_active < 0 || m_active >= m_views.size())
         return nullptr;
+    // The active PANE's view: pane 1 when split+focused, else pane 0. This is
+    // the single pivot every feature reads, so a focused pane drives minimap,
+    // status, folding, Find, etc. with no parallel path.
+    if (m_activePane == 1)
+        return m_secondaryViews.value(m_docs.at(m_active), nullptr);
     return m_views.at(m_active);
+}
+
+// --- Split view (2026-11-21) ----------------------------------------------
+
+QStackedWidget* EditorTabManager::secondaryContainerWidget()
+{
+    if (!m_stack1) {
+        m_stack1 = new QStackedWidget;
+        m_stack1->setObjectName(QStringLiteral("editorStack2"));
+    }
+    return m_stack1;
+}
+
+KTextEditor::View* EditorTabManager::viewForPane(int pane) const
+{
+    if (pane == 0)
+        return m_active >= 0 && m_active < m_views.size()
+                   ? m_views.at(m_active) : nullptr;
+    if (pane == 1)
+        return m_splitDoc ? m_secondaryViews.value(m_splitDoc, nullptr) : nullptr;
+    return nullptr;
+}
+
+KTextEditor::Document* EditorTabManager::documentForPane(int pane) const
+{
+    KTextEditor::View* v = viewForPane(pane);
+    return v ? v->document() : nullptr;
+}
+
+bool EditorTabManager::splitOpen() const
+{
+    return !m_secondaryViews.isEmpty();
+}
+
+// Run the per-view setup every pane-0/pane-1 view needs (style, key routing,
+// block tracking, default-hidden markers). Shared so a secondary view is set up
+// exactly like a primary one.
+void EditorTabManager::finishView(KTextEditor::View* view)
+{
+    applyTvStyle(view);
+    installKeyRouting(view);
+    attachBlockTracking(view);
+    setBlockMarkersVisible(false);
+}
+
+// The secondary view for `doc`, created on first use and added to pane 1's
+// stack. Returns nullptr if the doc already has one.
+KTextEditor::View* EditorTabManager::ensureSecondaryView(KTextEditor::Document* doc)
+{
+    if (!doc)
+        return nullptr;
+    auto it = m_secondaryViews.constFind(doc);
+    if (it != m_secondaryViews.end())
+        return it.value();
+    KTextEditor::View* v = doc->createView(nullptr);
+    finishView(v);
+    secondaryContainerWidget()->addWidget(v);
+    m_secondaryViews.insert(doc, v);
+    return v;
+}
+
+// View > Open Document in New View: a second view of the ACTIVE document so the
+// user can look at two places at once (shared text, independent caret/folds).
+void EditorTabManager::openSplitWithActiveDocument()
+{
+    KTextEditor::Document* doc = activeDocument();
+    if (!doc)
+        return;
+    openSplitWithDocument(doc);
+}
+
+// File > Open as Split Document (and the re-point path): show `doc` in the
+// right pane. At most ONE split: if a split exists on a different document we
+// re-point pane 1 rather than adding a pane. The doc stays open as a tab either
+// way (closing a split never closes a document).
+void EditorTabManager::openSplitWithDocument(KTextEditor::Document* doc)
+{
+    if (!doc || m_docs.isEmpty())
+        return;
+    // Make sure the doc is one of our tabs (it must be listed for tab/close
+    // semantics); if it somehow isn't, do nothing (the caller opens it first).
+    if (!m_docs.contains(doc))
+        return;
+
+    KTextEditor::View* v = ensureSecondaryView(doc);
+    if (!v)
+        return;
+
+    // Record which document pane 1 is showing, and point its stack at that
+    // document's secondary view. Pane 0's stack (m_container) is UNTOUCHED:
+    // pane 0 keeps whatever tab it was showing.
+    m_splitDoc = doc;
+    secondaryContainerWidget()->setCurrentWidget(v);
+
+    const bool wasOpen = !m_secondaryViews.isEmpty();
+    emit splitChanged(wasOpen);
+    emit activeViewChanged(activeView());
+    trackActiveCursor();
+    refreshFoldIndicator();
+}
+
+// Collapse the split: drop every secondary view, keep pane 0's document and
+// view. Closing a split never closes a document (it stays a tab).
+void EditorTabManager::closeSplit()
+{
+    if (m_secondaryViews.isEmpty())
+        return;
+    for (KTextEditor::View* v : std::as_const(m_secondaryViews)) {
+        if (m_stack1)
+            m_stack1->removeWidget(v);
+        v->deleteLater();
+    }
+    m_secondaryViews.clear();
+    m_splitDoc = nullptr;
+    if (m_activePane == 1)
+        m_activePane = 0;   // focus returns to pane 0
+    emit splitChanged(false);
+    emit activeViewChanged(activeView());
+    trackActiveCursor();
+    refreshFoldIndicator();
+}
+
+// Task 6's active-pane pivot: focus moves to `pane`, re-pointing activeView().
+void EditorTabManager::setActivePane(int pane)
+{
+    const int p = (pane == 1 && splitOpen()) ? 1 : 0;
+    if (p == m_activePane)
+        return;
+    m_activePane = p;
+    emit activeViewChanged(activeView());
+    trackActiveCursor();
+    refreshFoldIndicator();
 }
 
 // The bottom band shows the cursor of the tab the user is LOOKING at. Keeping
@@ -612,7 +780,13 @@ void EditorTabManager::closeTab(int index)
 {
     if (index < 0 || index >= m_docs.size())
         return;
-    KTextEditor::Document* doc = m_docs.takeAt(index);
+    KTextEditor::Document* doc = m_docs.at(index);
+    // Closing a tab collapses the split if that document was showing in the
+    // right pane (the split never outlives its document; pane 0 keeps its own
+    // document). No-ops when there is no split or a different doc is split.
+    if (m_secondaryViews.contains(doc))
+        closeSplit();
+    doc = m_docs.takeAt(index);
     KTextEditor::View* view = m_views.takeAt(index);
     disarmWatch(doc);
     if (view) {

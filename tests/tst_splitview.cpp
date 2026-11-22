@@ -20,6 +20,9 @@
 #include "src/shell/Minimap.h"
 #include "src/shell/RightScrollBar.h"
 #include "src/shell/BottomBand.h"
+#include "src/editor/EditorTabManager.h"
+#include <ktexteditor/document.h>
+#include <ktexteditor/view.h>
 
 class TstSplitView : public QObject
 {
@@ -107,6 +110,108 @@ private slots:
         split.closeSplit();
         QVERIFY2(!split.splitOpen(), "split must report closed after closeSplit()");
         QCOMPARE(split.count(), 1);
+    }
+
+    // Task 3: the model layer. Two views over one document are independent
+    // (own caret/scroll/fold), the split survives a left-pane tab switch, a
+    // second split request never creates a third pane, and closing the split
+    // document's tab collapses the split while keeping pane 0's document.
+    void openSplitWithActiveDocument_yields_two_views_over_one_document() {
+        EditorTabManager tabs;
+        KTextEditor::Document* doc = tabs.activeDocument();
+        QVERIFY(doc);
+        QVERIFY(tabs.viewForPane(0) == tabs.activeView());
+
+        tabs.openSplitWithActiveDocument();
+        QVERIFY2(tabs.splitOpen(), "split must open");
+        KTextEditor::View* v0 = tabs.viewForPane(0);
+        KTextEditor::View* v1 = tabs.viewForPane(1);
+        QVERIFY(v0 && v1);
+        QVERIFY2(v0 != v1, "the two panes must be distinct views");
+        QCOMPARE(v0->document(), doc);
+        QCOMPARE(v1->document(), doc);
+
+        // Independent carets: moving one must not move the other. Give the
+        // shared document 5 lines so line 3 exists (an empty doc has 1 line
+        // and KTextEditor clamps the caret).
+        doc->clear();
+        for (int i = 0; i < 5; ++i)
+            doc->insertLine(i, QStringLiteral("line %1").arg(i));
+        v1->setCursorPosition(KTextEditor::Cursor(3, 0));
+        QVERIFY2(v1->cursorPosition().line() == 3, "pane 1 caret moved");
+        QVERIFY2(v0->cursorPosition().line() != 3,
+                 "pane 1's caret leaked into pane 0");
+
+        tabs.closeSplit();
+        QVERIFY2(!tabs.splitOpen(), "split must close");
+        QVERIFY2(tabs.viewForPane(1) == nullptr, "pane 1 view must be gone");
+        QCOMPARE(tabs.activeView(), v0);
+        QCOMPARE(tabs.activeDocument(), doc);
+
+        // The active pane PIVOT: focus in pane 1 makes activeView() the pane-1
+        // view (so minimap/status/fold follow the focused pane). This pins the
+        // load-bearing behaviour activeViewChanged relies on.
+        tabs.openSplitWithActiveDocument();
+        KTextEditor::View* pv1 = tabs.viewForPane(1);
+        QVERIFY(pv1);
+        QCOMPARE(tabs.activeView(), v0);       // pane 0 focused by default
+        tabs.setActivePane(1);
+        QCOMPARE(tabs.activeView(), pv1);      // now the pane-1 view
+        tabs.setActivePane(0);
+        QCOMPARE(tabs.activeView(), v0);       // back to pane 0
+        tabs.closeSplit();
+    }
+
+    void openSplitWithDocument_shows_b_while_pane0_keeps_a() {
+        EditorTabManager tabs;               // constructor seeds 1 doc (index 0)
+        const int seeded = tabs.activeIndex();
+        tabs.newDocument();                 // A (index 1)
+        const int aIdx = tabs.activeIndex();
+        tabs.newDocument();                 // B (index 2)
+        const int bIdx = tabs.activeIndex();
+        QVERIFY(aIdx != bIdx);
+        const int before = tabs.tabCount();  // 3: seed + A + B
+
+        // Point pane 0 back at A, then open B into the split's right pane.
+        tabs.setActiveIndex(aIdx);
+        tabs.openSplitWithDocument(tabs.documents().at(bIdx));
+
+        QVERIFY2(tabs.splitOpen(), "split must open on doc B");
+        QCOMPARE(tabs.documentForPane(0), tabs.documents().at(aIdx));
+        QCOMPARE(tabs.documentForPane(1), tabs.documents().at(bIdx));
+        QCOMPARE(tabs.tabCount(), before);   // opening a split adds NO tab
+        QVERIFY(seeded < before);
+    }
+
+    void a_second_split_request_does_not_create_a_third_pane_or_view() {
+        EditorTabManager tabs;
+        tabs.openSplitWithActiveDocument();
+        KTextEditor::View* first1 = tabs.viewForPane(1);
+        QVERIFY(first1);
+        tabs.openSplitWithActiveDocument(); // must be a no-op / re-point
+        QVERIFY2(tabs.splitOpen(), "still open");
+        QCOMPARE(tabs.viewForPane(1), first1);  // same pane-1 view, no 3rd
+        QCOMPARE(tabs.viewForPane(0), tabs.viewForPane(0));
+    }
+
+    void closeTab_of_the_split_document_collapses_the_split_and_keeps_pane0() {
+        EditorTabManager tabs;               // constructor seeds 1 doc (index 0)
+        tabs.newDocument();                 // A
+        const int aIdx = tabs.activeIndex();
+        tabs.newDocument();                 // B
+        const int bIdx = tabs.activeIndex();
+        const int before = tabs.tabCount();  // 3: seed + A + B
+        KTextEditor::Document* aDoc = tabs.documents().at(aIdx);
+        tabs.setActiveIndex(aIdx);
+        tabs.openSplitWithDocument(tabs.documents().at(bIdx));
+        QVERIFY(tabs.splitOpen());
+
+        // Close B's tab: the split collapses, A (pane 0's doc) survives.
+        tabs.closeTab(bIdx);
+        QVERIFY2(!tabs.splitOpen(), "closing the split doc must collapse the split");
+        QCOMPARE(tabs.tabCount(), before - 1);
+        QCOMPARE(tabs.activeDocument(), aDoc);
+        QVERIFY2(tabs.activeDocument() != nullptr, "pane 0 document must survive");
     }
 };
 

@@ -38,6 +38,22 @@ public:
     // central placeholder; main.cpp installs it via ShellWindow::setCentralWidget).
     QStackedWidget* containerWidget() const { return m_container; }
 
+    // --- Split view (2026-11-21) ---
+    // A pane is an independent KTextEditor::View: own caret, scroll, folds.
+    // Pane 0 is the primary view per document (m_views); pane 1 is a lazily
+    // created SECONDARY view (m_secondaryViews) shown only while split. The
+    // active pane's view is what activeView() returns, so every existing
+    // feature follows focus through activeViewChanged alone.
+    QStackedWidget* secondaryContainerWidget();   // created on first split
+    KTextEditor::View* viewForPane(int pane) const;  // pane 1 null unless split
+    KTextEditor::Document* documentForPane(int pane) const;
+    bool splitOpen() const;
+    void openSplitWithActiveDocument();          // View > Open Document in New View
+    void openSplitWithDocument(KTextEditor::Document* doc);  // File > Open as Split
+    void closeSplit();
+    int activePane() const { return m_activePane; }
+    void setActivePane(int pane);                // emits activeViewChanged
+
     void newDocument();
     void openFile(const QUrl& url);
     void setActiveIndex(int index);
@@ -292,6 +308,9 @@ public:
 
 signals:
     void tabsChanged(const QStringList& titles, int active);
+    // Split opened/closed (2026-11-21): the shell shows/hides pane 1 and its
+    // divider in response, and the composition root re-points per-pane chrome.
+    void splitChanged(bool open);
     // The ACTIVE view's cursor in KTextEditor's 0-based coordinates: emitted
     // when it moves, and re-emitted when the active tab changes so a listener
     // can show the new tab's position at once. The bottom band's "L:C" reads
@@ -341,9 +360,17 @@ private:
     void applyHistoryStep(KTextEditor::Document* doc, int index);
     void notifyHistory();
     void applyZoom(int delta);
+    // Per-view setup shared by primary and secondary (pane 1) views.
+    void finishView(KTextEditor::View* view);
+    KTextEditor::View* ensureSecondaryView(KTextEditor::Document* doc);
+    void destroySecondaryViews();   // synchronous teardown (see dtor)
     QList<KTextEditor::Document*> m_docs;
-    QList<KTextEditor::View*> m_views;
+    QList<KTextEditor::View*> m_views;              // pane 0 (primary) view per doc
+    QHash<KTextEditor::Document*, KTextEditor::View*> m_secondaryViews;  // pane 1
     int m_active = -1;
+    int m_activePane = 0;                            // which pane owns focus
+    QStackedWidget* m_stack1 = nullptr;              // pane 1's view stack (lazy)
+    KTextEditor::Document* m_splitDoc = nullptr;     // the document shown in pane 1
     QMetaObject::Connection m_cursorConn;
     int m_basePointSize = -1;   // font point size at first view (zoom baseline)
     int m_basePixelSize = -1;   // font pixel size at first zoom (pixel-based font)
