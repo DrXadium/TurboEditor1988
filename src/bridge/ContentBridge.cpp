@@ -310,6 +310,11 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
                 break;
             }
         }
+        // Which pane did this press land in? The active-pane pivot: the shell
+        // re-points minimap/status/fold to the focused pane (Task 6). A tab
+        // click never reaches here (it is not a press into a pane).
+        if (m_shell)
+            m_shell->notePressInWidget(target);
     }
     update();   // re-render now so the click shows without waiting the 33ms tick
 }

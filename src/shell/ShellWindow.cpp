@@ -285,6 +285,61 @@ void ShellWindow::wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* vi
     }
 }
 
+// Per-pane scrollbar binding (split view): pane `pane`'s right bar mirrors its
+// vertical doc scrollbar, and its bottom band mirrors the horizontal. Each pane
+// keeps its OWN last-bound pair (m_paneDocV/H) so a re-bind disconnects the old
+// one cleanly and the two panes never cross-wire. Pane 1 without a split is a
+// no-op (no pane widget to bind).
+void ShellWindow::wirePaneScrollbars(int pane, QScrollBar* docV, QScrollBar* docH)
+{
+    if (pane < 0 || pane > 1)
+        return;
+    EditorPane* p = paneWidget(pane);
+    if (!p)
+        return;   // pane 1 not present (no split)
+
+    RightScrollBar* bar = p->rightBar();
+    QScrollBar*& lastV = m_paneDocV[pane];
+    if (bar) {
+        if (lastV && lastV != docV) {
+            disconnect(lastV, nullptr, bar, nullptr);
+            disconnect(bar, nullptr, lastV, nullptr);
+        }
+        if (docV && docV != lastV) {
+            lastV = docV;
+            connect(docV, &QScrollBar::rangeChanged, bar, &QScrollBar::setRange);
+            connect(docV, &QScrollBar::valueChanged, bar, &QScrollBar::setValue);
+            connect(bar, &QScrollBar::valueChanged, docV, &QScrollBar::setValue);
+        }
+        if (docV) {   // always seed (range appears after the doc grows)
+            bar->setRange(docV->minimum(), docV->maximum());
+            bar->setPageStep(docV->pageStep());
+            bar->setValue(docV->value());
+        }
+    }
+
+    BottomBand* band = p->bottomBand();
+    TextScrollBar* hb = band ? band->horizontalBar() : nullptr;
+    QScrollBar*& lastH = m_paneDocH[pane];
+    if (hb) {
+        if (lastH && lastH != docH) {
+            disconnect(lastH, nullptr, hb, nullptr);
+            disconnect(hb, nullptr, lastH, nullptr);
+        }
+        if (docH && docH != lastH) {
+            lastH = docH;
+            connect(docH, &QScrollBar::rangeChanged, hb, &QScrollBar::setRange);
+            connect(docH, &QScrollBar::valueChanged, hb, &QScrollBar::setValue);
+            connect(hb, &QScrollBar::valueChanged, docH, &QScrollBar::setValue);
+        }
+        if (docH) {
+            hb->setRange(docH->minimum(), docH->maximum());
+            hb->setPageStep(docH->pageStep());
+            hb->setValue(docH->value());
+        }
+    }
+}
+
 // Editor right-click menu: the edit commands (Undo/Redo/Cut/Copy/Paste), drawn
 // as a BorlandMenu so it matches the dropdowns.
 //
@@ -553,10 +608,23 @@ EditorPane* ShellWindow::paneWidget(int i) const
 // Which pane a press landed in. The bridge calls this after resolving the hit
 // widget; it walks up to the enclosing pane. STUB in Task 2: always pane 0.
 // Task 6 replaces the body with the real enclosing-pane walk + signal.
+// Which pane a press landed in (the active-pane pivot source). Walks UP from
+// the hit widget to the enclosing EditorPane; if that pane is not already the
+// active one, record it and emit activePaneChanged. A press in the SAME pane is
+// idempotent (no re-emit). Tab clicks never route here (Review Focus 3).
 void ShellWindow::notePressInWidget(QWidget* w)
 {
-    Q_UNUSED(w);
-    // Task 2: no active-pane tracking yet.
+    if (!m_splitter || !w)
+        return;
+    int pane = 0;
+    for (QWidget* p = w; p; p = p->parentWidget()) {
+        if (p == m_splitter->pane(1)) { pane = 1; break; }
+        if (p == m_splitter->pane(0)) { pane = 0; break; }
+    }
+    if (pane == m_activePane)
+        return;                     // same pane: no change, no emit
+    m_activePane = pane;
+    emit activePaneChanged(pane);
 }
 
 // Install the secondary stack into pane 1 and open the split. Pane 1 gets its

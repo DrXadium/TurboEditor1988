@@ -49,6 +49,11 @@ public:
     // previous pair first, so it reconnects cleanly when the active tab
     // (and therefore the view) changes.
     void wireScrollbars(QScrollBar* docV, QScrollBar* docH, QWidget* view = nullptr);
+    // Per-pane variant (split view): bind pane `pane`'s own right bar + bottom
+    // band to a view's scrollbars. Independent per pane, so pane 1's chrome
+    // follows pane 1's view without touching pane 0's. No-op for pane 1 when
+    // no split is open.
+    void wirePaneScrollbars(int pane, QScrollBar* docV, QScrollBar* docH);
     // Editor right-click menu (edit commands +, when the word under the click
     // is misspelled, the spell section). Built as a BorlandMenu so it paints
     // like the dropdowns, and shown at a shell-local point. The shell is never
@@ -135,6 +140,9 @@ public:
     bool splitOpen() const;
     class EditorPane* paneWidget(int i) const;
     void notePressInWidget(QWidget* w);
+    // Which pane currently owns focus (0 or 1). A press inside a pane sets it;
+    // a tab click does not (Review Focus 3).
+    int activePane() const { return m_activePane; }
     // Install the secondary stack into pane 1 and open the split: pane 1 shows
     // `name` in its title row and gets the ■ close box; pane 0 keeps its title.
     // `stack` is the per-pane view stack (EditorTabManager::secondaryContainer).
@@ -147,6 +155,10 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override;
 signals:
+    // The pane under the last press became active (0 or 1). The composition
+    // root forwards this to EditorTabManager::setActivePane, so activeView()
+    // re-points the minimap/status/fold to the focused pane.
+    void activePaneChanged(int pane);
     // Picked a suggestion for the right-clicked word: replace [line, startCol)
     // .. endCol) with \p replacement.
     void spellReplacementRequested(int line, int startCol, int endCol,
@@ -167,6 +179,11 @@ private:
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     class EditorPane* m_pane0 = nullptr;     // pane 0: frame + title + chrome
     class EditorSplitter* m_splitter = nullptr;   // hosts pane0 | [pane1] | minimap
+    int m_activePane = 0;                        // which pane owns focus (0/1)
+    // Per-pane scrollbar bindings (split view): the docV/docH currently wired
+    // to each pane's chrome, so a re-bind can disconnect cleanly.
+    QScrollBar* m_paneDocV[2] = {nullptr, nullptr};
+    QScrollBar* m_paneDocH[2] = {nullptr, nullptr};
     QWidget* m_editor = nullptr;             // the splitter (or editor) for isEditorArea
     QWidget* m_editorWidget = nullptr;       // the installed editor widget (focus target)
     QWidget* m_keyboardOwner = nullptr;      // dock/modal that owns the keyboard

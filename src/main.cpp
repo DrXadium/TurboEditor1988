@@ -176,6 +176,13 @@ int main(int argc, char** argv)
         }
         shell.wireScrollbars(v->verticalScrollBar(), v->horizontalScrollBar(),
                              static_cast<QWidget*>(v));
+        // Split view (Task 6): pane 1's chrome mirrors ITS OWN view (the
+        // secondary view of the split doc), independent of pane 0's active view.
+        if (tabs.splitOpen()) {
+            if (KTextEditor::View* v1 = tabs.viewForPane(1))
+                shell.wirePaneScrollbars(1, v1->verticalScrollBar(),
+                                         v1->horizontalScrollBar());
+        }
         // Re-bind once the active document grows: that is when the view's real
         // scroll range appears. Reconnecting is idempotent, and wireScrollbars
         // is a no-op when the same scrollbar is already bound.
@@ -188,6 +195,11 @@ int main(int argc, char** argv)
                         shell.wireScrollbars(vv->verticalScrollBar(),
                                              vv->horizontalScrollBar(),
                                              static_cast<QWidget*>(vv));
+                    if (tabs.splitOpen()) {
+                        if (KTextEditor::View* v1 = tabs.viewForPane(1))
+                            shell.wirePaneScrollbars(1, v1->verticalScrollBar(),
+                                                     v1->horizontalScrollBar());
+                    }
                 });
         }
     };
@@ -308,6 +320,12 @@ int main(int argc, char** argv)
                      });
     QObject::connect(&tabs, &EditorTabManager::activeViewChanged, &shell,
                      [&repointMinimap](KTextEditor::View*) { repointMinimap(); });
+    // The active-pane pivot (Task 6): a press inside a pane re-points
+    // activeView() to that pane's view, which re-points the minimap/status/fold
+    // through activeViewChanged above. Without this link a click in pane 1
+    // would move focus but leave the minimap on pane 0's document.
+    QObject::connect(&shell, &ShellWindow::activePaneChanged, &tabs,
+                     [&tabs](int pane) { tabs.setActivePane(pane); });
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [&repointMinimap](const QStringList&, int) { repointMinimap(); });
     repointMinimap();

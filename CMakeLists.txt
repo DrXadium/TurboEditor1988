@@ -249,7 +249,8 @@ add_test(NAME tst_reloaddlg COMMAND tst_reloaddlg)
 
 # 2026-11-21: split view (EditorPane / EditorSplitter / two views).
 add_executable(tst_splitview tests/tst_splitview.cpp)
-target_link_libraries(tst_splitview PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+# crt-bridge for ContentBridge (the keyboard-ownership case) - matches tst_input.
+target_link_libraries(tst_splitview PRIVATE crt-bridge crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_splitview COMMAND tst_splitview)
 
 # Dev aid (not a gate suite): dumps PNGs of the reload dialog and the file dock

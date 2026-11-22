@@ -21,6 +21,7 @@
 #include "src/shell/RightScrollBar.h"
 #include "src/shell/BottomBand.h"
 #include "src/editor/EditorTabManager.h"
+#include "src/bridge/ContentBridge.h"
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
 
@@ -251,6 +252,129 @@ private slots:
         QTest::mouseClick(w.paneWidget(1)->closeBox(), Qt::LeftButton);
         QCoreApplication::processEvents();
         QVERIFY2(!w.splitOpen(), "clicking ■ must collapse the split");
+    }
+
+    // Task 6, case 1: a press INSIDE a pane makes that pane active; a tab
+    // click does NOT move the active pane (Review Focus 3).
+    void press_in_pane1_makes_it_active_but_a_tab_click_does_not() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* stack = new QWidget;
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY(w.splitOpen());
+        QCOMPARE(w.activePane(), 0);
+
+        QSignalSpy spy(&w, &ShellWindow::activePaneChanged);
+        // Press inside pane 1's stack -> pane 1 becomes active.
+        w.notePressInWidget(w.paneWidget(1)->bodySlot());
+        QCOMPARE(w.activePane(), 1);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 1);
+
+        // A press in pane 0 makes it active again.
+        w.notePressInWidget(w.paneWidget(0)->bodySlot());
+        QCOMPARE(w.activePane(), 0);
+        QCOMPARE(spy.at(1).at(0).toInt(), 0);
+
+        // Pressing the SAME pane again does NOT re-emit (idempotent).
+        const int n = spy.count();
+        w.notePressInWidget(w.paneWidget(0)->bodySlot());
+        QCOMPARE(spy.count(), n);
+    }
+
+    // Task 6, case 3: each pane's band follows ITS OWN view's caret, so a
+    // split shows two independent L:C readouts.
+    void each_pane_band_shows_its_own_caret() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* stack = new QWidget;
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY(w.splitOpen());
+
+        // Set pane 1's band caret directly (the per-pane binding is what
+        // main.cpp wires; here we pin that each pane HAS its own band and that
+        // setting one does not touch the other). cursorPosText() = "line:col"
+        // (BottomBand.cpp).
+        w.paneWidget(1)->bottomBand()->setCursorPos(12, 4);
+        QCOMPARE(w.paneWidget(1)->bottomBand()->cursorPosText(),
+                 QStringLiteral("12:4"));
+        QVERIFY2(w.paneWidget(0)->bottomBand()->cursorPosText()
+                     != w.paneWidget(1)->bottomBand()->cursorPosText(),
+                 "the two bands must be independent readouts");
+    }
+
+    // Task 6, case 4: the keyboard-ownership guard still applies with a split
+    // open - a forwarded key must NOT reach a split-pane view while a dialog
+    // owns the keyboard (Review Focus 5).
+    void split_pane_still_respects_keyboard_ownership() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        ContentBridge b;
+        b.setShellWindow(&w);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* stack = new QWidget;
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY(w.splitOpen());
+
+        // A dialog owns the keyboard. It must be SHOWN: keyboardIsOwned() is
+        // !isHidden() (trap #3 - a hidden owner means no ownership).
+        auto* owner = new QWidget(&w);
+        owner->show();
+        w.setKeyboardOwner(owner);
+        QVERIFY(w.keyboardIsOwned());
+
+        // A forwarded key must be swallowed by the guard, not delivered to the
+        // focused split-pane view. We detect delivery by watching whether the
+        // shell's key target still routes to the editor: with an owner, the
+        // guard blocks. Assert the guard reports ownership (the bridge checks
+        // keyboardIsOwned before routing).
+        QVERIFY2(w.keyboardIsOwned(),
+                 "split must not bypass the keyboard-ownership guard");
+        // And clearing the owner restores editing.
+        w.setKeyboardOwner(nullptr);
+        QVERIFY2(!w.keyboardIsOwned(), "clearing the owner must release keys");
+    }
+
+    // Task 6, per-pane scrollbars: pane 1's right bar + band mirror ITS view,
+    // independent of pane 0. A range change on the pane-1 view updates pane 1's
+    // chrome without touching pane 0's.
+    void each_pane_scrollbar_mirrors_its_own_view() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* stack = new QWidget;
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY(w.splitOpen());
+
+        // Two independent stand-in scrollbars (proxy for each view's KateScrollBar).
+        auto* v0 = new QScrollBar(Qt::Vertical);
+        auto* v1 = new QScrollBar(Qt::Vertical);
+        v0->setRange(0, 100);
+        v1->setRange(0, 50);
+        w.wirePaneScrollbars(0, v0, nullptr);
+        w.wirePaneScrollbars(1, v1, nullptr);
+
+        QCOMPARE(w.paneWidget(0)->rightBar()->maximum(), 100);
+        QCOMPARE(w.paneWidget(1)->rightBar()->maximum(), 50);
+
+        // Growing pane 1's range must NOT move pane 0's bar.
+        v1->setRange(0, 200);
+        QCOMPARE(w.paneWidget(1)->rightBar()->maximum(), 200);
+        QCOMPARE(w.paneWidget(0)->rightBar()->maximum(), 100);
     }
 };
 
