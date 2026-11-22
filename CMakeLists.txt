@@ -38,6 +38,8 @@ target_link_libraries(crt-kate-spike PRIVATE
 add_library(crt-shell STATIC
   src/shell/ShellWindow.cpp
   src/shell/ShellWindow.h
+  src/shell/EditorPane.cpp
+  src/shell/EditorPane.h
   src/shell/BorlandStyle.cpp
     src/shell/BorlandMenu.cpp
   src/shell/BorlandStyle.h
@@ -242,6 +244,11 @@ add_test(NAME tst_filechange COMMAND tst_filechange)
 add_executable(tst_reloaddlg tests/tst_reloaddlg.cpp)
 target_link_libraries(tst_reloaddlg PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_reloaddlg COMMAND tst_reloaddlg)
+
+# 2026-11-21: split view (EditorPane / EditorSplitter / two views).
+add_executable(tst_splitview tests/tst_splitview.cpp)
+target_link_libraries(tst_splitview PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_splitview COMMAND tst_splitview)
 
 # Dev aid (not a gate suite): dumps PNGs of the reload dialog and the file dock
 # so their chrome can be compared side by side. Build: agi_dialogshots.

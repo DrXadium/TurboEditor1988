@@ -151,6 +151,7 @@ private:
 
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
+    class EditorPane* m_pane0 = nullptr;     // pane 0: frame + title + chrome
     QWidget* m_editor = nullptr;             // current editor widget (focus default)
     QWidget* m_keyboardOwner = nullptr;      // dock/modal that owns the keyboard
     std::function<bool(const QKeySequence&)> m_editorShortcut;
