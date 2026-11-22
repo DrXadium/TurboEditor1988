@@ -243,6 +243,11 @@ add_executable(tst_reloaddlg tests/tst_reloaddlg.cpp)
 target_link_libraries(tst_reloaddlg PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_reloaddlg COMMAND tst_reloaddlg)
 
+# Dev aid (not a gate suite): dumps PNGs of the reload dialog and the file dock
+# so their chrome can be compared side by side. Build: agi_dialogshots.
+add_executable(agi_dialogshots .relay/agi_shots.cpp)
+target_link_libraries(agi_dialogshots PRIVATE crt-editor Qt6::Widgets KF6::TextEditor)
+
 # 2026-11-20: the external-change watcher wiring (real files, real watcher).
 add_executable(tst_reload tests/tst_reload.cpp)
 target_link_libraries(tst_reload PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)

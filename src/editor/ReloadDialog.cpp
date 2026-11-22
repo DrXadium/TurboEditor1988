@@ -10,7 +10,13 @@ namespace {
 QLabel* tvLabel(const QString& text, QWidget* parent)
 {
     auto* label = new QLabel(text, parent);
-    label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+    // 2026-11-21, readability: this dialog's panel is grey (#AAAAAA), the
+    // same one the file dock uses, and the dock puts BLACK text on it. The
+    // labels were editor yellow (#FFFF55) - correct for the window-blue editor
+    // but low-contrast on grey, which is what made the prompt hard to read.
+    // The panel, frame and shadow are shared with the dock through TvFrame, so
+    // the ink is the only thing that had to change.
+    label->setStyleSheet(QStringLiteral("color: #000000; background: transparent;"));
     return label;
 }
 } // namespace

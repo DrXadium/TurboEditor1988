@@ -79,6 +79,31 @@ private slots:
         const int role = TvModal::exec(&anchor, d);
         QCOMPARE(role, int(TvModal::Reject));
     }
+
+    // 2026-11-21, readability: the labels sat in editor yellow (#FFFF55) on
+    // the grey panel, which is the low-contrast combination that made this
+    // dialog hard to read. The file dock puts BLACK text on the same grey, so
+    // the reload dialog must match it - the panel, frame and shadow are
+    // already shared with the dock through TvFrame and need no change.
+    void labels_are_black_on_the_grey_panel_not_editor_yellow() {
+        ReloadDialog d(ReloadDialog::Mode::Modified, QStringLiteral("/tmp/report.txt"));
+        d.resize(520, 240);
+        d.show();
+        QVERIFY(d.fileNameLabel());
+        QVERIFY(d.hintLabel());
+
+        // The ink must resolve to black: a stylesheet is one of the two ways
+        // the yellow was applied, so assert the RESOLVED color, not the raw
+        // stylesheet string.
+        QCOMPARE(d.fileNameLabel()->palette().color(QPalette::WindowText), Qt::black);
+        QCOMPARE(d.hintLabel()->palette().color(QPalette::WindowText), Qt::black);
+        QVERIFY2(!d.fileNameLabel()->styleSheet().contains(QStringLiteral("#FFFF55"),
+                                                           Qt::CaseInsensitive),
+                 "file name label still carries editor-yellow ink");
+        QVERIFY2(!d.hintLabel()->styleSheet().contains(QStringLiteral("#FFFF55"),
+                                                       Qt::CaseInsensitive),
+                 "hint label still carries editor-yellow ink");
+    }
 };
 
 QTEST_MAIN(TstReloadDlg)
