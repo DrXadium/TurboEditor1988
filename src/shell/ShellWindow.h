@@ -135,6 +135,12 @@ public:
     bool splitOpen() const;
     class EditorPane* paneWidget(int i) const;
     void notePressInWidget(QWidget* w);
+    // Install the secondary stack into pane 1 and open the split: pane 1 shows
+    // `name` in its title row and gets the ■ close box; pane 0 keeps its title.
+    // `stack` is the per-pane view stack (EditorTabManager::secondaryContainer).
+    void setSplitEditorWidget(QWidget* stack, const QString& name);
+    // Collapse the split: hide pane 1 + divider, hide its ■ (pane 0 stays).
+    void clearSplitEditorWidget();
     // The Borland style this window installed (QSS wrapping hides it from
     // w.style(), so the test asserts on this directly).
     BorlandStyle* borlandStyle() const { return m_borland; }

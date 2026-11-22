@@ -213,6 +213,45 @@ private slots:
         QCOMPARE(tabs.activeDocument(), aDoc);
         QVERIFY2(tabs.activeDocument() != nullptr, "pane 0 document must survive");
     }
+
+    // Task 4: the split's right pane carries its own title (the doc shown
+    // there) and the ONLY visible ■ close box; clicking it collapses the split.
+    void split_title_row_shows_pane1_doc_and_only_pane1_has_a_close_box() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);   // installs pane 0's slot
+        w.show();
+        QCoreApplication::processEvents();
+
+        // Single pane: no pane 1, no split.
+        QVERIFY2(!w.splitOpen(), "must start unsplit");
+        QVERIFY2(!w.paneWidget(1), "pane 1 must be null before a split");
+
+        // Open a second view of a document into pane 1.
+        auto* stack = new QWidget;   // stand-in for the secondary stack
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY2(w.splitOpen(), "split must open after setSplitEditorWidget");
+        QVERIFY2(w.paneWidget(1), "pane 1 must exist after the split");
+
+        // Pane 0 keeps its own title; pane 1 shows the split doc's name.
+        QVERIFY2(!w.paneWidget(0)->title().isEmpty(), "pane 0 title must render");
+        QCOMPARE(w.paneWidget(1)->title(), QStringLiteral("docB.txt"));
+
+        // Only pane 1 shows the close box, and it sits inside the pane.
+        QVERIFY2(!w.paneWidget(0)->closeBox()->isVisible(),
+                 "pane 0 must NOT show the split close box");
+        QVERIFY2(w.paneWidget(1)->closeBox()->isVisible(),
+                 "pane 1 must show the split close box");
+        const QRect boxRect = w.paneWidget(1)->closeBoxRect();
+        QVERIFY2(w.paneWidget(1)->rect().contains(boxRect),
+                 qPrintable(QStringLiteral("close box %1 outside pane %2")
+                                .arg(boxRect.x()).arg(boxRect.y())));
+
+        // Clicking pane 1's ■ collapses the split.
+        QTest::mouseClick(w.paneWidget(1)->closeBox(), Qt::LeftButton);
+        QCoreApplication::processEvents();
+        QVERIFY2(!w.splitOpen(), "clicking ■ must collapse the split");
+    }
 };
 
 QTEST_MAIN(TstSplitView)

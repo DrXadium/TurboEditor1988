@@ -559,6 +559,52 @@ void ShellWindow::notePressInWidget(QWidget* w)
     // Task 2: no active-pane tracking yet.
 }
 
+// Install the secondary stack into pane 1 and open the split. Pane 1 gets its
+// own title (the doc shown there) and the ONLY visible ■ close box; clicking it
+// collapses the split via closeRequested -> clearSplitEditorWidget.
+void ShellWindow::setSplitEditorWidget(QWidget* stack, const QString& name)
+{
+    if (!m_splitter || !stack)
+        return;
+    m_splitter->openSplit();
+    EditorPane* p1 = m_splitter->pane(1);
+    if (!p1)
+        return;
+
+    // Put the stack into pane 1's body slot (its layout mirrors pane 0's:
+    // QVBoxLayout holding the placeholder, which we drop for the stack).
+    if (auto* lay = qobject_cast<QVBoxLayout*>(p1->bodySlot()->layout())) {
+        while (lay->count() > 0) {
+            QLayoutItem* old = lay->takeAt(0);
+            if (old) {
+                if (old->widget() && old->widget() != stack)
+                    old->widget()->deleteLater();
+                delete old;
+            }
+        }
+        stack->setParent(p1->bodySlot());
+        lay->addWidget(stack, 1);
+    }
+
+    p1->setTitle(name);
+    p1->showCloseBox(true);
+    if (m_pane0)
+        m_pane0->showCloseBox(false);   // only pane 1 has the ■
+
+    // The ■ collapses the split.
+    connect(p1, &EditorPane::closeRequested, this,
+            &ShellWindow::clearSplitEditorWidget, Qt::UniqueConnection);
+}
+
+void ShellWindow::clearSplitEditorWidget()
+{
+    if (!m_splitter || !m_splitter->splitOpen())
+        return;
+    if (EditorPane* p1 = m_splitter->pane(1))
+        p1->showCloseBox(false);
+    m_splitter->closeSplit();
+}
+
 TabStrip* ShellWindow::tabStrip() const
 {
     return findChild<TabStrip*>();
