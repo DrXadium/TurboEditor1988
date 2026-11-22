@@ -16,6 +16,7 @@
 
 #include "src/shell/ShellWindow.h"
 #include "src/shell/EditorPane.h"
+#include "src/shell/EditorSplitter.h"
 #include "src/shell/Minimap.h"
 #include "src/shell/RightScrollBar.h"
 #include "src/shell/BottomBand.h"
@@ -61,6 +62,51 @@ private slots:
         // Pane 0 is never the split pane: no close box.
         QVERIFY2(pane->closeBox(), "close box widget should exist (hidden on pane 0)");
         QVERIFY2(pane->closeBox()->isHidden(), "pane 0 must not show the split close box");
+    }
+
+    // Task 2: the divider exists only while split, is one cell wide, and paints
+    // a TV grip. A single pane shows no handle (the splitter collapses cleanly).
+    void splitter_shows_a_painted_divider_only_while_split() {
+        EditorSplitter split;
+        split.resize(400, 300);
+        auto* a = new EditorPane(&split);
+        a->setPaneIndex(0);
+        split.addPane(a);
+
+        // Not split: one child, no handle.
+        QVERIFY2(!split.splitOpen(), "split must start closed");
+        QCOMPARE(split.count(), 1);
+
+        split.openSplit();
+        QVERIFY2(split.splitOpen(), "split must report open after openSplit()");
+        QCOMPARE(split.count(), 2);
+        QVERIFY2(split.pane(1), "pane 1 missing after openSplit()");
+        QCOMPARE(split.pane(1)->paneIndex(), 1);
+
+        // One-cell handle.
+        QCOMPARE(split.handleWidth(), split.pane(0)->cellWidth());
+        QSplitterHandle* h = split.handle(1);
+        QVERIFY2(h, "splitter handle not created for the split");
+        QVERIFY2(!h->isHidden(), "handle must be visible while split");
+
+        // The handle paints a TV frame/grip: white frame ink present.
+        const QImage img = h->grab().toImage();
+        QVERIFY2(!img.isNull() && img.width() > 2 && img.height() > 40,
+                 "handle did not render");
+        int white = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x) {
+                const QRgb px = img.pixel(x, y);
+                if (qRed(px) > 200 && qGreen(px) > 200 && qBlue(px) > 200)
+                    ++white;
+            }
+        QVERIFY2(white > 8,
+                 qPrintable(QStringLiteral("handle has no TV frame ink (%1 white px)")
+                                .arg(white)));
+
+        split.closeSplit();
+        QVERIFY2(!split.splitOpen(), "split must report closed after closeSplit()");
+        QCOMPARE(split.count(), 1);
     }
 };
 

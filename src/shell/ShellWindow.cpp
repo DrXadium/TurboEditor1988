@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ShellWindow.h"
 #include "EditorPane.h"
+#include "EditorSplitter.h"
 #include "BorlandStyle.h"
 #include "ScrollBarInstaller.h"
 #include "MenuBar.h"
@@ -88,8 +89,8 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     setMenuBar(menu);
 
     // Central host: the TV window-blue desktop with the TabStrip above the
-    // editor. The pane's frame (╔═╗ / ║ / band) is now EditorPane's job; this
-    // host only holds the tab row and lays the panes out below it. Its top
+    // editor. The pane's frame (╔═╗ / ║ / band) is EditorPane's job; this host
+    // holds the tab row, the splitter (panes + minimap), and the band. Its top
     // margin is the daylight between the menu bar and the tab row (Task 22).
     auto* central = new QWidget(this);
     central->setObjectName(QStringLiteral("editorHostDesktop"));
@@ -100,18 +101,24 @@ ShellWindow::ShellWindow(QWidget* parent) : QMainWindow(parent)
     auto* tabs = new TabStrip(central);
     lay->addWidget(tabs);
 
-    // Pane 0: the frame, title row, body slot and right scrollbar live inside
-    // the pane. The tab strip stays above it (global). The bottom band is a
-    // SIBLING directly below the pane (so the pane's ║ reaches its bottom edge
-    // and meets the band's ╚), exactly as the old centralWrap stacked them.
-    m_pane0 = new EditorPane(central);
+    // The row below the tab strip: an EditorSplitter hosting pane 0 (and pane 1
+    // when split) with the minimap as the last child (far right). The splitter
+    // collapses cleanly to one child while unsplit, so the single-pane look is
+    // unchanged.
+    m_splitter = new EditorSplitter(central);
+    m_pane0 = new EditorPane(m_splitter);
     m_pane0->setPaneIndex(0);
-    lay->addWidget(m_pane0, 1);
+    m_splitter->addPane(m_pane0);
+    m_rightBar = m_pane0->rightBar();
+    m_editorLayout = qobject_cast<QVBoxLayout*>(m_pane0->bodySlot()->layout());
+    lay->addWidget(m_splitter, 1);
+
+    // Bottom band: a SIBLING directly below the splitter (so the pane's ║
+    // reaches its bottom edge and meets the band's ╚), one band per pane in the
+    // split (pane 0's here; pane 1's is added in Task 4).
     m_bottomBand = m_pane0->bottomBand();
     m_bottomBand->setParent(central);
-    lay->addWidget(m_bottomBand, 0);   // band below the pane
-    m_editorLayout = qobject_cast<QVBoxLayout*>(m_pane0->bodySlot()->layout());
-    m_rightBar = m_pane0->rightBar();
+    lay->addWidget(m_bottomBand, 0);
     setCentralWidget(central);
 
     auto* outer = new QVBoxLayout;
@@ -134,23 +141,13 @@ void ShellWindow::setEditorWidget(QWidget* w)
 {
     if (!m_editorLayout || !w)
         return;
-    // The editor is the shell's default focus target. Nothing in the app ever
-    // called setFocus(), so focusWidget() stayed null and forwarded keys fell
-    // through to the shell, which ignores them: typing did nothing.
-    m_editor = w;
-    // Targeting is not enough - an editor widget only consumes keys while it
-    // HOLDS focus (QLineEdit in particular drops a press it was merely posted).
-    // setFocus() follows the focus proxy, so the real view gets it, not the
-    // stacked container that wraps it.
-    // NOTE: focus is granted at the END of this method, after the widget is
-    // re-parented into the editor row - re-parenting clears focus, so calling
-    // setFocus() here left the app with NO focused widget at startup.
-    // Remove the current placeholder/editor row (everything below the TabStrip)
-    // and replace it with an editor+minimap row. Index 0 is always the TabStrip.
-    while (m_editorLayout->count() > 0) {   // drain placeholder + stale rows alike
-        // takeAt(0): with a single item takeAt(1) returns nullptr and the loop
-        // would spin forever (this hung the real app while tests passed,
-        // because tests never call setEditorWidget twice).
+    // The editor is the shell's default focus target (see comment below).
+    m_editor = m_splitter ? static_cast<QWidget*>(m_splitter) : w;
+    m_editorWidget = w;   // the focus/proxy target (keyFocusWidget walks this)
+    // Remove the current placeholder (everything in pane 0's slot) and install
+    // the editor widget directly. takeAt(0): with a single item takeAt(1)
+    // returns nullptr and the loop would spin forever.
+    while (m_editorLayout->count() > 0) {
         QLayoutItem* old = m_editorLayout->takeAt(0);
         if (old) {
             if (old->widget() && old->widget() != w && !qobject_cast<Minimap*>(old->widget()))
@@ -159,25 +156,22 @@ void ShellWindow::setEditorWidget(QWidget* w)
         }
     }
 
-    // Editor (stretch) + Minimap (fixed strip) side by side.
-    auto* row = new QWidget;
-    row->setObjectName(QStringLiteral("editorRow"));
-    auto* h = new QHBoxLayout(row);
-    h->setContentsMargins(0, 0, 0, 0);
-    h->setSpacing(0);
-    w->setParent(row);
-    h->addWidget(w, 1);
-    auto* mini = new Minimap(row);
-    mini->setObjectName(QStringLiteral("minimap"));
-    h->addWidget(mini, 0);
-    // TV-revision2 has no minimap panel: it is a VS-Code leftover that painted
-    // a near-black strip inside the TV window. Hidden by default (the View >
-    // Show Minimap action is unchecked); the action toggles it back on.
-    mini->setVisible(false);
-    m_minimap = mini;
-    m_editorLayout->addWidget(row);
-    // Now that the editor lives in its final parent, give it focus: the shell
-    // has no other key target, and KTextEditor only enables its editing actions
+    // The editor widget lives in pane 0's body slot.
+    w->setParent(m_pane0 ? m_pane0->bodySlot() : nullptr);
+    m_editorLayout->addWidget(w, 1);
+
+    // The minimap is the splitter's LAST child (far right of the whole row).
+    // Hidden by default (the View > Show Minimap action is unchecked).
+    if (m_splitter) {
+        auto* mini = new Minimap(m_splitter);
+        mini->setObjectName(QStringLiteral("minimap"));
+        mini->setVisible(false);
+        m_splitter->setMinimap(mini);
+        m_minimap = mini;
+    }
+
+    // Now that the editor is in its final parent, give it focus: the shell has
+    // no other key target, and KTextEditor only enables its editing actions
     // (cursor keys, Backspace, Delete) for a view that holds focus.
     w->setFocus(Qt::OtherFocusReason);
 
@@ -546,6 +540,25 @@ bool ShellWindow::isEditorArea(QWidget* w) const
     return w && m_editor && (w == m_editor || m_editor->isAncestorOf(w));
 }
 
+bool ShellWindow::splitOpen() const
+{
+    return m_splitter && m_splitter->splitOpen();
+}
+
+EditorPane* ShellWindow::paneWidget(int i) const
+{
+    return m_splitter ? m_splitter->pane(i) : nullptr;
+}
+
+// Which pane a press landed in. The bridge calls this after resolving the hit
+// widget; it walks up to the enclosing pane. STUB in Task 2: always pane 0.
+// Task 6 replaces the body with the real enclosing-pane walk + signal.
+void ShellWindow::notePressInWidget(QWidget* w)
+{
+    Q_UNUSED(w);
+    // Task 2: no active-pane tracking yet.
+}
+
 TabStrip* ShellWindow::tabStrip() const
 {
     return findChild<TabStrip*>();
@@ -599,13 +612,15 @@ QWidget* ShellWindow::keyFocusWidget() const
     // down to a child and the shell would silently swallow them.
     if (auto* f = focusWidget())
         return f;
-    if (m_editor) {
+    if (m_editorWidget) {
         // ...and follow the editor's focus-proxy chain: the tab container
         // proxies to the live KTextEditor::View, which proxies to the canvas
         // widget that actually handles keys. Stopping at the container was a
         // dead end - it takes no focus and ignores keys, so nothing typed
-        // until the user clicked into the text.
-        QWidget* w = m_editor;
+        // until the user clicked into the text. (m_editorWidget is the
+        // installed editor widget; m_editor is the splitter, which has no
+        // proxy and would dead-end the keys.)
+        QWidget* w = m_editorWidget;
         for (int depth = 0; depth < 8; ++depth) {
             QWidget* proxy = w->focusProxy();
             if (!proxy || proxy == w)

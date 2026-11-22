@@ -127,6 +127,14 @@ public:
     // The code minimap shown beside the editor (Task 9), or nullptr before
     // setEditorWidget() installs the editor row.
     class Minimap* minimap() const { return m_minimap; }
+    // Split view (2026-11-21): whether a right pane is open, which pane widget
+    // sits at index i (0 exists once setEditorWidget ran; 1 is nullptr until a
+    // split), and which pane a click landed in (the active-pane signal source,
+    // Task 6). All defined in the .cpp - crt-shell only forward-declares
+    // EditorPane/EditorSplitter here.
+    bool splitOpen() const;
+    class EditorPane* paneWidget(int i) const;
+    void notePressInWidget(QWidget* w);
     // The Borland style this window installed (QSS wrapping hides it from
     // w.style(), so the test asserts on this directly).
     BorlandStyle* borlandStyle() const { return m_borland; }
@@ -152,7 +160,9 @@ private:
     BorlandStyle* m_borland = nullptr;
     QVBoxLayout* m_editorLayout = nullptr;   // central layout: [TabStrip, editorRow]
     class EditorPane* m_pane0 = nullptr;     // pane 0: frame + title + chrome
-    QWidget* m_editor = nullptr;             // current editor widget (focus default)
+    class EditorSplitter* m_splitter = nullptr;   // hosts pane0 | [pane1] | minimap
+    QWidget* m_editor = nullptr;             // the splitter (or editor) for isEditorArea
+    QWidget* m_editorWidget = nullptr;       // the installed editor widget (focus target)
     QWidget* m_keyboardOwner = nullptr;      // dock/modal that owns the keyboard
     std::function<bool(const QKeySequence&)> m_editorShortcut;
     std::function<SpellWord(const QPoint&)> m_spellResolver;

@@ -40,6 +40,8 @@ add_library(crt-shell STATIC
   src/shell/ShellWindow.h
   src/shell/EditorPane.cpp
   src/shell/EditorPane.h
+  src/shell/EditorSplitter.cpp
+  src/shell/EditorSplitter.h
   src/shell/BorlandStyle.cpp
     src/shell/BorlandMenu.cpp
   src/shell/BorlandStyle.h
