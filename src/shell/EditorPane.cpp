@@ -98,6 +98,11 @@ void EditorPane::buildChrome()
     m_closeBox = new QWidget(this);
     m_closeBox->setObjectName(QStringLiteral("splitCloseBox"));
     m_closeBox->setAutoFillBackground(false);
+    // Like m_titleRow/m_title/m_body: the global QWidget QSS rule paints an
+    // opaque blue background, and this box is a child composited OVER the pane's
+    // paintEvent. Without WA_NoSystemBackground the child's inherited blue bg
+    // covered the green ■ the pane painted (the \u25a0 looked missing on the split).
+    m_closeBox->setAttribute(Qt::WA_NoSystemBackground, true);
     m_closeBox->hide();
 
     updateFrameMargins();

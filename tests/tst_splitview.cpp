@@ -291,6 +291,61 @@ private slots:
         QVERIFY2(!w.splitOpen(), "clicking ■ must collapse the split");
     }
 
+    // Round 11 (LIVE BUG): the split's ■ must be PAINTED as green pixels at
+    // closeBoxRect(), not just "visible + positioned". The live app opened the
+    // split narrow, then the window layout resized pane 1 to its final width -
+    // updateFrameMargins() moved the box but the pane never repainted, so the
+    // ■ stayed at its pre-resize spot and the title row's right cell looked
+    // empty (Xadium's screenshot: no ■ on the new-view pane). Repro: open the
+    // split, RESIZE the window (settling the layout), then grab pane 1 and
+    // assert green ink sits exactly at closeBoxRect().
+    void close_box_is_painted_at_its_rect_after_a_resize() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* stack = new QWidget;
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY2(w.splitOpen(), "split must open");
+
+        EditorPane* p1 = w.paneWidget(1);
+        QVERIFY(p1);
+        QVERIFY(p1->closeBox()->isVisible());
+
+        // Settle the layout the way the live app does: a resize after the split
+        // opens repositions the box (updateFrameMargins) via resizeEvent.
+        w.resize(1000, 640);
+        QCoreApplication::processEvents();
+
+        const QRect box = p1->closeBoxRect();
+        QVERIFY2(p1->rect().contains(box),
+                 qPrintable(QStringLiteral("box %1 outside pane %2")
+                                .arg(box.x()).arg(box.y())));
+
+        // Grab pane 1 and assert GREEN ink (kCloseGreen #00AA00) is actually
+        // painted INSIDE the box rect - the "visible but not painted" bug.
+        const QImage img = p1->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QColor kGreen(0x00, 0xAA, 0x00);
+        int greenInBox = 0;
+        for (int y = box.top(); y <= box.bottom(); ++y)
+            for (int x = box.left(); x <= box.right(); ++x) {
+                if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+                    continue;
+                const QColor c = img.pixelColor(x, y);
+                if (qAbs(c.red() - kGreen.red()) <= 30 &&
+                    qAbs(c.green() - kGreen.green()) <= 30 &&
+                    qAbs(c.blue() - kGreen.blue()) <= 30)
+                    ++greenInBox;
+            }
+        QVERIFY2(greenInBox >= 6,
+                 qPrintable(QStringLiteral("■ not painted at closeBoxRect %1 (%2x%3): "
+                                           "only %4 green px in box")
+                                .arg(box.x()).arg(box.width()).arg(box.height())
+                                .arg(greenInBox)));
+    }
+
     // Task 6, case 1: a press INSIDE a pane makes that pane active; a tab
     // click does NOT move the active pane (Review Focus 3).
     void press_in_pane1_makes_it_active_but_a_tab_click_does_not() {
