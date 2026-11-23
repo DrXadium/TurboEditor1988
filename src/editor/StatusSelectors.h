@@ -2,6 +2,7 @@
 #pragma once
 #include <QWidget>
 #include <QString>
+#include <QPointer>
 #include <array>
 
 namespace KTextEditor { class Document; class View; }
@@ -128,7 +129,11 @@ private:
 
     bool m_ovr = false;
     KTextEditor::Document* m_doc = nullptr;
-    KTextEditor::View* m_view = nullptr;
+    // QPointer: the active view can be destroyed (split/tab close) while this
+    // widget still points at it; a raw pointer would dangle and the paint timer
+    // would call eolText()/applyEol() on freed memory (the 2026-11-22
+    // click-in-pane segfault: QMetaObject::cast <- eolText <- paintEvent).
+    QPointer<KTextEditor::View> m_view;
     QString m_spell;
     Sonnet::Speller* m_speller = nullptr;   // not owned
     QMenu* m_menu = nullptr;   // owned by this widget (parented)

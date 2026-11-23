@@ -988,6 +988,52 @@ private slots:
         s->setView(nullptr);
     }
 
+    // Round 11 (LIVE CRASH, 2026-11-22): StatusSelectors::m_view was a raw
+    // pointer that outlived its view. After a split/tab close destroyed the
+    // view while the status bar still pointed at it, the paint timer fired
+    // eolText() -> m_view->findChild() on freed memory -> SIGSEGV
+    // (QMetaObject::cast <- eolText <- paintEvent). m_view is now a QPointer,
+    // so a destroyed view self-nulls and eolText()/paint report "-". Repro:
+    // point the selectors at a REAL view, delete the view, then read eolText()
+    // and paint - must not crash and must fall back to "-".
+    void destroyed_view_does_not_crash_the_indicators()
+    {
+        KTextEditor::Document* doc = KTextEditor::Editor::instance()->createDocument(nullptr);
+        QVERIFY(doc);
+        doc->setText(QStringLiteral("line one\nline two\n"));
+        KTextEditor::View* view = doc->createView(nullptr);
+        QVERIFY(view);
+
+        StatusSelectors s;
+        s.resize(320, 20);
+        s.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&s));
+        s.setView(view);
+        QCoreApplication::processEvents();
+
+        // While the view is alive, the EOL cell reads a real value (not "-").
+        const QString live = s.eolText();
+        QVERIFY2(live != QStringLiteral("-"),
+                 "with a live view the EOL indicator should show a real type");
+
+        // Destroy the view UNDER the selectors - the live crash's precondition.
+        delete view;
+        view = nullptr;
+        QCoreApplication::processEvents();
+
+        // The QPointer must have self-nulled: no crash, placeholder "-".
+        QVERIFY2(s.view() == nullptr,
+                 "m_view must self-null when the view is destroyed (it dangled)");
+        const QString dead = s.eolText();
+        QCOMPARE(dead, QStringLiteral("-"));
+
+        // Paint must be safe too (the timer path that segfaulted).
+        const QImage img = s.grab().toImage();
+        QVERIFY2(!img.isNull(), "paint after view death must not crash");
+
+        delete doc;
+    }
+
 
 };
 
