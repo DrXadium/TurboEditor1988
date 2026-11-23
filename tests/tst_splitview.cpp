@@ -547,6 +547,71 @@ private slots:
         // left - before the QPointer fix this SIGSEGV'd (RC=139). Completing the
         // test at RC==0 is itself the regression proof.
     }
+
+    // Round 10 (LIVE CRASH repro, 2026-11-22): Xadium clicked the \u25a0 (or the blank
+    // title spot) to close the new-view pane, then clicked a REGULAR doc tab ->
+    // instant segfault. Root cause: the \u25a0 close path is
+    // ShellWindow::clearSplitEditorWidget() -> EditorSplitter::closeSplit(), which
+    // DESTROYS pane 1 (and the m_stack1 + secondary view it holds) but NEVER calls
+    // EditorTabManager::closeSplit(). So the manager keeps a DANGLING secondary
+    // view. With pane 1 still the active pane (m_activePane == 1), a tab click ->
+    // setActiveIndex() -> trackActiveCursor()/refreshFoldIndicator() read
+    // activeView(), which returns m_secondaryViews.value(...) - the DEAD view ->
+    // segfault. Reproduces the exact sequence: split open + pane 1 focused, shell
+    // \u25a0 close, then click a different tab.
+    void clicking_a_tab_after_the_shell_close_box_does_not_crash() {
+        EditorTabManager tabs;
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);          // pane 0's slot
+        w.show();
+        QCoreApplication::processEvents();
+
+        // The composition-root wiring (main.cpp:335): tabs.splitChanged -> shell.
+        QObject::connect(&tabs, &EditorTabManager::splitChanged, &w,
+                         [&tabs, &w](bool open) {
+                             if (open) {
+                                 KTextEditor::Document* d = tabs.documentForPane(1);
+                                 QString name;
+                                 if (d) {
+                                     const QString f = d->url().toLocalFile();
+                                     name = f.isEmpty() ? d->documentName() : QFileInfo(f).fileName();
+                                 }
+                                 if (name.isEmpty()) name = QStringLiteral("untitled");
+                                 w.setSplitEditorWidget(tabs.secondaryContainerWidget(), name);
+                             } else {
+                                 w.clearSplitEditorWidget();
+                             }
+                         });
+
+        // Two more tabs so a "regular doc tab" click has somewhere to go.
+        tabs.newDocument();   // index 1
+        tabs.newDocument();   // index 2
+
+        // Open a second view of the ACTIVE document (tab 0) into pane 1.
+        tabs.openSplitWithActiveDocument();
+        QCoreApplication::processEvents();
+        QVERIFY2(tabs.splitOpen(), "split must open");
+        // The user was WORKING IN PANE 1 (that is what made it the active pane,
+        // so activeView() resolves through m_secondaryViews on the tab click).
+        tabs.setActivePane(1);
+        QCOMPARE(tabs.activePane(), 1);
+
+        // The \u25a0 / blank-spot close: the SHELL tears pane 1 down (and with it the
+        // secondary view + stack), but the manager is never told. This is the live
+        // crash's precondition - the manager now holds a dangling view.
+        w.clearSplitEditorWidget();
+        QCoreApplication::processEvents();
+        QVERIFY2(!w.splitOpen(), "shell split must collapse after the \u25a0 box");
+
+        // Click a REGULAR doc tab (the live crash trigger). This must not deref
+        // the dead secondary view through activeView()/trackActiveCursor().
+        tabs.setActiveIndex(1);
+        QCoreApplication::processEvents();
+        // Reaching here without a SIGSEGV IS the pass. Sanity: the manager still
+        // reports a sane active document.
+        QVERIFY(tabs.activeDocument() != nullptr);
+    }
 };
 
 QTEST_MAIN(TstSplitView)
