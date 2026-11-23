@@ -344,6 +344,35 @@ private slots:
                                            "only %4 green px in box")
                                 .arg(box.x()).arg(box.width()).arg(box.height())
                                 .arg(greenInBox)));
+
+        // Finding #1 (Xadium): the frame must run continuously INTO the close
+        // control — no blue gap between the title rule ↔ ■ and the ■ ↔ the ╗
+        // corner. The rule used to stop cw/2 before the box and the corner sat
+        // box.right..r.width()-cw away, leaving blue where the control inserts.
+        // Sample the title-rule row (through the box's vertical middle) and
+        // assert the pixels immediately left/right of the box are NOT blue field.
+        const int ruleY = box.center().y();
+        const auto isBlue = [&](int x, int y) {
+            const QColor c = img.pixelColor(x, y);
+            return c.blue() > 150 && c.red() < 60 && c.green() < 60;
+        };
+        // Immediately LEFT of the box (one px in from box.left): rule, not blue.
+        const int leftX = box.left() - 1;
+        QVERIFY2(leftX >= 0 && !isBlue(leftX, ruleY),
+                 qPrintable(QStringLiteral("blue gap between title rule and ■ at x=%1")
+                                .arg(leftX)));
+        // Immediately RIGHT of the box → must reach the corner with no blue run:
+        // scan from box.right+1 to pane right edge; no sustained blue (the corner
+        // ╗ + rule fill it). Allow at most 1 blue px (antialiasing).
+        int blueRun = 0, maxBlueRun = 0;
+        for (int x = box.right() + 1; x < img.width(); ++x) {
+            if (isBlue(x, ruleY)) { ++blueRun; maxBlueRun = qMax(maxBlueRun, blueRun); }
+            else blueRun = 0;
+        }
+        QVERIFY2(maxBlueRun <= 1,
+                 qPrintable(QStringLiteral("blue gap of %1px between ■ and the "
+                                           "right frame corner (control not inserted)")
+                                .arg(maxBlueRun)));
     }
 
     // Task 6, case 1: a press INSIDE a pane makes that pane active; a tab

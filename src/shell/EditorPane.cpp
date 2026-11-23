@@ -298,14 +298,27 @@ void EditorPane::paintEvent(QPaintEvent*)
     if (gapStart > cw)
         TvFrame::tileH(p, QRect(cw, rowTop, gapStart - cw, rowH), cw,
                        QChar(0x2550), kFrameWhite);
-    // On the split pane the ■ interrupts the right rule, so end the right rule
-    // at the close box instead of the title's gap when the box is shown.
+    // On the split pane the ■ interrupts the right rule, so split the rule
+    // AROUND the box: run it up to the box's left edge, then resume from the
+    // box's right edge to the corner - so the frame runs continuously INTO the
+    // control with no blue gap on either side (Xadium 2026-11-22 finding #1:
+    // "the gap in the right where the close control should be inserted").
+    const bool boxShown = m_closeBox && m_closeBox->isVisible();
+    const QRect boxR = boxShown ? m_closeBox->geometry() : QRect();
     int rightRuleEnd = r.width() - cw;
-    if (m_closeBox && m_closeBox->isVisible())
-        rightRuleEnd = m_closeBox->geometry().left() - cw / 2;
+    if (boxShown)
+        rightRuleEnd = boxR.left();          // rule stops AT the box (touches it)
     if (gapEnd > 0 && gapEnd < rightRuleEnd)
         TvFrame::tileH(p, QRect(gapEnd, rowTop, rightRuleEnd - gapEnd, rowH), cw,
                        QChar(0x2550), kFrameWhite);
+    // Resume the rule from the box's right edge to the corner (fills ■→╗).
+    if (boxShown) {
+        const int resumeFrom = boxR.right() + 1;
+        const int cornerX = r.width() - cw;
+        if (resumeFrom < cornerX)
+            TvFrame::tileH(p, QRect(resumeFrom, rowTop, cornerX - resumeFrom, rowH),
+                           cw, QChar(0x2550), kFrameWhite);
+    }
     TvFrame::glyph(p, QRect(r.width() - cw, rowTop, cw, rowH), QChar(0x2557),
                    kFrameWhite);
 
