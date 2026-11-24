@@ -214,7 +214,7 @@ private slots:
         // plate: the selected row is the only blue-on-teal row.
         int black = 0;
         for (int y = list.top(); y < list.bottom() - 7; ++y)
-            for (int x = list.left(); x < list.right(); ++x) {
+            for (int x = list.left(); x < list.right() - 10; ++x) {
                 const QColor c = img.pixelColor(x, y);
                 if (c.red() < 24 && c.green() < 24 && c.blue() < 24)
                     ++black;
@@ -223,22 +223,27 @@ private slots:
                  qPrintable(QStringLiteral("list names are not black ink (%1 black px)")
                                 .arg(black)));
 
-        // Green thumb in the bottom scroll strip of the box.
+        // Green thumb on the RIGHT edge of the box: the list scrolls down, so
+        // its thumb is a vertical green block (2026-11-24: the control was a
+        // horizontal strip along the bottom, which read backwards).
         int thumb = 0;
-        for (int y = list.bottom() - 6; y <= list.bottom(); ++y)
-            for (int x = list.left(); x < list.right(); ++x) {
+        for (int y = list.top(); y < list.bottom() - 7; ++y)
+            for (int x = list.right() - 10; x <= list.right(); ++x) {
                 const QColor c = img.pixelColor(x, y);
                 if (c.green() > 120 && c.red() < 60 && c.blue() < 60)
                     ++thumb;
             }
         QVERIFY2(thumb > 10,
-                 qPrintable(QStringLiteral("no green scroll thumb under the list (%1 px)")
-                                .arg(thumb)));
+                 qPrintable(QStringLiteral("no green scroll thumb on the box's right edge "
+                                           "(%1 px)").arg(thumb)));
 
         // The two-column divider: a solid blue rule down the middle of the box.
         // It is what makes the reference's Files field read as two columns.
         int divider = 0;
-        const int mid = list.left() + list.width() / 2;
+        // The divider splits the NAME area, which now ends at the vertical
+        // scrollbar - so it is centred on listContentRect(), not on the box.
+        const QRect content = dock.listContentRect();
+        const int mid = content.left() + content.width() / 2;
         for (int y = list.top() + 2; y < list.bottom() - 8; ++y)
             for (int x = mid - 2; x <= mid + 3; ++x) {
                 const QColor c = img.pixelColor(x, y);
@@ -1078,43 +1083,105 @@ private slots:
                                 .arg(white)));
     }
 
-    // "the horizontal scroll does not work in the file list": the strip is a
-    // real draggable thumb and its track pages.
-    void strip_drag_scrolls_the_list()
+    // Reported 2026-11-24: "the file picker scrollbar should be repositioned to
+    // be vertical because right now it a) doesn't work and b) is
+    // counterintuitive since the contents scroll down."
+    //
+    // The list scrolls VERTICALLY (two columns, top to bottom), so its control
+    // is a vertical bar on the right edge of the Files box - a real QScrollBar
+    // child, so dragging, the arrows and the track all behave like a scrollbar.
+    void the_file_list_scrolls_with_a_vertical_bar_on_the_right()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
-        for (int i = 0; i < 40; ++i)
+        for (int i = 0; i < 60; ++i)
             QFile(QDir(dir.path()).absoluteFilePath(
-                      QStringLiteral("file_%1_with_a_fairly_long_name.txt").arg(i, 2, 10, QLatin1Char('0'))))
+                      QStringLiteral("file_%1.txt").arg(i, 2, 10, QLatin1Char('0'))))
                 .open(QIODevice::WriteOnly);
 
         TvFileDock dock;
         dock.resize(700, 500);
         dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
         dock.setDirectory(dir.path());
         QCoreApplication::processEvents();
 
-        QVERIFY2(dock.scrollOffset() == 0, "list does not start at the top");
-        const QRect thumb = dock.stripTrackRect();
-        QVERIFY2(!thumb.isEmpty(), "no scroll strip");
+        auto* bar = dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
+        QVERIFY2(bar, "the Files box has no vertical scrollbar");
+        QVERIFY2(bar->isVisible(), "the vertical scrollbar is hidden");
+        QCOMPARE(bar->orientation(), Qt::Vertical);
+        QVERIFY2(bar->width() >= 7, "the bar is too thin to grab");
+        QVERIFY2(bar->height() > 3 * bar->width(), "the bar is not a tall strip");
 
-        // Press on the thumb, drag to the far right, release.
-        const QRect grab(thumb.left() + 2, thumb.center().y(), 6, 2);
-        QMouseEvent press(QEvent::MouseButtonPress, grab.center(), dock.mapToGlobal(grab.center()),
-                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(&dock, &press);
-        const QPoint far(thumb.right() - 1, thumb.center().y());
-        QMouseEvent move(QEvent::MouseMove, far, dock.mapToGlobal(far),
-                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(&dock, &move);
-        QMouseEvent release(QEvent::MouseButtonRelease, far, dock.mapToGlobal(far),
-                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-        QApplication::sendEvent(&dock, &release);
+        // It hugs the Files box: right edge, full body height, above the
+        // horizontal bar's row.
+        const QRect list = dock.listRect();
+        QVERIFY2(bar->geometry().right() >= list.right() - 1,
+                 qPrintable(QStringLiteral("bar ends at %1, list at %2")
+                                .arg(bar->geometry().right()).arg(list.right())));
+        QVERIFY2(bar->geometry().top() <= list.top() + 1, "bar does not start at the list top");
+        QVERIFY2(bar->geometry().bottom() < list.bottom(),
+                 "the vertical bar runs into the horizontal bar's row");
+
+        // It has something to scroll, and scrolling it moves the LIST.
+        QVERIFY2(bar->maximum() > 0, "no scroll range with 60 files");
+        QCOMPARE(dock.scrollOffset(), 0);
+        bar->setValue(bar->maximum());
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.scrollOffset(), bar->maximum());
+        QVERIFY2(bar->value() == dock.scrollOffset(),
+                 "the bar and the list disagree about the position");
+
+        // ...and the reverse direction: the list's own scroll keeps the bar
+        // in step (keyboard/wheel scroll must not desync the thumb).
+        const QPoint local(list.center());
+        QWheelEvent up(QPointF(local), QPointF(dock.mapToGlobal(local)),
+                       QPoint(0, 0), QPoint(0, 120), Qt::NoButton,
+                       Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&dock, &up);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.scrollOffset() < bar->maximum(), "wheel did not scroll up");
+        QCOMPARE(bar->value(), dock.scrollOffset());
+
+        dock.reject();
+    }
+
+    // The bar is a child widget, so the bridge's childAt() hit-test is what
+    // makes a click on it land: pressed on the track below the thumb it pages
+    // the list, pressed on an arrow it steps by one row.
+    void clicking_the_vertical_bar_pages_the_list()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (int i = 0; i < 60; ++i)
+            QFile(QDir(dir.path()).absoluteFilePath(
+                      QStringLiteral("file_%1.txt").arg(i, 2, 10, QLatin1Char('0'))))
+                .open(QIODevice::WriteOnly);
+
+        TvFileDock dock;
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        dock.setDirectory(dir.path());
         QCoreApplication::processEvents();
 
-        QVERIFY2(dock.scrollOffset() > 0,
-                 "dragging the strip did not scroll the list");
+        auto* bar = dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
+        QVERIFY(bar);
+        QCOMPARE(dock.scrollOffset(), 0);
+
+        // Click the down-arrow end (a single step) - that is a real mouse
+        // event delivered to the bar itself, as the bridge delivers it.
+        const QPoint down(bar->width() / 2, bar->height() - 3);
+        QMouseEvent press(QEvent::MouseButtonPress, down, bar->mapToGlobal(down),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(bar, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, down, bar->mapToGlobal(down),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(bar, &release);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.scrollOffset() > 0, "the down arrow did not scroll the list");
+
+        dock.reject();
     }
 
     void shift_wheel_scrolls_long_names_sideways()

@@ -35,7 +35,8 @@ const QColor kGreen(0x00, 0xAA, 0x00);
 // DOS bright green: the press flash on a plate or a dropdown cell.
 const QColor kGreenBright(0x55, 0xFF, 0x55);
 const QColor kBlue(0x00, 0x00, 0xAA);
-const int kScrollStrip = 7;      // height of the teal scroll strip under the list
+const int kScrollStrip = 7;      // height of the horizontal bar's row under the list
+const int kBarWidth = 11;        // width of the list's vertical scrollbar
 // 2026-11-21, horizontal scrollbar: the strip is now a widget whose geometry
 // lives in layoutChildren (bar + strip under the list), so the NAME ROWS end
 // where the strip begins: listBottom - kScrollStrip. Every read of the row
@@ -96,6 +97,23 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
             [this](int v) { setHorizontalOffset(v); });
     m_hBar->show();
     syncHorizontalBar();
+
+    // The list scrolls DOWN, so its control is VERTICAL (2026-11-24 report:
+    // the old bottom strip was horizontal, so it read backwards and - being a
+    // hand-rolled thumb in the dock's own paint - dragged badly). A real
+    // QScrollBar on the Files box's right edge gets drag, the arrow buttons and
+    // track paging from Qt; the bridge's childAt() hit-test routes clicks to it.
+    m_vBar = new TextScrollBar(Qt::Vertical, this);
+    m_vBar->setObjectName(QStringLiteral("fileListVBar"));
+    m_vBar->setSingleStep(1);
+    connect(m_vBar, &QScrollBar::valueChanged, this, [this](int v) {
+        if (v == m_scroll)
+            return;
+        m_scroll = v;
+        update();
+    });
+    m_vBar->show();
+    syncVerticalBar();
 
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new TvPlate(text, this);
@@ -226,6 +244,7 @@ void TvFileDock::refreshFiles()
     if (m_selected < 0 && !m_files.isEmpty())
         m_selected = 0;
     layoutChildren();
+    syncVerticalBar();
     update();
 }
 
@@ -533,15 +552,19 @@ void TvFileDock::layoutChildren()
         m_ok->setGeometry(m_okRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
     if (m_cancel)
         m_cancel->setGeometry(m_cancelRect.adjusted(0, 0, kButtonShadow, kButtonShadow));
-    // Horizontal bar sits in the strip's ROW, to the right of the vertical
-    // strip's clickable slice (see stripTrackRect), so the box's bottom row
-    // carries both scroll controls without stealing height from the rows.
+    // Two scroll controls, one column each: the vertical bar runs down the
+    // box's RIGHT edge (the list scrolls down), the horizontal bar keeps the
+    // box's bottom row for long names. The name rows live in the area left of
+    // the bar and above the row - see listContentRect().
+    if (m_vBar) {
+        m_vBar->setGeometry(verticalBarRect());
+        syncVerticalBar();
+    }
     if (m_hBar) {
         const int barH = kScrollStrip;
-        const int slice = kScrollStrip + 1;
-        m_hBar->setGeometry(m_listRect.left() + slice,
+        m_hBar->setGeometry(m_listRect.left(),
                             m_listRect.bottom() - barH + 1,
-                            qMax(24, m_listRect.width() - slice - slice), barH);
+                            qMax(24, m_listRect.width() - kBarWidth), barH);
         syncHorizontalBar();
     }
 }
@@ -556,40 +579,39 @@ int TvFileDock::visibleRows() const
     return qMax(1, (listBodyBottom(m_listRect) - m_listRect.top() + 1) / rowH);
 }
 
-QRect TvFileDock::stripRect() const
+QRect TvFileDock::listContentRect() const
 {
     if (m_listRect.isEmpty())
         return QRect();
-    // The strip's ROW: teal track (vertical scroll) on the left slice, the
-    // horizontal bar takes the rest - both live in the list's bottom row, so
-    // neither steals height from the name rows.
-    return QRect(m_listRect.left(), m_listRect.bottom() - kScrollStrip + 1,
-                 m_listRect.width(), kScrollStrip);
+    const int bodyH = listBodyBottom(m_listRect) - m_listRect.top() + 1;
+    return QRect(m_listRect.left(), m_listRect.top(),
+                 qMax(20, m_listRect.width() - kBarWidth), qMax(1, bodyH));
 }
 
-QRect TvFileDock::stripTrackRect() const
+QRect TvFileDock::verticalBarRect() const
 {
-    // The vertical strip's own clickable slice, left of the horizontal bar.
-    const QRect row = stripRect();
-    if (row.isEmpty())
+    if (m_listRect.isEmpty())
         return QRect();
-    return QRect(row.left(), row.top(), kScrollStrip, row.height());
+    const int bodyH = listBodyBottom(m_listRect) - m_listRect.top() + 1;
+    return QRect(m_listRect.right() - kBarWidth + 1, m_listRect.top(),
+                 kBarWidth, qMax(1, bodyH));
 }
 
-QRect TvFileDock::stripThumbRect() const
+int TvFileDock::maxScroll() const
 {
-    const QRect track = stripTrackRect();   // the vertical slice only
-    if (track.isEmpty() || m_files.isEmpty())
-        return QRect();
-    const int perCol = visibleRows();
-    const int total = qMax(1, m_files.size());
-    // Same rules as before the horizontal bar split the strip row: a thumb
-    // proportional to the visible share, moved by m_scroll.
-    const int thumbW = qMax(8, track.width() * qMin(total, 2 * perCol) / total);
-    const int maxScroll = qMax(1, total - 2 * perCol);
-    const int x = track.left()
-                  + (track.width() - thumbW) * qBound(0, m_scroll, maxScroll) / maxScroll;
-    return QRect(x, track.top() + 1, thumbW, qMax(2, track.height() - 2));
+    // Two columns: the last page starts when the right column can still fill.
+    return qMax(0, m_files.size() - 2 * visibleRows());
+}
+
+void TvFileDock::setScroll(int value)
+{
+    const int next = qBound(0, value, maxScroll());
+    if (next == m_scroll)
+        return;
+    m_scroll = next;
+    if (m_vBar && m_vBar->value() != m_scroll)
+        m_vBar->setValue(m_scroll);   // echo back; valueChanged no-ops if equal
+    update();
 }
 
 int TvFileDock::maxHorizontalOffset() const
@@ -629,13 +651,20 @@ void TvFileDock::syncHorizontalBar()
 
 void TvFileDock::scrollByPage(int pages)
 {
-    const int perCol = visibleRows();
-    const int maxScroll = qMax(0, m_files.size() - 2 * perCol);
-    const int next = qBound(0, m_scroll + pages * perCol, maxScroll);
-    if (next != m_scroll) {
-        m_scroll = next;
-        update();
-    }
+    setScroll(m_scroll + pages * visibleRows());
+}
+
+// Range/value for the vertical bar: 0..maxScroll(), page = a column of rows.
+// Called after any listing change and from layoutChildren(), which is what
+// keeps the thumb honest when the box is resized.
+void TvFileDock::syncVerticalBar()
+{
+    if (!m_vBar)
+        return;
+    m_vBar->setRange(0, maxScroll());
+    m_vBar->setPageStep(qMax(1, visibleRows()));
+    if (m_vBar->value() != m_scroll)
+        m_vBar->setValue(m_scroll);
 }
 
 int TvFileDock::rowIndex(int column, int row) const
@@ -650,12 +679,13 @@ QRect TvFileDock::rowRect(int index) const
 {
     const int perCol = visibleRows();
     const int rowH = cellH();
-    const int half = m_listRect.width() / 2;
+    const QRect content = listContentRect();
+    const int half = content.width() / 2;
     const bool right = index >= m_scroll + perCol;
     const int row = index - (right ? m_scroll + perCol : m_scroll);
     if (row < 0 || row >= perCol)
         return QRect();
-    const int x = m_listRect.left() + (right ? half + 2 : 0);
+    const int x = content.left() + (right ? half + 2 : 0);
     const int w = half - 4;
     return QRect(x, m_listRect.top() + row * rowH, w, rowH);
 }
@@ -668,7 +698,8 @@ int TvFileDock::rowAt(const QPoint& p) const
         return -1;
     const int rowH = cellH();
     const int row = (p.y() - m_listRect.top()) / rowH;
-    const int col = p.x() < m_listRect.left() + m_listRect.width() / 2 ? 0 : 1;
+    const QRect content = listContentRect();
+    const int col = p.x() < content.left() + content.width() / 2 ? 0 : 1;
     const int idx = rowIndex(col, row);
     return (idx >= 0 && idx < m_files.size()) ? idx : -1;
 }
@@ -678,11 +709,12 @@ void TvFileDock::ensureVisible(int index)
     const int perCol = visibleRows();
     if (index < 0)
         return;
+    int next = m_scroll;
     if (index < m_scroll)
-        m_scroll = index;
+        next = index;
     else if (index >= m_scroll + 2 * perCol)
-        m_scroll = qMax(0, index - 2 * perCol + 1);
-    m_scroll = qBound(0, m_scroll, qMax(0, m_files.size() - 2 * perCol));
+        next = qMax(0, index - 2 * perCol + 1);
+    setScroll(next);
 }
 
 void TvFileDock::moveSelection(int delta)
@@ -793,17 +825,20 @@ void TvFileDock::paintEvent(QPaintEvent*)
         p.restore();
     }
 
-    // ---- Files box: teal field, divider, two name columns, scroll strip ----
+    // ---- Files box: teal field, divider, two name columns ----------------
+    // The name area stops at the vertical scrollbar (right edge) and at the
+    // horizontal bar's row (bottom); the bars paint themselves as child
+    // widgets, so nothing here may draw over them.
     p.fillRect(m_listRect, kTeal);
-    const int stripTop = listBodyBottom(m_listRect) + 1;
-    const int listBodyH = stripTop - m_listRect.top();
-    const int half = m_listRect.width() / 2;
+    const QRect content = listContentRect();
+    const int listBodyH = content.height();
+    const int half = content.width() / 2;
     // Dark-blue divider between the two columns (reference: a solid vertical
     // rule splitting the teal box).
-    p.fillRect(QRect(m_listRect.left() + half, m_listRect.top(), 2, listBodyH), kBlue);
+    p.fillRect(QRect(content.left() + half, content.top(), 2, listBodyH), kBlue);
 
     p.save();
-    p.setClipRect(QRect(m_listRect.left(), m_listRect.top(), m_listRect.width(), listBodyH));
+    p.setClipRect(content);
     for (int i = 0; i < m_files.size(); ++i) {
         const QRect r = rowRect(i);
         if (r.isEmpty())
@@ -823,14 +858,6 @@ void TvFileDock::paintEvent(QPaintEvent*)
         p.restore();
     }
     p.restore();
-
-    // Scroll strip: teal track + green thumb for VERTICAL scrolling, in the
-    // strip's row left of the horizontal bar (the bar is a child widget that
-    // paints itself over the rest of that row).
-    p.fillRect(stripRect(), kTeal);
-    const QRect thumb = stripThumbRect();
-    if (!thumb.isEmpty())
-        p.fillRect(thumb, m_draggingStrip ? kGreenBright : kGreen);
 
     // ---- Bottom path status row: blue field, white path, right-aligned count --
     p.fillRect(m_statusRect, kBlue);
@@ -873,22 +900,6 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
         update();
         return;
     }
-    // The strip under the Files box is a real scroll control now: pressing the
-    // thumb grabs it, pressing the track pages toward the click. The CLICK
-    // target is stripTrackRect (the vertical slice) - the rest of the strip's
-    // row belongs to the horizontal bar, a child widget with its own handler.
-    if (stripTrackRect().contains(pos)) {
-        const QRect thumb = stripThumbRect();
-        if (thumb.contains(pos)) {
-            m_draggingStrip = true;
-            m_stripGrabDx = pos.x() - thumb.left();
-        } else {
-            scrollByPage(pos.x() < thumb.left() ? -1 : +1);
-        }
-        setFocus(Qt::MouseFocusReason);
-        update();
-        return;
-    }
     if (m_listRect.contains(pos)) {
         const int idx = rowAt(pos);
         if (idx >= 0) {
@@ -904,30 +915,11 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
 
 void TvFileDock::mouseMoveEvent(QMouseEvent* ev)
 {
-    if (!m_draggingStrip) {
-        QWidget::mouseMoveEvent(ev);
-        return;
-    }
-    const QRect track = stripTrackRect();   // drag maps across the vertical slice
-    const QRect thumb = stripThumbRect();
-    const int span = qMax(1, track.width() - thumb.width());
-    const int perCol = visibleRows();
-    const int maxScroll = qMax(0, m_files.size() - 2 * perCol);
-    const int x = qBound(0, ev->pos().x() - m_stripGrabDx - track.left(), span);
-    const int next = (x * maxScroll + span / 2) / span;
-    if (next != m_scroll) {
-        m_scroll = next;
-        update();
-    }
-    ev->accept();
+    QWidget::mouseMoveEvent(ev);
 }
 
 void TvFileDock::mouseReleaseEvent(QMouseEvent* ev)
 {
-    if (m_draggingStrip) {
-        m_draggingStrip = false;
-        update();
-    }
     const DropCell held = m_pressedDrop;
     if (held != DropCell::None) {
         // Come back up BEFORE the menu opens: the menu runs its own event
@@ -979,12 +971,7 @@ void TvFileDock::wheelEvent(QWheelEvent* ev)
     }
     const int perCol = visibleRows();
     const int step = ev->angleDelta().y() > 0 ? -perCol : perCol;
-    const int maxScroll = qMax(0, m_files.size() - 2 * perCol);
-    const int next = qBound(0, m_scroll + step, maxScroll);
-    if (next != m_scroll) {
-        m_scroll = next;
-        update();
-    }
+    setScroll(m_scroll + step);
     ev->accept();
 }
 

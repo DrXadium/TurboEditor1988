@@ -22,8 +22,8 @@ class TvLineEdit;
 // Layout follows the reference "Save File As" screenshot: gray panel, white
 // double-line frame with the title in the top row, black offset drop shadow,
 // yellow labels, a blue entry field with a green stub, a teal two-column Files
-// box with a divider and a scroll strip, green OK / Cancel buttons, and
-// a blue path status row along the bottom.
+// box with a divider and a vertical scrollbar down its right edge, green
+// OK / Cancel buttons, and a blue path status row along the bottom.
 class TvFileDock : public QWidget
 {
     Q_OBJECT
@@ -94,11 +94,10 @@ public:
     QRect nameDropRect() const { return m_nameDropRect; }
     QRect typeDropRect() const { return m_typeDropRect; }
     QRect frameRect() const { return m_frameRect; }
-    // The scroll strip under the Files box (a draggable vertical thumb).
-    QRect stripRect() const;
-    // The vertical strip's clickable slice inside stripRect()'s row (the rest
-    // of that row is the horizontal scrollbar - see layoutChildren).
-    QRect stripTrackRect() const;
+    // The Files box without its scrollbar columns: the area the NAMES occupy
+    // (left of the vertical bar, above the horizontal bar's row).
+    QRect listContentRect() const;
+    QRect verticalBarRect() const;
     // Vertical scroll position (list index of the first row) and the sideways
     // offset of long names, both exposed so the drag behaviour is testable
     // without a pointer.
@@ -109,6 +108,9 @@ public:
     // Range = 0..maxHorizontalOffset(); value = the sideways offset of the
     // names in pixels. Public for tests and hit-testing.
     QScrollBar* horizontalScrollBarWidget() const { return m_hBar; }
+    // The vertical bar on the Files box's right edge: range = row chances,
+    // value = scrollOffset(). Public for tests and hit-testing.
+    QScrollBar* verticalScrollBarWidget() const { return m_vBar; }
     // Scroll the list by whole pages (the strip's track click).
     void scrollByPage(int pages);
     // Painted rect of list[index] - exposed so tests can drive clicks/double
@@ -174,6 +176,8 @@ private:
     void layoutChildren();
     void syncSelectionFromEdit();
     void moveSelection(int delta);
+    int maxScroll() const;                     // last legal m_scroll
+    void setScroll(int value);                 // clamp + echo to the bar
     void descendInto(const QString& name);
     QString resolvedPath() const;
 
@@ -183,10 +187,10 @@ private:
     int rowAt(const QPoint& p) const;      // -1 when the point is not on a row
     int columnAt(const QPoint& p) const;   // 0 = left column, 1 = right
     int rowIndex(int column, int row) const;   // list index for a cell
-    QRect stripThumbRect() const;              // the green thumb in the strip
     int maxHorizontalOffset() const;           // widest name vs the column width
     void ensureVisible(int index);
     void syncHorizontalBar();                  // range/value -> m_hBar
+    void syncVerticalBar();                    // range/value -> m_vBar
 
     Mode m_mode = Open;
     QString m_title = QStringLiteral("Open File");
@@ -200,10 +204,8 @@ private:
     // Sideways offset for long names (Shift+wheel, or dragging the strip's
     // thumb with the horizontal part). Clamped to the widest visible name.
     int m_hOffset = 0;
-    // The strip is a real thumb: press grabs it, move maps x to m_scroll.
-    bool m_draggingStrip = false;
-    int m_stripGrabDx = 0;
     QScrollBar* m_hBar = nullptr;              // sideways scroll for long names
+    QScrollBar* m_vBar = nullptr;              // the list's vertical scrollbar
 
     TvLineEdit* m_edit = nullptr;
     TvLineEdit* m_pathEdit = nullptr;
