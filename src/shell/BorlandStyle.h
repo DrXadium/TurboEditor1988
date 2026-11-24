@@ -23,4 +23,7 @@ public:
     // the item has to be SIZED wider, not just drawn further in (drawing alone
     // would clip the label against the plate edge).
     static int menuBarItemPad() { return 4; }
+    // Grey gap reserved right of a message-bar action plate so its block
+    // shadow never touches the neighbouring plate (2026-11-24 report).
+    static int buttonGap() { return 8; }
 };

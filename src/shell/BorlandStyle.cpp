@@ -19,7 +19,23 @@ const QColor kMenuGray(0xAA, 0xAA, 0xAA);
 // TvModal kButtonShadow = 4): the plate is the button rect inset by this on
 // right+bottom, and the black shadow sits at +4,+4 behind it.
 const int kButtonShadow = 4;
+// Grey breathing room right of a message-bar plate: the shadow band alone
+// (4px) is exactly the width of the black arm, so without it the arm sits
+// flush against the next plate. One 8px cell keeps the pair readable.
+const int kButtonGap = 8;
 }
+
+// Scoped the same way PE_PanelButtonTool and CE_ToolButtonLabel are scoped:
+// only buttons whose PARENT is the crash-recovery bar get the house shadow.
+static bool messageBarButton(const QWidget* w)
+{
+    const QWidget* parent = w ? w->parentWidget() : nullptr;
+    if (!parent)
+        return false;
+    const QByteArray cls = parent->metaObject()->className();
+    return cls == "KateMessageWidget" || cls == "KMessageWidget";
+}
+
 
 BorlandStyle::BorlandStyle(QStyle* base) : QProxyStyle(base) {}
 
@@ -44,6 +60,16 @@ QSize BorlandStyle::sizeFromContents(ContentsType type, const QStyleOption* opt,
     // reads evenly on both sides of the label.
     if (type == CT_MenuBarItem)
         s.rwidth() += 2 * menuBarItemPad();
+    // The crash-recovery bar lays its action plates flush in a row, but each
+    // plate reserves a 4px black block shadow INSIDE its own rect (see
+    // PE_PanelButtonTool). With no extra room the shadow arm of one plate lands
+    // on the green edge of the next - the 2026-11-24 "shadows are touching the
+    // adjacent buttons" report. Reserve pane grey to the right of the button
+    // rect so the arm has somewhere to live and never touches its neighbour.
+    // Only for buttons whose parent is the message bar: every other
+    // QToolButton in the app keeps its size.
+    if (type == CT_ToolButton && w && messageBarButton(w))
+        s.rwidth() += kButtonGap;
     return s;
 }
 
@@ -218,6 +244,11 @@ void BorlandStyle::drawControl(ControlElement ce, const QStyleOption* opt,
         if (cls == "KateMessageWidget" || cls == "KMessageWidget") {
             if (const auto* to = qstyleoption_cast<const QStyleOptionToolButton*>(opt)) {
                 QStyleOptionToolButton o(*to);
+                // The rect carries the shadow band + reserved gap on the right,
+                // so centring on it would push the label off the plate.
+                o.rect = QRect(o.rect.left(), o.rect.top(),
+                               o.rect.width() - kButtonShadow - kButtonGap,
+                               o.rect.height() - kButtonShadow);
                 o.palette.setColor(QPalette::ButtonText, kBlack);
                 QProxyStyle::drawControl(ce, &o, p, w);
             } else {
@@ -264,7 +295,11 @@ void BorlandStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption* opt,
             // green plate is the rect inset 4px on right+bottom, the black
             // shadow fills the vacated band at +4,+4, and only the offset L
             // survives - hidden behind the plate at top-right/bottom-left.
-            const QRect plate = opt->rect.adjusted(0, 0, -kButtonShadow, -kButtonShadow);
+            // The plate keeps its natural width: the button rect is the plate
+            // plus the shadow band plus the grey gap sizeFromContents reserved.
+            const QRect plate(opt->rect.left(), opt->rect.top(),
+                              opt->rect.width() - kButtonShadow - kButtonGap,
+                              opt->rect.height() - kButtonShadow);
             if (plate.width() > 0 && plate.height() > 0) {
                 p->fillRect(opt->rect, kMenuGray);      // band backdrop / notch grey
                 p->fillRect(plate.translated(kButtonShadow, kButtonShadow), kBlack);

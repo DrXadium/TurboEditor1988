@@ -18,6 +18,7 @@
 #include <QStyle>
 #include <QToolButton>
 #include <QWidget>
+#include <QHBoxLayout>
 #include "src/shell/BorlandStyle.h"
 
 // 2026-11-22 (round 8): KTextEditor's crash-recovery prompt ("The file was not
@@ -178,10 +179,12 @@ private slots:
 
         const QImage img = bar.grab().toImage().convertToFormat(QImage::Format_RGB32);
         const QRect g = btn->geometry();
-        // The green plate is the button rect inset 4px on right+bottom; the black
-        // shadow band fills the vacated right/bottom 4px, offset so it is hidden
-        // behind the plate at the top-right and bottom-left.
-        const QRect plate = g.adjusted(0, 0, -4, -4);
+        // The green plate is the button rect inset by the 4px shadow band on
+        // right+bottom, plus the 8px grey gap the style reserves right of the
+        // plate (2026-11-24: neighbouring plates must not touch). The black
+        // shadow band fills the vacated 4px, offset so it hides behind the
+        // plate at the top-right and bottom-left.
+        const QRect plate = g.adjusted(0, 0, -12, -4);
         const auto isGreen = [](const QColor& c) {
             return c.green() > 120 && c.red() < 120 && c.blue() < 120;
         };
@@ -200,8 +203,10 @@ private slots:
                  qPrintable(QStringLiteral("plate not green: %1,%2,%3")
                                 .arg(inside.red()).arg(inside.green()).arg(inside.blue())));
 
-        // Shadow present: black in the band right of and below the plate.
-        const QColor right = img.pixelColor(g.right() - 2, plate.center().y());
+        // Shadow present: black in the band right of and below the plate. The
+        // right band starts at plate.right()+1 (the rect also carries the grey
+        // gap after it, so g.right() is no longer inside the shadow).
+        const QColor right = img.pixelColor(plate.right() + 2, plate.center().y());
         QVERIFY2(isBlack(right),
                  qPrintable(QStringLiteral("no shadow in right band: %1,%2,%3")
                                 .arg(right.red()).arg(right.green()).arg(right.blue())));
@@ -214,7 +219,7 @@ private slots:
         // it is hidden BEHIND the plate at the top-right and bottom-left - those
         // corners are the pane's grey, not black. A full-height QSS border arm
         // fails both of these.
-        const QColor topRight = img.pixelColor(g.right() - 2, g.top() + 1);
+        const QColor topRight = img.pixelColor(plate.right() + 2, plate.top() + 1);
         QVERIFY2(isGrey(topRight),
                  qPrintable(QStringLiteral("top-right gutter is %1,%2,%3 - want pane grey "
                                            "(shadow offset down, hidden behind plate)")
@@ -224,6 +229,93 @@ private slots:
                  qPrintable(QStringLiteral("bottom-left gutter is %1,%2,%3 - want pane grey "
                                            "(shadow offset right, hidden behind plate)")
                                 .arg(bottomLeft.red()).arg(bottomLeft.green()).arg(bottomLeft.blue())));
+
+        qApp->setStyleSheet(QString());
+    }
+
+    // Reported 2026-11-24: the crash-recovery bar's action plates (View
+    // Changes / Recover Data / Discard) were laid out flush, so one plate's
+    // 4px black block shadow ran right into the next plate's green edge. The
+    // reference bar separates every plate from its neighbour with pane grey.
+    void the_recovery_bar_action_plates_are_separated()
+    {
+        QFile f(QStringLiteral(CRT_KATE_SOURCE_DIR "/src/shell/borland.qss"));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        qApp->setStyleSheet(QString::fromUtf8(f.readAll()));
+        qApp->setStyle(new BorlandStyle);   // the same style the app installs
+
+        // Laid out for real, exactly as KMessageWidget does it: a left-to-right
+        // box, spacing 0, buttons sized from their size hints. The style has to
+        // reserve the room - asking the buttons to overlap would prove nothing.
+        KateMessageWidget bar;
+        auto* lay = new QHBoxLayout(&bar);
+        lay->setContentsMargins(10, 16, 10, 16);
+        lay->setSpacing(0);
+        auto* a = new QToolButton(&bar);
+        a->setText(QStringLiteral("View Changes"));
+        a->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        auto* b = new QToolButton(&bar);
+        b->setText(QStringLiteral("Recover Data"));
+        b->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        auto* c = new QToolButton(&bar);
+        c->setText(QStringLiteral("Discard"));
+        c->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        lay->addWidget(a);
+        lay->addWidget(b);
+        lay->addWidget(c);
+        lay->addStretch(1);
+        bar.resize(bar.sizeHint());
+        bar.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&bar));
+        QCoreApplication::processEvents();
+
+        // The plates are the green inset by the 4px shadow band (BorlandStyle
+        // PE_PanelButtonTool), so the gap that matters is grey BETWEEN the
+        // shadow band of one plate and the green of the next.
+        const QRect plateA = a->geometry().adjusted(0, 0, -12, -4);
+        const QRect plateB = b->geometry().adjusted(0, 0, -12, -4);
+        const QRect plateC = c->geometry().adjusted(0, 0, -12, -4);
+        QVERIFY(plateA.right() < plateB.left());
+        QVERIFY(plateB.right() < plateC.left());
+
+        const QImage img = bar.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const auto isBlack = [](const QColor& c) {
+            return c.red() < 12 && c.green() < 12 && c.blue() < 12;
+        };
+        const auto isGrey = [](const QColor& c) {
+            return qAbs(c.red() - 0xAA) < 16 && qAbs(c.green() - 0xAA) < 16
+                   && qAbs(c.blue() - 0xAA) < 16;
+        };
+
+        // Shadow arm ends 4px right of plate A; everything after it up to
+        // plate B must be grey.
+        int greyAB = 0;
+        for (int x = plateA.right() + 5; x <= plateB.left() - 1; ++x) {
+            const QColor px = img.pixelColor(x, plateB.center().y());
+            if (isGrey(px))
+                ++greyAB;
+        }
+        QVERIFY2(greyAB >= 4,
+                 qPrintable(QStringLiteral("only %1 grey px between plate A's shadow and plate "
+                                           "B - they touch").arg(greyAB)));
+        QVERIFY2(!isBlack(img.pixelColor(plateB.left() - 1, plateB.center().y())),
+                 "plate B's left edge is black: plate A's shadow runs into it");
+
+        int greyBC = 0;
+        for (int x = plateB.right() + 5; x <= plateC.left() - 1; ++x) {
+            const QColor px = img.pixelColor(x, plateC.center().y());
+            if (isGrey(px))
+                ++greyBC;
+        }
+        QVERIFY2(greyBC >= 4,
+                 qPrintable(QStringLiteral("only %1 grey px between plate B's shadow and plate "
+                                           "C - they touch").arg(greyBC)));
+
+        // The shadows themselves survive: they must not be deleted to make room.
+        QVERIFY2(isBlack(img.pixelColor(plateA.right() + 2, plateA.center().y())),
+                 "plate A lost its right shadow band");
+        QVERIFY2(isBlack(img.pixelColor(plateA.center().x(), a->geometry().bottom() - 2)),
+                 "plate A lost its bottom shadow band");
 
         qApp->setStyleSheet(QString());
     }
