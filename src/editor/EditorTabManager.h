@@ -15,6 +15,9 @@ class QIcon;
 #include <ktexteditor/cursor.h>
 #include "FileChangeTracker.h"
 #include "BlockFinder.h"
+#include "HexColorScan.h"
+
+class HexSwatchProvider;
 
 namespace KTextEditor { class Document; class View; class MovingRange; }
 
@@ -46,8 +49,12 @@ public:
     // active pane's view is what activeView() returns, so every existing
     // feature follows focus through activeViewChanged alone.
     QStackedWidget* secondaryContainerWidget();   // created on first split
-    KTextEditor::View* viewForPane(int pane) const;  // pane 1 null unless split
-    KTextEditor::Document* documentForPane(int pane) const;
+    KTextEditor::View* viewForPane(int pane) const;
+    // The colour-swatch inline-note provider attached to `view`, or nullptr.
+    // Exposed so the shell can connect its swatchClicked signal and so tests
+    // can prove every view actually got one.
+    HexSwatchProvider* swatchProvider(KTextEditor::View* view) const;
+    KTextEditor::Document* documentForPane(int pane) const;  // pane 1 null unless split
     bool splitOpen() const;
     void openSplitWithActiveDocument();          // View > Open Document in New View
     void openSplitWithDocument(KTextEditor::Document* doc);  // File > Open as Split
@@ -312,6 +319,9 @@ public:
     bool triggerActiveViewShortcut(const QKeySequence& seq);
 
 signals:
+    // A colour swatch was clicked: the token it belongs to, its line, and the
+    // box's viewport rect so the shell can hang the picker beside it.
+    void swatchClicked(const HexColorToken& token, int line, const QRect& cellRect);
     void tabsChanged(const QStringList& titles, int active);
     // Split opened/closed (2026-11-21): the shell shows/hides pane 1 and its
     // divider in response, and the composition root re-points per-pane chrome.
@@ -352,6 +362,9 @@ private:
     // Binds a caret listener per pane (0 and 1) and re-emits each pane's
     // current position, so both bands are seeded on every tab/split change.
     void trackPaneCursors();
+    // Registers a swatch provider on a freshly created view (2026-11-23). Every
+    // creation path calls this, so no view can exist without its swatches.
+    void attachSwatchProvider(KTextEditor::View* view);
     // Deliver a FocusIn to the view's KateViewInternal canvas so Kate starts
     // its caret-blink timer (never fires on its own on this unmapped shell).
     void startCaretBlink(KTextEditor::View* view);
@@ -387,6 +400,9 @@ private:
                                     // null when the shell's pane teardown kills them)
     QList<KTextEditor::Document*> m_docs;
     QList<KTextEditor::View*> m_views;              // pane 0 (primary) view per doc
+    // One swatch provider per view, owned here (parented to the manager) and
+    // dropped with the view.
+    QHash<KTextEditor::View*, HexSwatchProvider*> m_swatchProviders;
     QHash<KTextEditor::Document*, QPointer<KTextEditor::View>> m_secondaryViews;  // pane 1; QPointer so a view destroyed by the shell's pane teardown self-nulls
     int m_active = -1;
     int m_activePane = 0;                            // which pane owns focus

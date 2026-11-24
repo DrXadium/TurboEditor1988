@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 #include <QClipboard>
 #include "EditorTabManager.h"
+#include "HexSwatchProvider.h"
 #include "FindReplaceDialog.h"
 #include "LineAffixDialog.h"
 #include "ColourWiring.h"
@@ -441,6 +442,34 @@ void EditorTabManager::finishView(KTextEditor::View* view)
     installKeyRouting(view);
     attachBlockTracking(view);
     setBlockMarkersVisible(false);
+    attachSwatchProvider(view);
+}
+
+// Colour swatches (2026-11-23): a provider paints a box after every #rgb /
+// #rrggbb token and reports clicks. Parented to the MANAGER, not the view: the
+// view's own teardown must never leave a half-destroyed provider registered,
+// and a view destroyed by the shell's pane teardown still drops its provider
+// through the destroyed() link below.
+void EditorTabManager::attachSwatchProvider(KTextEditor::View* view)
+{
+    if (!view || m_swatchProviders.contains(view))
+        return;
+    auto* provider = new HexSwatchProvider(view, this);
+    m_swatchProviders.insert(view, provider);
+    view->registerInlineNoteProvider(provider);
+    connect(provider, &HexSwatchProvider::swatchClicked, this,
+            [this](const HexColorToken& token, int line, const QRect& rect) {
+                emit swatchClicked(token, line, rect);
+            });
+    connect(view, &QObject::destroyed, this, [this, view]() {
+        if (HexSwatchProvider* p = m_swatchProviders.take(view))
+            p->deleteLater();
+    });
+}
+
+HexSwatchProvider* EditorTabManager::swatchProvider(KTextEditor::View* view) const
+{
+    return m_swatchProviders.value(view, nullptr);
 }
 
 
@@ -807,6 +836,7 @@ void EditorTabManager::newDocument()
     applyTvStyle(view);
     installKeyRouting(view);
     attachBlockTracking(view);
+    attachSwatchProvider(view);
     // Block markers are hidden by default (2026-11-20). Applied HERE, at view
     // creation, so a newly opened file comes up clean as well as the restored
     // ones - and so the write never races a fold.

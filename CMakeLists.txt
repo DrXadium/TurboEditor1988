@@ -158,6 +158,8 @@ add_library(crt-editor STATIC
   src/editor/ColourWiring.h
   src/editor/HexColorScan.cpp
   src/editor/HexColorScan.h
+  src/editor/HexSwatchProvider.cpp
+  src/editor/HexSwatchProvider.h
   src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -349,6 +351,10 @@ add_test(NAME tst_minimap COMMAND tst_minimap)
 add_executable(tst_hexcolor tests/tst_hexcolor.cpp)
 target_link_libraries(tst_hexcolor PRIVATE crt-editor Qt6::Test)
 add_test(NAME tst_hexcolor COMMAND tst_hexcolor)
+
+add_executable(tst_hexswatch tests/tst_hexswatch.cpp)
+target_link_libraries(tst_hexswatch PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_hexswatch COMMAND tst_hexswatch)
 
 # Task 9B test: ctest -R tst_menus
 add_executable(tst_menus tests/tst_menus.cpp)
