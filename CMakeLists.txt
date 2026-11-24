@@ -76,6 +76,10 @@ add_library(crt-shell STATIC
   src/shell/TvPlate.cpp
   src/shell/TvPlate.h
   src/shell/AboutModal.cpp
+  src/shell/ColorPickerPanel.cpp
+  src/shell/ColorPickerPanel.h
+  src/shell/HexColorScan.cpp
+  src/shell/HexColorScan.h
   src/shell/AboutModal.h
   src/shell/TvFileDock.h
   src/shell/TvLineEdit.h
@@ -156,8 +160,6 @@ add_library(crt-editor STATIC
   src/editor/StringColorizer.h
   src/editor/ColourWiring.cpp
   src/editor/ColourWiring.h
-  src/editor/HexColorScan.cpp
-  src/editor/HexColorScan.h
   src/editor/HexSwatchProvider.cpp
   src/editor/HexSwatchProvider.h
   src/editor/tvtheme/tvtheme.qrc
@@ -355,6 +357,10 @@ add_test(NAME tst_hexcolor COMMAND tst_hexcolor)
 add_executable(tst_hexswatch tests/tst_hexswatch.cpp)
 target_link_libraries(tst_hexswatch PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_hexswatch COMMAND tst_hexswatch)
+
+add_executable(tst_colorpicker tests/tst_colorpicker.cpp)
+target_link_libraries(tst_colorpicker PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+add_test(NAME tst_colorpicker COMMAND tst_colorpicker)
 
 # Task 9B test: ctest -R tst_menus
 add_executable(tst_menus tests/tst_menus.cpp)

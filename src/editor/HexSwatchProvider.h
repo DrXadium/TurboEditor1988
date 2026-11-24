@@ -5,7 +5,7 @@
 #include <QHash>
 #include <QVector>
 
-#include "HexColorScan.h"
+#include "src/shell/HexColorScan.h"
 
 namespace KTextEditor {
 class View;

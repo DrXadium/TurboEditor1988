@@ -15,7 +15,7 @@ class QIcon;
 #include <ktexteditor/cursor.h>
 #include "FileChangeTracker.h"
 #include "BlockFinder.h"
-#include "HexColorScan.h"
+#include "src/shell/HexColorScan.h"
 
 class HexSwatchProvider;
 

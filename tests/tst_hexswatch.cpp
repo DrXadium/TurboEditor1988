@@ -22,7 +22,7 @@
 #include <ktexteditor/view.h>
 #include "src/editor/HexSwatchProvider.h"
 #include "src/editor/EditorTabManager.h"
-#include "src/editor/HexColorScan.h"
+#include "src/shell/HexColorScan.h"
 
 namespace {
 

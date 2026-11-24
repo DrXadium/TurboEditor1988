@@ -16,7 +16,7 @@
 //  7. parseHexColor accepts the short and long forms with or without `#`.
 #include <QtTest>
 #include <QColor>
-#include "src/editor/HexColorScan.h"
+#include "src/shell/HexColorScan.h"
 
 class TstHexColor : public QObject
 {
