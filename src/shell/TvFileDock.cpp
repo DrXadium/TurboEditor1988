@@ -18,6 +18,7 @@
 #include <QResizeEvent>
 #include <QEvent>
 #include <QDir>
+#include <QStandardPaths>
 #include <QFileInfo>
 #include <QEventLoop>
 #include <QRegularExpression>
@@ -52,6 +53,39 @@ const int kShadowOffset = 6;
 const int kButtonShadow = 4;     // black block shadow behind each green plate
 const int kPad = 6;
 const int kMaxRecents = 10;      // the dropdown lists the last ten files
+const int kPlaceRowH = 2;        // extra px under each place row (breathing room)
+
+// Kate's Places list: Home, the XDG user folders that actually exist, then the
+// root. An entry whose folder is missing is skipped rather than shown dead -
+// clicking a place that is not there would strand the user.
+QList<QPair<QString, QString>> standardPlaces()
+{
+    QList<QPair<QString, QString>> out;
+    const QString home = QDir::homePath();
+    out << qMakePair(QStringLiteral("Home"), home);
+    const struct {
+        const char* label;
+        QStandardPaths::StandardLocation loc;
+    } kDirs[] = {
+        { "Desktop", QStandardPaths::DesktopLocation },
+        { "Documents", QStandardPaths::DocumentsLocation },
+        { "Downloads", QStandardPaths::DownloadLocation },
+        { "Music", QStandardPaths::MusicLocation },
+        { "Pictures", QStandardPaths::PicturesLocation },
+        { "Videos", QStandardPaths::MoviesLocation },
+    };
+    for (const auto& d : kDirs) {
+        const QString p = QStandardPaths::writableLocation(d.loc);
+        if (p.isEmpty() || !QFileInfo(p).isDir())
+            continue;
+        // Some boxes point a folder AT $HOME; one row for it is enough.
+        if (QFileInfo(p).canonicalFilePath() == QFileInfo(home).canonicalFilePath())
+            continue;
+        out << qMakePair(QString::fromLatin1(d.label), p);
+    }
+    out << qMakePair(QStringLiteral("Root"), QStringLiteral("/"));
+    return out;
+}
 } // namespace
 
 TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
@@ -125,6 +159,11 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
         b->setShadowOffset(kButtonShadow);
         return b;
     };
+    // Places column. Seeded here so the dock is useful on its own; the
+    // composition root does not have to know about the standard folders.
+    m_placeLabels = defaultPlaceLabels();
+    m_placePaths = defaultPlacePaths();
+
     m_ok = makeButton(QStringLiteral("OK"), "tvFileDockOk");
     m_cancel = makeButton(QStringLiteral("Cancel"), "tvFileDockCancel");
     connect(m_ok, &QPushButton::clicked, this, &TvFileDock::accept);
@@ -498,7 +537,12 @@ void TvFileDock::layoutChildren()
 
     const int x0 = inner.left() + kPad;
     const int usable = inner.width() - 2 * kPad;
-    const int listW = qMax(cw * 12, int(usable * 0.62));
+    // Places column down the LEFT (Kate's file dialog). Everything else - the
+    // path bar, the Files box and the name/type rows - starts right of it, so
+    // the content block shifts right as a whole.
+    const int placesW = qBound(cw * 8, int(usable * 0.24), cw * 18);
+    const int contentX = x0 + placesW + cw;
+    const int listW = qMax(cw * 12, usable - placesW - cw);
     const int btnW = qMax(cw * 9, 76);
     const int btnX = inner.right() - kPad - btnW + 1;
 
@@ -509,28 +553,32 @@ void TvFileDock::layoutChildren()
     const int dropW = qMax(cw * 2, 14);          // a real click target, not a sliver
     const int fieldW = qMax(cw * 8, listW - dropW - 5);
     const int typeTop = m_statusRect.top() - 6 - entryH;
-    m_typeRect = QRect(x0, typeTop, fieldW, entryH);
-    m_typeLabelRect = QRect(x0, typeTop - 2 - ch, listW, ch);
+    m_typeRect = QRect(contentX, typeTop, fieldW, entryH);
+    m_typeLabelRect = QRect(contentX, typeTop - 2 - ch, listW, ch);
     m_typeDropRect = QRect(m_typeRect.right() + 5, typeTop, dropW, entryH);
 
     const int nameTop = m_typeLabelRect.top() - 6 - entryH;
-    m_nameRect = QRect(x0, nameTop, fieldW, entryH);
+    m_nameRect = QRect(contentX, nameTop, fieldW, entryH);
     m_nameDropRect = QRect(m_nameRect.right() + 5, nameTop, dropW, entryH);
-    m_nameLabelRect = QRect(x0, nameTop - 2 - ch, listW, ch);
+    m_nameLabelRect = QRect(contentX, nameTop - 2 - ch, listW, ch);
 
     // Top block: the path bar.
     int y = inner.top() + 2;
-    m_pathLabelRect = QRect(x0, y, listW, ch);
+    m_pathLabelRect = QRect(contentX, y, listW, ch);
     y += ch + 2;
-    m_pathRect = QRect(x0, y, listW, entryH);
+    m_pathRect = QRect(contentX, y, listW, entryH);
     y += entryH + 6;
 
     // Files label, then the list fills whatever is left in the middle.
-    m_filesLabelRect = QRect(x0, y, listW, ch);
+    m_filesLabelRect = QRect(contentX, y, listW, ch);
     y += ch + 2;
 
     const int listBottom = m_nameLabelRect.top() - 6;
-    m_listRect = QRect(x0, y, listW, qMax(ch * 3, listBottom - y));
+    m_listRect = QRect(contentX, y, listW, qMax(ch * 3, listBottom - y));
+
+    // The column runs the full height of the Files box, caption above it.
+    m_placesLabelRect = QRect(x0, m_filesLabelRect.top(), placesW, ch);
+    m_placesRect = QRect(x0, m_listRect.top(), placesW, m_listRect.height());
 
     const int bh = ch + 6;
     m_okRect = QRect(btnX, m_listRect.top(), btnW, bh);
@@ -577,6 +625,65 @@ int TvFileDock::visibleRows() const
     // Row band excludes the scroll strip at the box's bottom edge (the band
     // helper keeps paint, hit-test and this count on the same arithmetic).
     return qMax(1, (listBodyBottom(m_listRect) - m_listRect.top() + 1) / rowH);
+}
+
+QRect TvFileDock::placeRect(int i) const
+{
+    if (m_placesRect.isEmpty() || i < 0 || i >= m_placePaths.size())
+        return QRect();
+    const int rowH = qMax(1, cellH() + kPlaceRowH);
+    const int top = m_placesRect.top() + 2 + i * rowH;
+    if (top > m_placesRect.bottom())
+        return QRect();
+    return QRect(m_placesRect.left() + 2, top, m_placesRect.width() - 4,
+                 qMin(rowH, m_placesRect.bottom() - top + 1));
+}
+
+int TvFileDock::placeAt(const QPoint& p) const
+{
+    if (!m_placesRect.contains(p))
+        return -1;
+    for (int i = 0; i < m_placePaths.size(); ++i) {
+        const QRect r = placeRect(i);
+        if (!r.isEmpty() && r.contains(p))
+            return i;
+    }
+    return -1;
+}
+
+int TvFileDock::currentPlace() const
+{
+    const QString here = QFileInfo(m_dir).canonicalFilePath();
+    for (int i = 0; i < m_placePaths.size(); ++i)
+        if (QFileInfo(m_placePaths.at(i)).canonicalFilePath() == here)
+            return i;
+    return -1;
+}
+
+QStringList TvFileDock::defaultPlaceLabels()
+{
+    QStringList out;
+    for (const auto& p : standardPlaces())
+        out << p.first;
+    return out;
+}
+
+QStringList TvFileDock::defaultPlacePaths()
+{
+    QStringList out;
+    for (const auto& p : standardPlaces())
+        out << p.second;
+    return out;
+}
+
+void TvFileDock::setPlaces(const QStringList& labels, const QStringList& paths)
+{
+    m_placeLabels = paths.isEmpty() ? defaultPlaceLabels() : labels;
+    m_placePaths = paths.isEmpty() ? defaultPlacePaths() : paths;
+    while (m_placeLabels.size() < m_placePaths.size())   // never a nameless row
+        m_placeLabels << QFileInfo(m_placePaths.at(m_placeLabels.size())).fileName();
+    m_placeLabels = m_placeLabels.mid(0, m_placePaths.size());
+    update();
 }
 
 QRect TvFileDock::listContentRect() const
@@ -779,6 +886,7 @@ void TvFileDock::paintEvent(QPaintEvent*)
     p.setFont(inkFont);
     p.setPen(kYellow);
     p.drawText(m_pathLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Path"));
+    p.drawText(m_placesLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Places"));
     p.drawText(m_filesLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Files"));
     p.drawText(m_nameLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("File name"));
     p.drawText(m_typeLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("File type"));
@@ -859,6 +967,29 @@ void TvFileDock::paintEvent(QPaintEvent*)
     }
     p.restore();
 
+    // ---- Places column: same teal field + black ink as the Files box; the
+    // place you are looking at is the inverted (blue) row, exactly like the
+    // selected file.
+    p.fillRect(m_placesRect, kTeal);
+    p.save();
+    p.setClipRect(m_placesRect);
+    const int current = currentPlace();
+    for (int i = 0; i < m_placePaths.size(); ++i) {
+        const QRect r = placeRect(i);
+        if (r.isEmpty())
+            continue;
+        const bool sel = (i == current);
+        if (sel)
+            p.fillRect(r, kBlue);
+        p.save();
+        p.setFont(inkFont);
+        p.setPen(sel ? kWhite : kBlack);
+        p.drawText(r.adjusted(4, 0, -2, 0), Qt::AlignLeft | Qt::AlignVCenter,
+                   m_placeLabels.at(i));
+        p.restore();
+    }
+    p.restore();
+
     // ---- Bottom path status row: blue field, white path, right-aligned count --
     p.fillRect(m_statusRect, kBlue);
     p.save();
@@ -897,6 +1028,19 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
     }
     if (m_typeDropRect.contains(pos)) {
         m_pressedDrop = DropCell::Type;
+        update();
+        return;
+    }
+    // A place row: jump there. The path bar follows (setDirectory writes it),
+    // and the name box is cleared - a name from the old folder is meaningless
+    // in the new one.
+    if (m_placesRect.contains(pos)) {
+        const int i = placeAt(pos);
+        if (i >= 0) {
+            setDirectory(m_placePaths.at(i));
+            m_edit->clear();
+        }
+        setFocus(Qt::MouseFocusReason);
         update();
         return;
     }

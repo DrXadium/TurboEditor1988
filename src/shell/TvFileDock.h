@@ -74,6 +74,21 @@ public:
     // key; public so the behaviour is testable without a pointer.
     void navigateToTypedPath();
 
+    // The Places column down the dialog's left side (Kate's file dialog): a
+    // column of shortcut locations; clicking one makes the dock list it. The
+    // ctor seeds the standard places; setPlaces() is the seam tests (and any
+    // future bookmark feature) drive.
+    static QStringList defaultPlaceLabels();
+    static QStringList defaultPlacePaths();
+    void setPlaces(const QStringList& labels, const QStringList& paths);
+    int placeCount() const { return m_placePaths.size(); }
+    QString placeLabel(int i) const { return m_placeLabels.value(i); }
+    QString placePath(int i) const { return m_placePaths.value(i); }
+    QRect placesRect() const { return m_placesRect; }
+    QRect placeRect(int i) const;
+    int placeAt(const QPoint& p) const;      // -1 when not on a place row
+    int currentPlace() const;                // the place showing m_dir, or -1
+
     // The last-10 recents shown by the name box's green dropdown cell.
     void setRecents(const QStringList& paths);
     QStringList recents() const { return m_recents; }
@@ -229,6 +244,10 @@ private:
     // seen at all.
     enum class DropCell { None, Name, Type };
     DropCell m_pressedDrop = DropCell::None;
+    QStringList m_placeLabels;   // "Home", "Documents", ... (left column)
+    QStringList m_placePaths;
+    QRect m_placesRect;
+    QRect m_placesLabelRect;
     QRect m_okRect;
     QRect m_cancelRect;
     QRect m_statusRect;

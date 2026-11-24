@@ -1146,6 +1146,140 @@ private slots:
         dock.reject();
     }
 
+    // ---- Places sidebar (user request 2026-11-24) --------------------------
+    //
+    // The dock carries a column of shortcut locations down its left side, in
+    // the same teal field language as the Files box, and the whole content
+    // block is shifted right to make room for it.
+    void the_places_list_sits_on_the_left_in_house_style()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char* name : { "aaa.txt", "bbb.txt" }) {
+            QFile f(dir.filePath(QLatin1String(name)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+        }
+
+        TvFileDock dock;
+        dock.setPlaces({ QStringLiteral("Alpha"), QStringLiteral("Beta") },
+                       { dir.path(), QDir::homePath() });
+        dock.setDirectory(dir.path());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        QVERIFY2(dock.placeCount() == 2, "the places list was not installed");
+        const QRect places = dock.placesRect();
+        const QRect list = dock.listRect();
+        QVERIFY2(!places.isEmpty(), "no places column");
+        QVERIFY2(places.right() < list.left(),
+                 qPrintable(QStringLiteral("the Files box was not shifted right of the places "
+                                           "column (%1 vs %2)")
+                                .arg(list.left()).arg(places.right())));
+        QVERIFY2(list.width() > 40, "the Files box lost its width");
+        // The fields follow the shifted content block, not the old left margin.
+        QVERIFY2(dock.pathRect().left() > places.right(),
+                 "the path field still starts left of the places column");
+        QVERIFY2(dock.nameRect().left() > places.right(),
+                 "the name field still starts left of the places column");
+
+        // Rows are laid out top-down inside the column, one per place.
+        const QRect r0 = dock.placeRect(0);
+        const QRect r1 = dock.placeRect(1);
+        QVERIFY2(!r0.isEmpty() && !r1.isEmpty(), "place rows have no geometry");
+        QVERIFY2(r0.top() < r1.top(), "place rows are not stacked downwards");
+        QVERIFY2(r1.top() >= r0.bottom(), "place rows overlap");
+
+        // Styled to match the Files box: teal field, black names, and a yellow
+        // "Places" caption over the column.
+        const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        int teal = 0, black = 0;
+        for (int y = places.top(); y <= places.bottom(); ++y)
+            for (int x = places.left(); x <= places.right(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (qAbs(c.red() - 0x00) < 40 && qAbs(c.green() - 0xAA) < 40
+                    && qAbs(c.blue() - 0xAA) < 40)
+                    ++teal;
+                if (c.red() < 24 && c.green() < 24 && c.blue() < 24)
+                    ++black;
+            }
+        QVERIFY2(teal > 100,
+                 qPrintable(QStringLiteral("places column is not the teal field (%1 px)")
+                                .arg(teal)));
+        QVERIFY2(black > 20,
+                 qPrintable(QStringLiteral("places column shows no black names (%1 px)")
+                                .arg(black)));
+
+        dock.reject();
+    }
+
+    void clicking_a_place_moves_the_path_and_the_listing()
+    {
+        QTemporaryDir first, second;
+        QVERIFY(first.isValid() && second.isValid());
+        QFile(QDir(first.path()).absoluteFilePath(QStringLiteral("only_in_first.txt")))
+            .open(QIODevice::WriteOnly);
+        QFile(QDir(second.path()).absoluteFilePath(QStringLiteral("only_in_second.txt")))
+            .open(QIODevice::WriteOnly);
+
+        TvFileDock dock;
+        dock.setPlaces({ QStringLiteral("First"), QStringLiteral("Second") },
+                       { first.path(), second.path() });
+        dock.setDirectory(first.path());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        QVERIFY2(dock.files().contains(QStringLiteral("only_in_first.txt")),
+                 "did not start in the first directory");
+        QCOMPARE(dock.currentPlace(), 0);
+
+        // A real press inside the second place's row, forwarded by the bridge.
+        const QRect row = dock.placeRect(1);
+        QVERIFY(!row.isEmpty());
+        const QPoint local = row.center();
+        QMouseEvent press(QEvent::MouseButtonPress, local, dock.mapToGlobal(local),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, dock.mapToGlobal(local),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &release);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(second.path()).canonicalFilePath());
+        QVERIFY2(dock.files().contains(QStringLiteral("only_in_second.txt")),
+                 qPrintable(QStringLiteral("the listing did not change: %1")
+                                .arg(dock.files().join(QLatin1Char(',')))));
+        QVERIFY2(!dock.files().contains(QStringLiteral("only_in_first.txt")),
+                 "the old directory's files are still listed");
+        QVERIFY2(dock.pathText().contains(QFileInfo(second.path()).fileName()),
+                 qPrintable(QStringLiteral("the path bar still says %1").arg(dock.pathText())));
+        QCOMPARE(dock.currentPlace(), 1);
+
+        dock.reject();
+    }
+
+    // The default list is Kate's: Home first, root reachable, and every entry a
+    // real directory (an entry that is not a directory would strand the user).
+    void the_default_places_are_the_standard_locations()
+    {
+        const QStringList labels = TvFileDock::defaultPlaceLabels();
+        const QStringList paths = TvFileDock::defaultPlacePaths();
+        QVERIFY2(labels.size() >= 6, "too few default places");
+        QCOMPARE(labels.size(), paths.size());
+        QCOMPARE(labels.first(), QStringLiteral("Home"));
+        QCOMPARE(QFileInfo(paths.first()).canonicalFilePath(),
+                 QFileInfo(QDir::homePath()).canonicalFilePath());
+        QVERIFY2(paths.contains(QStringLiteral("/")), "root is not offered");
+        for (const QString& p : paths)
+            QVERIFY2(QFileInfo(p).isDir(),
+                     qPrintable(QStringLiteral("default place is not a directory: %1").arg(p)));
+    }
+
     // The bar is a child widget, so the bridge's childAt() hit-test is what
     // makes a click on it land: pressed on the track below the thumb it pages
     // the list, pressed on an arrow it steps by one row.
