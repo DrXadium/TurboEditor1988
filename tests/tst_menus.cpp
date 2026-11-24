@@ -248,6 +248,40 @@ private slots:
         delete menu;
     }
 
+    // Xadium 2026-11-23: "let's rewire the main menu so ALT-F brings up the
+    // File menu". Qt's own Alt-mnemonic path lives in QMenuBar's key handling
+    // and needs an ACTIVE window; this shell is WA_DontShowOnScreen and never
+    // becomes one, so the bar exposes the popup as a callable step that the
+    // bridge's keyboard routing invokes.
+    void alt_mnemonic_opens_the_matching_top_level_menu() {
+        ShellWindow w;
+        w.resize(800, 600);
+        // Popups resolve screen() through the window handle; production's
+        // ContentBridge forces it with winId() (see setShellWindow). Do the
+        // same here or QMenu::popup dereferences a null QWindow.
+        w.show();
+        w.winId();
+        QVERIFY(w.menuBar());
+        auto* bar = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(bar, "shell menu bar is not a MenuBar");
+
+        QVERIFY2(bar->openMenuByMnemonic(QLatin1Char('F')),
+                 "Alt+F did not open a top-level menu");
+        QCoreApplication::processEvents();
+
+        QMenu* file = bar->menu(QStringLiteral("File"));
+        QVERIFY2(file, "no File menu");
+        QVERIFY2(file->isVisible(), "File menu was not popped up by its mnemonic");
+
+        file->close();
+        QCoreApplication::processEvents();
+        QVERIFY2(!file->isVisible(), "File menu did not close");
+
+        // An unused letter must not open anything (and must not crash).
+        QVERIFY2(!bar->openMenuByMnemonic(QLatin1Char('Q')),
+                 "an unmapped letter opened a menu");
+    }
+
     void menu_bar_has_kate_option_menus() {
         ShellWindow w;
         QMenuBar* mb = w.menuBar();

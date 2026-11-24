@@ -193,6 +193,31 @@ private slots:
     // called setFocus(), so focusWidget() was null and forwardKeyEvent posted to
     // the shell, which ignores keys: typing did nothing. QWidget key events do
     // NOT propagate down to a child, so a null focus target = dead keys.
+    // Xadium 2026-11-23: Alt+F must open the File menu in the LIVE app. Every
+    // keystroke reaches the shell through ContentBridge::forwardKeyEvent (QML
+    // forwards it), and Qt's shortcut map never runs here (no active window),
+    // so the bridge has to recognize the mnemonic and pop the menu itself.
+    void alt_f_through_the_bridge_opens_the_file_menu() {
+        ShellWindow w;
+        w.resize(800, 600);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        b.forwardKeyEvent(QEvent::KeyPress, Qt::Key_F, Qt::AltModifier,
+                          QString());
+        QCoreApplication::processEvents();
+
+        auto* bar = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(bar, "shell menu bar is not a MenuBar");
+        QMenu* file = bar->menu(QLatin1String("File"));
+        QVERIFY2(file, "no File menu");
+        QVERIFY2(file->isVisible(),
+                 "Alt+F did not reach the menu bar through the bridge");
+
+        file->close();
+        QCoreApplication::processEvents();
+    }
+
     void keys_reach_editor_when_nothing_holds_focus() {
         ShellWindow w;
         w.resize(640, 480);

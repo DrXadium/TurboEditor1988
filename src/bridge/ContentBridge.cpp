@@ -371,6 +371,22 @@ void ContentBridge::forwardKeyEvent(int type, int key, int modifiers,
             }
         }
     }
+    // Alt+<letter> is the classic menu mnemonic (Turbo Vision and Kate both
+    // open File on Alt+F). Qt's own implementation lives in QMenuBar and needs
+    // an ACTIVE window; this shell is WA_DontShowOnScreen, so Qt's shortcut map
+    // never runs and the bar never sees the key. Perform the popup here, on the
+    // same path every other keystroke already takes. Xadium 2026-11-23.
+    if (evType == QEvent::KeyPress
+        && static_cast<Qt::KeyboardModifiers>(modifiers) == Qt::AltModifier
+        && key >= Qt::Key_A && key <= Qt::Key_Z
+        && !m_shell->keyboardIsOwned()) {
+        if (auto* bar = qobject_cast<MenuBar*>(m_shell->menuBar())) {
+            if (bar->openMenuByMnemonic(QChar(QLatin1Char('A' + (key - Qt::Key_A))))) {
+                update();
+                return;
+            }
+        }
+    }
     auto* ev = new QKeyEvent(evType, static_cast<Qt::Key>(key),
                              static_cast<Qt::KeyboardModifiers>(modifiers), text);
 

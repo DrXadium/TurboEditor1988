@@ -22,6 +22,14 @@ public:
     // Titles of the top-level menus, in order (hotkey markers stripped).
     QStringList topLevelTitles() const;
 
+    // Opens the top-level menu whose mnemonic is \p letter (Alt+F -> File),
+    // the way Turbo Vision and Kate drive their bars from the keyboard. Qt's
+    // own Alt-mnemonic path runs inside QMenuBar's key handling and requires an
+    // ACTIVE window; this shell is WA_DontShowOnScreen and never becomes one,
+    // so the bridge's keyboard routing calls this directly. Returns true when a
+    // menu was popped up.
+    bool openMenuByMnemonic(QChar letter);
+
     // Creates a BorlandMenu (self-painted dropdown, spec 6) and adds it.
     // Shadows QMenuBar::addMenu(const QString&) so every top-level menu gets
     // the TV dropdown painting.

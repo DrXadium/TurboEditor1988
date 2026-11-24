@@ -214,6 +214,47 @@ QMenu* MenuBar::menu(const QString& title) const
     return nullptr;
 }
 
+bool MenuBar::openMenuByMnemonic(QChar letter)
+{
+    if (letter.isNull())
+        return false;
+    const QChar want = letter.toUpper();
+    for (QAction* a : actions()) {
+        if (!a || !a->menu())
+            continue;
+        const QString text = a->text();
+        if (text.isEmpty())
+            continue;
+        // An explicit '&' marker wins; otherwise the first letter is the
+        // mnemonic (the bar's titles are plain: "File", "Edit", ...).
+        QChar mnemonic = text.at(0);
+        const int amp = text.indexOf(QLatin1Char('&'));
+        if (amp >= 0 && amp + 1 < text.size())
+            mnemonic = text.at(amp + 1);
+        if (mnemonic.toUpper() != want)
+            continue;
+
+        // Drop the menu under its title, exactly where a click lands. The bar
+        // is never mapped, so actionGeometry() can still be empty before the
+        // first layout - fall back to the left edge when it is.
+        // QMenu::popup reads window()->windowHandle()->screen(). Anywhere the
+        // window was never shown (tests, a detached bar) that handle is null
+        // and the popup SIGSEGVs in QWindow::screen(); force the unmapped
+        // handle first, exactly as ContentBridge does for the live shell.
+        if (QWidget* top = window())
+            if (!top->windowHandle())
+                top->winId();
+        const QRect r = actionGeometry(a);
+        const QPoint at = mapToGlobal(
+            QPoint(r.width() > 0 ? r.left() : 0,
+                   r.height() > 0 ? r.bottom() + 1 : height()));
+        setActiveAction(a);
+        a->menu()->popup(at);
+        return a->menu()->isVisible();
+    }
+    return false;
+}
+
 QStringList MenuBar::topLevelTitles() const
 {
     QStringList out;
