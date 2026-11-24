@@ -21,10 +21,18 @@ AboutModal::AboutModal(QWidget* parent)
     text->setObjectName(QStringLiteral("tvAboutText"));
     text->setTextFormat(Qt::PlainText);
     text->setWordWrap(true);
-    text->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
-    text->setText(tr("%1\n\nKate-class editing in a Borland-style shell with\n"
-                     "cool-retro-term CRT effects.\n\n"
-                     "Built on KTextEditor (KDE Frameworks) and Qt.")
+    // BLACK ink on the grey house panel (user request 2026-11-24). The panel
+    // is #AAAAAA, so this is the readable, DOS-dialog ink.
+    text->setStyleSheet(QStringLiteral("color: #000000; background: transparent;"));
+    // The user's own copy, verbatim. The line breaks are only wrapping hints -
+    // the label word-wraps to the modal's width.
+    text->setText(tr("%1\n\n"
+                     "A Borland-style text editor with cool retro effects, built on\n"
+                     "KTextEditor (KDE Frameworks) and QT and leveraging graphical\n"
+                     "effects from cool-retro-term\n\n"
+                     "With love to the early days of the internet, when anything was\n"
+                     "possible. We need to get there again.\n\n"
+                     "Dr. Xadium")
                       .arg(AppIdentity::displayName()));
     layout->addWidget(text);
     layout->addStretch();

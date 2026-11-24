@@ -221,11 +221,11 @@ private slots:
     }
 
     // Rename: the Settings dialog is user-facing and must name the app
-    // TURBO Kate, not the old CRT-Kate.
+    // the new display name, not the old CRT-Kate.
     void settings_dialog_title_names_turbo_kate() {
         CrtSettings s;
         SettingsDialog dlg(&s);
-        QVERIFY2(dlg.windowTitle().contains(QStringLiteral("TURBO Kate")),
+        QVERIFY2(dlg.windowTitle().contains(QStringLiteral("TURBO Editor 1998 Edition")),
                  qPrintable(QStringLiteral("Settings title still says '%1'")
                                 .arg(dlg.windowTitle())));
         QVERIFY2(!dlg.windowTitle().contains(QStringLiteral("CRT-Kate")),

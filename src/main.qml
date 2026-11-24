@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// TURBO Kate root window: the bridged Borland shell frame, run edge-to-edge
+// TURBO Editor 1998 Edition root window: the bridged Borland shell frame,
+// run edge-to-edge
 // through the CRT effect chain. This is the only visible window (no bezel).
 import QtQuick
 import QtQuick.Window
@@ -9,7 +10,7 @@ Window {
     id: root
     width: 1280
     height: 800
-    title: "TURBO Kate"
+    title: "TURBO Editor 1998 Edition"
     visible: true
     color: "black"
 

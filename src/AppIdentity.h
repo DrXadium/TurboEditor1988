@@ -6,7 +6,7 @@
 // Single source of truth for the application's names.
 //
 // displayName() is what the user sees: window titles, the About box, menu
-// entries and the desktop entry all say "TURBO Kate".
+// entries and the desktop entry all say "TURBO Editor 1998 Edition".
 //
 // storageDirName() is the LEGACY on-disk identity and must never change:
 // saved sessions (~/.config/CRT-Kate/sessions) and settings
@@ -16,7 +16,7 @@ namespace AppIdentity {
 
 inline QString displayName()
 {
-    return QStringLiteral("TURBO Kate");
+    return QStringLiteral("TURBO Editor 1998 Edition");
 }
 
 inline QString storageDirName()

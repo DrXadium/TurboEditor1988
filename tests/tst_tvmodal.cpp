@@ -95,6 +95,9 @@ private slots:
     // About
     void about_shows_the_display_name_and_one_ok_plate();
     void the_about_text_is_not_empty();
+    // User request 2026-11-24: the About copy is HIS text, and it is black
+    // ink on the grey house panel instead of the editor yellow.
+    void the_about_text_is_black_ink_with_the_edition_copy();
 
     // Settings
     void settings_uses_the_house_chrome();
@@ -172,13 +175,13 @@ void TstTvModal::the_title_changes_the_top_row()
     const QImage a = blank.grab().toImage().convertToFormat(QImage::Format_RGB32);
 
     TvModal titled;
-    titled.setTitle(QStringLiteral("About TURBO Kate"));
+    titled.setTitle(QStringLiteral("About TURBO Editor 1998 Edition"));
     titled.resize(480, 300);
     titled.show();
     QVERIFY(QTest::qWaitForWindowExposed(&titled));
     const QImage b = titled.grab().toImage().convertToFormat(QImage::Format_RGB32);
 
-    QCOMPARE(titled.title(), QStringLiteral("About TURBO Kate"));
+    QCOMPARE(titled.title(), QStringLiteral("About TURBO Editor 1998 Edition"));
 
     const QRect topRow(0, titled.frameRect().top(), b.width(), titled.cellHeight());
     int diff = 0;
@@ -530,6 +533,57 @@ void TstTvModal::the_about_text_is_not_empty()
     QVERIFY2(label->text().trimmed().size() > 40,
              qPrintable(QStringLiteral("the about text is only %1 chars")
                             .arg(label->text().trimmed().size())));
+}
+
+// User request 2026-11-24: the About copy is the user's own writing - a
+// Borland-style editor built on KTextEditor (KDE Frameworks) and Qt, with
+// cool-retro-term's graphics - and it is BLACK ink on the grey house panel.
+// Measured in PIXELS: a stylesheet colour that never painted would leave the
+// palette right and the screen yellow, which is exactly the report.
+void TstTvModal::the_about_text_is_black_ink_with_the_edition_copy()
+{
+    AboutModal m;
+    m.resize(640, 360);
+    m.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&m));
+
+    auto* label = m.findChild<QLabel*>(QStringLiteral("tvAboutText"));
+    QVERIFY(label);
+
+    // The copy itself. Whitespace is normalised first: the label word-wraps, so
+    // the source line breaks are layout, not content.
+    const QString flat = label->text().simplified();
+    QVERIFY2(flat.contains(QStringLiteral("Borland-style text editor")),
+             qPrintable(label->text()));
+    QVERIFY2(flat.contains(QStringLiteral("built on KTextEditor")),
+             qPrintable(label->text()));
+    QVERIFY2(flat.contains(QStringLiteral("leveraging graphical effects from "
+                                          "cool-retro-term")),
+             qPrintable(label->text()));
+    QVERIFY2(flat.contains(QStringLiteral("With love to the early days of the "
+                                          "internet, when anything was possible. "
+                                          "We need to get there again.")),
+             qPrintable(label->text()));
+    QVERIFY2(flat.contains(QStringLiteral("Dr. Xadium")), qPrintable(label->text()));
+
+    // Ink, in pixels inside the label's own rect.
+    const QImage img = m.grab().toImage().convertToFormat(QImage::Format_RGB32);
+    const QRect r = label->geometry().intersected(img.rect());
+    QVERIFY2(!r.isEmpty(), "the about label has no geometry");
+    int black = 0, yellow = 0;
+    for (int y = r.top(); y <= r.bottom(); ++y)
+        for (int x = r.left(); x <= r.right(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (c.red() < 40 && c.green() < 40 && c.blue() < 40)
+                ++black;
+            if (qAbs(c.red() - 0xFF) < 12 && qAbs(c.green() - 0xFF) < 12
+                && qAbs(c.blue() - 0x55) < 16)
+                ++yellow;
+        }
+    QVERIFY2(black > 30,
+             qPrintable(QStringLiteral("the about text paints only %1 black px").arg(black)));
+    QVERIFY2(yellow == 0,
+             qPrintable(QStringLiteral("the about text still paints %1 yellow px").arg(yellow)));
 }
 
 // --- Settings ----------------------------------------------------------------

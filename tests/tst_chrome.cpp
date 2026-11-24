@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Task 3: Borland chrome shell contract test.
 // Asserts ShellWindow exists, has MenuBar / TabStrip / FKeyStatusBar chrome,
-// uses BorlandStyle, and the window title is "TURBO Kate".
+// uses BorlandStyle, and the window title is "TURBO Editor 1998 Edition".
 #include <QtTest>
 #include <QApplication>
 #include <QMenuBar>
@@ -39,29 +39,31 @@ private slots:
         QCOMPARE(QApplication::font().family(), QStringLiteral("PxPlus IBM VGA8"));
     }
 
-    // Rename: the app is TURBO Kate to the user, but its on-disk identity is
+    // Rename: the app is TURBO Editor 1998 Edition to the user, but its on-disk
+    // identity is
     // still CRT-Kate (sessions/settings live under ~/.config/CRT-Kate and are
     // NOT migrated), so the two names must be deliberately separate.
     void app_identity_separates_display_name_from_storage_dir() {
-        QCOMPARE(AppIdentity::displayName(), QStringLiteral("TURBO Kate"));
+        QCOMPARE(AppIdentity::displayName(),
+                 QStringLiteral("TURBO Editor 1998 Edition"));
         QCOMPARE(AppIdentity::storageDirName(), QStringLiteral("CRT-Kate"));
     }
 
-    void windowTitle_is_turbo_kate() {
+    void windowTitle_is_turbo_editor_1998() {
         ShellWindow w;
-        QCOMPARE(w.windowTitle(), QStringLiteral("TURBO Kate"));
+        QCOMPARE(w.windowTitle(), QStringLiteral("TURBO Editor 1998 Edition"));
     }
 
-    // The Help menu is user-facing text: it must name the app TURBO Kate.
-    void help_menu_names_turbo_kate() {
+    // The Help menu is user-facing text: it must name the app.
+    void help_menu_names_the_app() {
         ShellWindow w;
         QAction* about = w.findChild<QAction*>(QStringLiteral("actionHelpAbout"));
         QVERIFY2(about, "no actionHelpAbout");
-        QVERIFY2(about->text().contains(QStringLiteral("TURBO Kate")),
+        QVERIFY2(about->text().contains(QStringLiteral("TURBO Editor 1998 Edition")),
                  qPrintable(QStringLiteral("About action still says '%1'").arg(about->text())));
         QAction* configure = w.findChild<QAction*>(QStringLiteral("actionSettingsConfigure"));
         QVERIFY2(configure, "no actionSettingsConfigure");
-        QVERIFY2(configure->text().contains(QStringLiteral("TURBO Kate")),
+        QVERIFY2(configure->text().contains(QStringLiteral("TURBO Editor 1998 Edition")),
                  qPrintable(QStringLiteral("Configure action still says '%1'").arg(configure->text())));
     }
 
