@@ -218,6 +218,53 @@ private slots:
                  qPrintable(QStringLiteral("no swatch ink in the styled view (%1 px)").arg(dark)));
     }
 
+    // Xadium 2026-11-23: "while the dialog pops up you can't click in it".
+    //
+    // The chain from QML is SYNCHRONOUS: QML onPressed -> simulateMousePress()
+    // -> ContentBridge -> KTextEditor::InlineNoteProvider::inlineNoteActivated
+    // -> swatchClicked. The picker was then opened INSIDE that stack frame via
+    // TvModal::exec(), so QML stayed blocked on the pressed() handler and could
+    // not emit another press or release for the whole life of the dialog -
+    // every click inside it was simply never delivered.
+    //
+    // The click must therefore survive past its own handler: swatchClicked has
+    // to be a QUEUED handoff, so the pressing frame returns and the dialog is
+    // opened on a later turn of the event loop.
+    void the_click_handoff_is_queued_not_synchronous()
+    {
+        EditorTabManager m;
+        QVERIFY(m.activeDocument());
+        m.activeDocument()->setText(QStringLiteral("a #123456"));
+        KTextEditor::View* view = m.activeView();
+        QVERIFY(view);
+        HexSwatchProvider* provider = m.swatchProvider(view);
+        QVERIFY(provider);
+
+        bool sawSignal = false;
+        // DIRECT, deliberately: this observer must run the instant the signal
+        // is emitted, so that "the flag is still false when activateToken()
+        // returns" really means the handoff was deferred rather than merely
+        // observed late.
+        QObject::connect(&m, &EditorTabManager::swatchClicked, &m,
+                         [&sawSignal]() { sawSignal = true; },
+                         Qt::DirectConnection);
+        QVERIFY(!sawSignal);
+
+        // Drive the provider's click path (KTextEditor builds InlineNote itself,
+        // so this seam stands in for the click that reaches it).
+        HexColorToken token;
+        token.start = 2;
+        token.length = 7;
+        token.color = QColor(0x12, 0x34, 0x56);
+        provider->activateToken(token, 0, QRect(10, 10, 8, 16));
+        // The pressing frame has returned. A DIRECT handoff would already have
+        // fired here - that is the bug. A queued one cannot have.
+        QVERIFY2(!sawSignal,
+                 "swatchClicked fired inside the press handler; the picker's modal loop "
+                 "would then run inside QML's onPressed and block all further input");
+        QTRY_VERIFY_WITH_TIMEOUT(sawSignal, 1000);
+    }
+
     void destroying_the_view_with_the_provider_alive_is_clean()
     {
         KTextEditor::View* view = makeView(this, QStringLiteral("#123456"));

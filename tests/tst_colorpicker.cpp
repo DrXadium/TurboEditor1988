@@ -19,6 +19,9 @@
 #include "src/shell/ColorPickerPanel.h"
 #include "src/shell/TvLineEdit.h"
 #include "src/shell/ColorPickerModal.h"
+#include "src/shell/ShellWindow.h"
+#include "src/bridge/ContentBridge.h"
+#include <QTimer>
 
 class TstColorPicker : public QObject
 {
@@ -125,6 +128,44 @@ private slots:
         QCOMPARE(modal.pickedColor(), QColor(0xab, 0xcd, 0xef));
         // ... and it never changed the "before" colour.
         QCOMPARE(modal.panel()->originalColor(), QColor(0x12, 0x34, 0x56));
+    }
+
+    // Xadium 2026-11-23: "while the dialog pops up you can't click in it".
+    // The live app delivers every mouse event through ContentBridge's
+    // synthesized routing, so this drives the real path: a press on the OK
+    // plate and a press in the SV square must reach the dialog.
+    void presses_reach_the_dialog_through_the_bridge()
+    {
+        ShellWindow w;
+        w.resize(1000, 640);
+        ContentBridge b;
+        b.setShellWindow(&w);
+
+        ColorPickerModal modal;
+        modal.setInitialColor(QColor(0xff, 0x00, 0x00));
+
+        // Inside the modal's own loop, click the SV square's bottom-left corner
+        // (black) and then the OK plate.
+        QTimer::singleShot(60, &w, [&]() {
+            const QPoint sv = modal.panel()->mapTo(&w, modal.panel()->svRect().bottomLeft());
+            b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                                Qt::NoModifier, sv.x(), sv.y());
+            b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
+                                Qt::NoModifier, sv.x(), sv.y());
+        });
+        QTimer::singleShot(140, &w, [&]() {
+            const QPoint ok = modal.mapTo(&w, modal.buttonRect(1).center());
+            b.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton,
+                                Qt::NoModifier, ok.x(), ok.y());
+            b.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton,
+                                Qt::NoModifier, ok.x(), ok.y());
+        });
+
+        const int role = TvModal::exec(&w, &modal);
+        QCOMPARE(role, int(TvModal::Accept));
+        QVERIFY2(modal.pickedColor() == QColor(0x00, 0x00, 0x00),
+                 qPrintable(QStringLiteral("the SV square press did not reach the panel: %1")
+                                .arg(modal.pickedColor().name())));
     }
 
     void preview_chip_paints_the_candidate_colour()

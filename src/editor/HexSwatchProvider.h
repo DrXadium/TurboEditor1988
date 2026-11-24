@@ -51,6 +51,12 @@ signals:
     // the picker next to the box it clicked.
     void swatchClicked(const HexColorToken& token, int line, const QRect& cellRect);
 
+public:
+    // The click handoff. Public rather than private because it is the SEAM the
+    // tests drive: KTextEditor builds InlineNote internally, so a test cannot
+    // reach inlineNoteActivated(). It is queued - see the .cpp.
+    void activateToken(const HexColorToken& token, int line, const QRect& cellRect);
+
 private:
     QVector<HexColorToken> tokensForLine(int line) const;
 

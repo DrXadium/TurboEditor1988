@@ -106,7 +106,27 @@ void HexSwatchProvider::inlineNoteActivated(const KTextEditor::InlineNote& note,
         cellRect = QRect(local.x() - note.width(), local.y(), note.width(),
                          note.lineHeight());
     }
-    emit swatchClicked(token, line, cellRect);
+    activateToken(token, line, cellRect);
+}
+
+// QUEUED, never direct (Xadium 2026-11-23: "you can't click in it").
+//
+// This runs inside the frame QML owns: MouseArea::onPressed calls
+// simulateMousePress() into C++ SYNCHRONOUSLY, which lands here. The consumer of
+// swatchClicked opens the colour picker with TvModal::exec(), i.e. a nested
+// event loop. Running that inside QML's onPressed means onPressed never returns,
+// so QML cannot emit another press, release or move until the dialog closes:
+// the dialog paints, and then ignores every click. Deferring the emit by one
+// turn returns the press frame first, and the dialog gets a live QML again.
+void HexSwatchProvider::activateToken(const HexColorToken& token, int line,
+                                      const QRect& cellRect)
+{
+    // Context object = this, so a provider destroyed before the loop turns
+    // (pane teardown) simply drops the deferred call instead of crashing.
+    QMetaObject::invokeMethod(
+        this,
+        [this, token, line, cellRect]() { emit swatchClicked(token, line, cellRect); },
+        Qt::QueuedConnection);
 }
 
 bool HexSwatchProvider::tokenAt(int line, int index, HexColorToken* out) const

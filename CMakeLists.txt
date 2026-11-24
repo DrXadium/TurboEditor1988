@@ -367,7 +367,7 @@ target_link_libraries(tst_swatchapply PRIVATE crt-editor Qt6::Test Qt6::Widgets 
 add_test(NAME tst_swatchapply COMMAND tst_swatchapply)
 
 add_executable(tst_colorpicker tests/tst_colorpicker.cpp)
-target_link_libraries(tst_colorpicker PRIVATE crt-shell Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_colorpicker PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
 add_test(NAME tst_colorpicker COMMAND tst_colorpicker)
 
 # Task 9B test: ctest -R tst_menus
