@@ -17,6 +17,8 @@
 #include <QImage>
 #include <QPainter>
 #include <QApplication>
+#include <QTemporaryDir>
+#include <QFile>
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
@@ -154,6 +156,66 @@ private slots:
 
         v1->document()->setText(QStringLiteral("x #123456"));
         QCOMPARE(m.swatchProvider(v1)->inlineNotes(0).size(), 1);
+    }
+
+    // Xadium 2026-11-23: "I do not see the box" - on a file he had OPENED.
+    // addTabForUrl() (File > Open, and every session-restored file) built its
+    // view with its own copy of the setup sequence, which never attached a
+    // provider: only the blank initial tab and File > New had swatches.
+    void opened_files_get_swatches_too()
+    {
+        EditorTabManager m;
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile f(dir.filePath(QStringLiteral("styled.html")));
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("body { background-color: #0f0f0f; }\n");
+        f.close();
+
+        m.openFile(QUrl::fromLocalFile(f.fileName()));
+        // openUrl() on a local file completes through the event loop.
+        QTRY_VERIFY_WITH_TIMEOUT(m.activeDocument()
+                                     && m.activeDocument()->url().toLocalFile() == f.fileName(),
+                                 3000);
+
+        KTextEditor::View* view = m.activeView();
+        QVERIFY2(view, "opened file has no view");
+        QVERIFY2(m.swatchProvider(view),
+                 "a file opened from disk has no swatch provider (no box on screen)");
+        QCOMPARE(m.swatchProvider(view)->inlineNotes(0).size(), 1);
+    }
+
+    // The app's own view is STYLED (applyTvStyle) and lives inside the
+    // manager's stack, unlike the bare views above. Render that one, so "no box
+    // on screen" cannot come back through a styling or parenting difference.
+    void the_managers_styled_view_paints_the_swatch()
+    {
+        EditorTabManager m;
+        QVERIFY(m.activeDocument());
+        m.activeDocument()->setText(QStringLiteral("body { background-color: #0f0f0f; }"));
+        KTextEditor::View* view = m.activeView();
+        QVERIFY(view);
+        view->resize(700, 120);
+        QCoreApplication::processEvents();
+
+        QImage img(view->size(), QImage::Format_RGB32);
+        img.fill(Qt::black);
+        {
+            QPainter p(&img);
+            view->render(&p);
+        }
+        // #0f0f0f is a near-black swatch on window blue (#0000AA): count dark
+        // neutral pixels, which the text and the blue field never produce.
+        int dark = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() < 40 && c.green() < 40 && c.blue() < 60)
+                    ++dark;
+            }
+        QVERIFY2(dark >= 4,
+                 qPrintable(QStringLiteral("no swatch ink in the styled view (%1 px)").arg(dark)));
     }
 
     void destroying_the_view_with_the_provider_alive_is_clean()

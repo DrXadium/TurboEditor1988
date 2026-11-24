@@ -436,11 +436,18 @@ bool EditorTabManager::splitOpen() const
 // Run the per-view setup every pane-0/pane-1 view needs (style, key routing,
 // block tracking, default-hidden markers). Shared so a secondary view is set up
 // exactly like a primary one.
+// The ONE setup path for every view this manager creates (new tab, opened file,
+// session restore, pane 1). Anything a view needs belongs here: a private copy
+// of this sequence in a second creation path is how the colour swatches shipped
+// invisible on opened files (Xadium 2026-11-23: "I do not see the box").
 void EditorTabManager::finishView(KTextEditor::View* view)
 {
     applyTvStyle(view);
     installKeyRouting(view);
     attachBlockTracking(view);
+    // Block markers are hidden by default (2026-11-20), applied at creation so
+    // a freshly opened file comes up clean as well as the restored ones - and
+    // so the write never races a fold.
     setBlockMarkersVisible(false);
     attachSwatchProvider(view);
 }
@@ -836,14 +843,7 @@ void EditorTabManager::newDocument()
     m_active = m_docs.size() - 1;
     m_container->setCurrentIndex(m_active);
     syncTabs();
-    applyTvStyle(view);
-    installKeyRouting(view);
-    attachBlockTracking(view);
-    attachSwatchProvider(view);
-    // Block markers are hidden by default (2026-11-20). Applied HERE, at view
-    // creation, so a newly opened file comes up clean as well as the restored
-    // ones - and so the write never races a fold.
-    setBlockMarkersVisible(false);
+    finishView(view);
     trackActiveCursor();
 }
 
@@ -870,13 +870,11 @@ KTextEditor::Document* EditorTabManager::addTabForUrl(const QUrl& url, bool acti
         m_container->setCurrentIndex(m_active);
     }
     syncTabs();
-    applyTvStyle(view);
-    installKeyRouting(view);
-    attachBlockTracking(view);
-    // Block markers are hidden by default (2026-11-20). Applied HERE, at view
-    // creation, so a newly opened file comes up clean as well as the restored
-    // ones - and so the write never races a fold.
-    setBlockMarkersVisible(false);
+    // ONE setup path for every view (2026-11-23). This used to be a private
+    // copy of the sequence, so anything added to finishView() silently missed
+    // files opened from disk and every session-restored tab - which is exactly
+    // how the colour swatches ended up on a blank tab and nowhere else.
+    finishView(view);
     trackActiveCursor();
     armWatch(doc);
     return doc;
