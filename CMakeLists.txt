@@ -156,6 +156,8 @@ add_library(crt-editor STATIC
   src/editor/StringColorizer.h
   src/editor/ColourWiring.cpp
   src/editor/ColourWiring.h
+  src/editor/HexColorScan.cpp
+  src/editor/HexColorScan.h
   src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -343,6 +345,10 @@ add_test(NAME tst_autosave COMMAND tst_autosave)
 add_executable(tst_minimap tests/tst_minimap.cpp)
 target_link_libraries(tst_minimap PRIVATE crt-shell Qt6::Test)
 add_test(NAME tst_minimap COMMAND tst_minimap)
+
+add_executable(tst_hexcolor tests/tst_hexcolor.cpp)
+target_link_libraries(tst_hexcolor PRIVATE crt-editor Qt6::Test)
+add_test(NAME tst_hexcolor COMMAND tst_hexcolor)
 
 # Task 9B test: ctest -R tst_menus
 add_executable(tst_menus tests/tst_menus.cpp)
