@@ -203,9 +203,12 @@ void EditorPane::updateFrameMargins()
     if (m_closeBox && !m_closeBox->isHidden()) {
         const int cw = cellWidth();
         const int ch = cellHeight();
-        const int box = ch;
+        // [ ■ ] - three cells, the bracketed chip the tab strip uses, so the
+        // split's close control reads as the same kind of object (Xadium
+        // 2026-11-23). The middle cell carries the green square.
+        const int boxW = 3 * cw;
         const int rowTop = m_titleRow ? m_titleRow->geometry().top() : 0;
-        m_closeBox->setGeometry(QRect(width() - cw - box - cw / 2, rowTop, box, box));
+        m_closeBox->setGeometry(QRect(width() - cw - boxW - cw / 2, rowTop, boxW, ch));
     }
 }
 
@@ -330,10 +333,30 @@ void EditorPane::paintEvent(QPaintEvent*)
     // NOTE: the bottom border row is owned by BottomBand (it carries L:C and
     // the horizontal scrollbar). Drawing it here too makes two rules.
 
-    // The ■ close box (a 1-cell green square, the tab chip's square).
+    // The close control: [ ■ ] - bracketed like the tab chips
+    // (TabStrip paints "[ name ■ ]"). The white brackets sit in the outer
+    // cells; the green square fills the middle one.
     if (m_closeBox && m_closeBox->isVisible()) {
         const QRect box = m_closeBox->geometry();
-        p.fillRect(box, kCloseGreen);
-        p.fillRect(box.adjusted(1, 1, -1, -1), kCloseGreenBright);
+        const int cell = box.width() / 3;
+        if (cell > 0) {
+            TvFrame::glyph(p, QRect(box.left(), box.top(), cell, box.height()),
+                           QLatin1Char('['), kFrameWhite);
+            TvFrame::glyph(p, QRect(box.right() - cell + 1, box.top(), cell, box.height()),
+                           QLatin1Char(']'), kFrameWhite);
+            // The green ink must be a SQUARE, not a rectangle (Xadium
+            // 2026-11-23: "the square comes out as a rectangle"). The slot is
+            // one character cell wide but a whole ROW tall (8x16), so a plain
+            // fillRect paints a tall rectangle. Same rule as the tab chip
+            // (TabStrip::paintEvent): inset each axis by half the excess over
+            // the SHORTER side, so the ink stays centred and square.
+            const QRect slot(box.left() + cell, box.top(), cell, box.height());
+            const int side = qMin(slot.width(), slot.height());
+            const int insetX = (slot.width() - side) / 2;
+            const int insetY = (slot.height() - side) / 2;
+            const QRect sq = slot.adjusted(insetX, insetY, -insetX, -insetY);
+            p.fillRect(sq, kCloseGreen);
+            p.fillRect(sq.adjusted(1, 1, -1, -1), kCloseGreenBright);
+        }
     }
 }

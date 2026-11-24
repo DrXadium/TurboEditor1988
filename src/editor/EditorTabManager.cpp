@@ -350,6 +350,13 @@ KTextEditor::Document* EditorTabManager::createDoc()
 
 KTextEditor::Document* EditorTabManager::activeDocument() const
 {
+    // Same pivot rule as activeView(): with pane 1 focused the user is looking
+    // at the SPLIT document, even though pane 0's tab index still points at a
+    // different file. Menu actions and count/stat readers go through here, so
+    // reading m_docs.at(m_active) would show pane 0's document while the caret
+    // is in pane 1 (Xadium 2026-11-23: stats/cells reading the wrong doc).
+    if (m_activePane == 1 && m_splitDoc)
+        return m_splitDoc;
     if (m_active < 0 || m_active >= m_docs.size())
         return nullptr;
     return m_docs.at(m_active);
@@ -362,9 +369,24 @@ KTextEditor::View* EditorTabManager::activeView() const
     // The active PANE's view: pane 1 when split+focused, else pane 0. This is
     // the single pivot every feature reads, so a focused pane drives minimap,
     // status, folding, Find, etc. with no parallel path.
-    if (m_activePane == 1)
-        return m_secondaryViews.value(m_docs.at(m_active), nullptr);
-    return m_views.at(m_active);
+    //
+    // Pane 1 is resolved through the SPLIT DOCUMENT, not through pane 0's
+    // active tab (Xadium 2026-11-23). Pane 0 and pane 1 can show DIFFERENT
+    // documents ("File > Open as Split"), and looking the secondary view up
+    // under m_docs.at(m_active) found nothing -> activeView() returned null ->
+    // activeViewChanged(nullptr) cleared every status indicator to "-" / 0.
+    if (m_activePane == 1) {
+        if (m_splitDoc) {
+            if (KTextEditor::View* v = m_secondaryViews.value(m_splitDoc, nullptr))
+                return v;
+        }
+        // The split document is gone (or its view died with pane 1): fall back
+        // to pane 0's live view rather than handing every consumer a null.
+        return m_active >= 0 && m_active < m_views.size() ? m_views.at(m_active)
+                                                          : nullptr;
+    }
+    return m_active >= 0 && m_active < m_views.size() ? m_views.at(m_active)
+                                                      : nullptr;
 }
 
 // --- Split view (2026-11-21) ----------------------------------------------
@@ -420,6 +442,7 @@ void EditorTabManager::finishView(KTextEditor::View* view)
     attachBlockTracking(view);
     setBlockMarkersVisible(false);
 }
+
 
 // The secondary view for `doc`, created on first use and added to pane 1's
 // stack. Returns nullptr if the doc already has one.
@@ -525,6 +548,7 @@ void EditorTabManager::setActivePane(int pane)
 // re-binds, and none of them can forget to.
 void EditorTabManager::trackActiveCursor()
 {
+    trackPaneCursors();
     QObject::disconnect(m_cursorConn);
     KTextEditor::View* v = activeView();
     // Coloured Brackets follow the active view (2026-11-20). Every tab-change
@@ -552,6 +576,28 @@ void EditorTabManager::trackActiveCursor()
     // re-point at the new view/document so none of them go stale (the L:C
     // band bug class). Every tab-change path funnels through here.
     emit activeViewChanged(v);
+}
+
+// One caret listener per pane. Pane 0's view is the ACTIVE TAB's primary view;
+// pane 1's is the split document's secondary view (null while unsplit). Called
+// from trackActiveCursor(), which every tab/split/pane change funnels through,
+// so a re-point can never be forgotten.
+void EditorTabManager::trackPaneCursors()
+{
+    for (int pane = 0; pane < 2; ++pane) {
+        QObject::disconnect(m_paneCursorConns[pane]);
+        m_paneCursorConns[pane] = QMetaObject::Connection();
+        KTextEditor::View* v = viewForPane(pane);
+        if (!v)
+            continue;
+        m_paneCursorConns[pane] = QObject::connect(
+            v, &KTextEditor::View::cursorPositionChanged, this,
+            [this, pane](KTextEditor::View*, const KTextEditor::Cursor& c) {
+                emit paneCursorPositionChanged(pane, c.line(), c.column());
+            });
+        const KTextEditor::Cursor c = v->cursorPosition();
+        emit paneCursorPositionChanged(pane, c.line(), c.column());
+    }
 }
 
 bool EditorTabManager::triggerActiveViewShortcut(const QKeySequence& seq)

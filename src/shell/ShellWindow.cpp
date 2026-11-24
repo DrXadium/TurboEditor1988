@@ -671,6 +671,14 @@ void ShellWindow::clearSplitEditorWidget()
     if (EditorPane* p1 = m_splitter->pane(1))
         p1->showCloseBox(false);
     m_splitter->closeSplit();
+    // Focus falls back to pane 0: pane 1 and the view it held are gone, so a
+    // stale m_activePane == 1 would resolve activeView() to a dead secondary
+    // view and the status line would read blank (0 counts, "-" indicators).
+    if (m_activePane != 0) {
+        m_activePane = 0;
+        emit activePaneChanged(0);
+    }
+    emit splitCleared();
 }
 
 TabStrip* ShellWindow::tabStrip() const

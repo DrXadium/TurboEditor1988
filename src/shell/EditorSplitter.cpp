@@ -2,23 +2,22 @@
 #include "EditorSplitter.h"
 #include "EditorPane.h"
 #include "BottomBand.h"
-#include "TvFrame.h"
 
 #include <QPainter>
 #include <QPaintEvent>
 #include <QVBoxLayout>
 
 namespace {
-const QColor kFrameWhite(0xFF, 0xFF, 0xFF);
 const QColor kBgBlue(0x00, 0x00, 0xAA);
-const QColor kGripTeal(0x00, 0xAA, 0xAA);
 // Minimum pane width so a drag can never zero a pane (design §goal 1): 20 cells.
 const int kMinCells = 20;
 } // namespace
 
 // --- TvSplitHandle ---------------------------------------------------------
-// The divider column: a TV frame ║ band with a small grip glyph centred
-// vertically so it reads as draggable. Painted, not styled, to match the frame.
+// The seam between the two panes: a one-cell DRAG TARGET that paints nothing
+// but the window field - no rule column, no grip glyph. Xadium 2026-11-23:
+// "remove this center line dividing the panes". The panes carry their own TV
+// frames, so the divider reads as empty space between two windows.
 class TvSplitHandle : public QSplitterHandle
 {
 protected:
@@ -36,26 +35,10 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override
     {
+        // Blank seam: the handle keeps its one-cell width so it can still be
+        // dragged, but draws no divider ink of any kind.
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, false);
         p.fillRect(rect(), kBgBlue);
-
-        const int cw = qMax(6, fontMetrics().horizontalAdvance(QLatin1Char('M')));
-        const int ch = qMax(8, fontMetrics().height());
-        const int x = (width() - cw) / 2;   // centre the cell in the handle
-        if (x < 0)
-            return;
-
-        // Frame column down the middle.
-        TvFrame::tileV(p, QRect(x, 0, cw, height()), ch, QChar(0x2551), kFrameWhite);
-
-        // A 3-cell teal grip glyph centred vertically (the box the reference
-        // screenshot shows on the divider).
-        const int gy = (height() - ch) / 2;
-        const QRect grip(x, gy, cw, ch);
-        p.fillRect(grip, kGripTeal);
-        // Two dark notches so the grip reads as a handle, not a solid block.
-        p.fillRect(QRect(x + 1, gy + ch / 2 - 1, cw - 2, 2), kBgBlue);
     }
 };
 

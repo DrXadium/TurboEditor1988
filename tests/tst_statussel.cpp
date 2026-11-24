@@ -12,6 +12,7 @@
 #include <ktexteditor/editor.h>
 #include <ktexteditor/document.h>
 #include <ktexteditor/view.h>
+#include <cstdio>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QUrl>
@@ -711,6 +712,94 @@ private slots:
         QCOMPARE(v->viewMode(), KTextEditor::View::NormalModeInsert);
         QVERIFY(!s.overwrite());
         QCOMPARE(s.overwriteText(), QStringLiteral("INS"));
+    }
+
+
+    // Round 12 (Xadium 2026-11-23): "the statusbar attributes ... are still
+    // unpopulated ... as soon as i click back into the pane they become lines
+    // again". Probe evidence: with pane 1 focused over a split document that is
+    // NOT pane 0's active tab, activeView() looked the secondary view up under
+    // m_docs.at(m_active) -> null -> every cell cleared to "-".
+    // Mirrors main.cpp: activeViewChanged re-points the indicators.
+    void indicators_repoint_to_the_secondary_view_when_pane_one_has_focus()
+    {
+        EditorTabManager m;
+        KTextEditor::Document* pane0Doc = m.activeDocument();
+        QVERIFY(pane0Doc);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile f(dir.filePath(QStringLiteral("split_target.txt")));
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("alpha\nbeta\n");
+        f.close();
+
+        StatusSelectors s;
+        QObject::connect(&m, &EditorTabManager::activeViewChanged, &s,
+                         [&s](KTextEditor::View* v) {
+                             s.setView(v);
+                             s.setDocument(v ? v->document() : nullptr);
+                         });
+        s.setView(m.activeView());
+        s.setDocument(pane0Doc);
+
+        m.openFileAsSplit(QUrl::fromLocalFile(f.fileName()));
+        QCoreApplication::processEvents();
+        QVERIFY2(m.splitOpen(), "openFileAsSplit must open the split");
+        QCOMPARE(m.activeDocument(), pane0Doc);   // pane 0 keeps its own doc
+
+        KTextEditor::View* v1 = m.viewForPane(1);
+        QVERIFY2(v1, "pane 1 must hold a view");
+        QVERIFY(v1->document() != pane0Doc);
+
+        // The user clicks into pane 1: the app focuses that pane.
+        m.setActivePane(1);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(m.activeView(), v1);
+        QCOMPARE(m.activeDocument(), v1->document());
+        QVERIFY2(s.view(), "focused split pane left the indicators with no view");
+        QVERIFY2(s.document(), "focused split pane left the indicators on '-'");
+        QCOMPARE(s.document(), v1->document());
+    }
+
+    // Round 12: "the ins / ovr toggle doesn't reflect the current status if i
+    // switch it in the split pane". The status-bar OVR cell routes through
+    // triggerActiveViewShortcut(Insert) -> activeView(). With a split over a
+    // DIFFERENT document, pane 1's focused activeView() resolved to null, so
+    // the toggle was a silent no-op and the cell never changed.
+    void ovr_toggle_works_when_pane_one_has_a_different_document()
+    {
+        EditorTabManager m;
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile f(dir.filePath(QStringLiteral("ovr_target.txt")));
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("one\ntwo\n");
+        f.close();
+
+        StatusSelectors s;
+        QObject::connect(&m, &EditorTabManager::activeViewChanged, &s,
+                         [&s](KTextEditor::View* v) {
+                             s.setView(v);
+                             s.setDocument(v ? v->document() : nullptr);
+                         });
+
+        m.openFileAsSplit(QUrl::fromLocalFile(f.fileName()));
+        QCoreApplication::processEvents();
+        QVERIFY2(m.splitOpen(), "split must be open");
+        KTextEditor::View* v1 = m.viewForPane(1);
+        QVERIFY2(v1, "pane 1 must hold a view");
+
+        m.setActivePane(1);
+        QCoreApplication::processEvents();
+        QCOMPARE(s.overwrite(), false);
+
+        QVERIFY2(m.triggerActiveViewShortcut(QKeySequence(Qt::Key_Insert)),
+                 "the OVR cell did nothing while pane 1 had focus");
+        QCOMPARE(v1->viewMode(), KTextEditor::View::NormalModeOverwrite);
+        QVERIFY2(s.overwrite(), "indicator did not follow the split pane into OVR");
+        QCOMPARE(s.overwriteText(), QStringLiteral("OVR"));
     }
 
     // User bug: "none of the popups from the status bar have the green highlight

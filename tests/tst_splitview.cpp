@@ -7,6 +7,7 @@
 // EditorTabManager holds two views over one document independently, and a
 // focused-pane press drives the active pane/minimap. Strict TDD: every case
 // was written RED first.
+#include <climits>
 #include <QtTest>
 #include <QApplication>
 #include <QWidget>
@@ -70,9 +71,11 @@ private slots:
         QVERIFY2(pane->closeBox()->isHidden(), "pane 0 must not show the split close box");
     }
 
-    // Task 2: the divider exists only while split, is one cell wide, and paints
-    // a TV grip. A single pane shows no handle (the splitter collapses cleanly).
-    void splitter_shows_a_painted_divider_only_while_split() {
+    // Round 12 (Xadium 2026-11-23): "remove this center line dividing the
+    // panes". The divider still EXISTS while split - it is the drag target -
+    // but it paints nothing at all: no frame column, no grip. The two pane
+    // frames already delimit the editors, so the seam is plain window blue.
+    void splitter_shows_an_empty_divider_only_while_split() {
         EditorSplitter split;
         split.resize(400, 300);
         auto* a = new EditorPane(&split);
@@ -89,26 +92,28 @@ private slots:
         QVERIFY2(split.pane(1), "pane 1 missing after openSplit()");
         QCOMPARE(split.pane(1)->paneIndex(), 1);
 
-        // One-cell handle.
+        // One-cell handle: the seam keeps its drag target.
         QCOMPARE(split.handleWidth(), split.pane(0)->cellWidth());
         QSplitterHandle* h = split.handle(1);
         QVERIFY2(h, "splitter handle not created for the split");
         QVERIFY2(!h->isHidden(), "handle must be visible while split");
 
-        // The handle paints a TV frame/grip: white frame ink present.
-        const QImage img = h->grab().toImage();
+        // NOTHING is painted on it: every pixel is the window-blue field.
+        const QImage img = h->grab().toImage().convertToFormat(QImage::Format_RGB32);
         QVERIFY2(!img.isNull() && img.width() > 2 && img.height() > 40,
                  "handle did not render");
-        int white = 0;
+        int ink = 0;
         for (int y = 0; y < img.height(); ++y)
             for (int x = 0; x < img.width(); ++x) {
-                const QRgb px = img.pixel(x, y);
-                if (qRed(px) > 200 && qGreen(px) > 200 && qBlue(px) > 200)
-                    ++white;
+                const QColor c = img.pixelColor(x, y);
+                const bool blue = c.blue() > 150 && c.red() < 60 && c.green() < 60;
+                if (!blue)
+                    ++ink;
             }
-        QVERIFY2(white > 8,
-                 qPrintable(QStringLiteral("handle has no TV frame ink (%1 white px)")
-                                .arg(white)));
+        QVERIFY2(ink == 0,
+                 qPrintable(QStringLiteral("divider still paints %1 non-blue px "
+                                           "(the centre line must be gone)")
+                                .arg(ink)));
 
         split.closeSplit();
         QVERIFY2(!split.splitOpen(), "split must report closed after closeSplit()");
@@ -299,6 +304,60 @@ private slots:
     // empty (Xadium's screenshot: no ■ on the new-view pane). Repro: open the
     // split, RESIZE the window (settling the layout), then grab pane 1 and
     // assert green ink sits exactly at closeBoxRect().
+    // Round 12 (Xadium 2026-11-23): "the square comes out as a rectangle
+    // instead of a square". The box cell is one character cell wide (8) but a
+    // whole row tall (16), so a plain fillRect(cell x rowH) paints a TALL
+    // RECTANGLE. The tab chip already insets each axis by half the excess over
+    // the shorter side (TabStrip::paintEvent) - the pane's close control must
+    // use the same rule, so the green ink's bounding box is square.
+    void close_box_square_ink_is_square_not_a_rectangle() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        auto* stack = new QWidget;
+        w.setSplitEditorWidget(stack, QStringLiteral("docB.txt"));
+        QVERIFY2(w.splitOpen(), "split must open");
+
+        EditorPane* p1 = w.paneWidget(1);
+        QVERIFY(p1);
+        w.resize(1000, 640);
+        QCoreApplication::processEvents();
+
+        const QRect box = p1->closeBoxRect();
+        QVERIFY(box.isValid());
+
+        const QImage img = p1->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QColor kGreen(0x00, 0xAA, 0x00);
+        // Bounding box of the green ink (edge + bright centre both count).
+        int minX = INT_MAX, minY = INT_MAX, maxX = -1, maxY = -1;
+        for (int y = box.top(); y <= box.bottom(); ++y)
+            for (int x = box.left(); x <= box.right(); ++x) {
+                if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+                    continue;
+                const QColor c = img.pixelColor(x, y);
+                const bool greenish = c.green() > 90 && c.red() < 120 && c.blue() < 120;
+                if (!greenish)
+                    continue;
+                minX = qMin(minX, x);
+                maxX = qMax(maxX, x);
+                minY = qMin(minY, y);
+                maxY = qMax(maxY, y);
+            }
+        QVERIFY2(maxX >= minX, "no green ink found in the close box");
+
+        const int inkW = maxX - minX + 1;
+        const int inkH = maxY - minY + 1;
+        QVERIFY2(qAbs(inkW - inkH) <= 1,
+                 qPrintable(QStringLiteral("the \u25a0 ink is %1x%2 - a rectangle, "
+                                           "not a square (cell %3 wide, row %4 tall)")
+                                .arg(inkW).arg(inkH).arg(box.width()).arg(box.height())));
+        QVERIFY2(kGreen.isValid() && inkW >= 4,
+                 qPrintable(QStringLiteral("square too small: %1x%2").arg(inkW).arg(inkH)));
+    }
+
     void close_box_is_painted_at_its_rect_after_a_resize() {
         ShellWindow w;
         w.resize(640, 480);
@@ -458,9 +517,9 @@ private slots:
 
         pane.showCloseBox(true);
         const QRect r = pane.closeBoxRect();
-        QVERIFY2(r.width() == pane.cellHeight(),
-                 qPrintable(QStringLiteral("close box width %1, want %2")
-                                .arg(r.width()).arg(pane.cellHeight())));
+        QVERIFY2(r.width() == 3 * pane.cellWidth(),
+                 qPrintable(QStringLiteral("close box width %1, want [ \u25a0 ] = %2 px")
+                                .arg(r.width()).arg(3 * pane.cellWidth())));
         QVERIFY2(pane.rect().contains(r),
                  qPrintable(QStringLiteral("close box %1,%2 is outside the pane")
                                 .arg(r.x()).arg(r.y())));
@@ -695,6 +754,140 @@ private slots:
         // Reaching here without a SIGSEGV IS the pass. Sanity: the manager still
         // reports a sane active document.
         QVERIFY(tabs.activeDocument() != nullptr);
+    }
+
+    // Round 12 (Xadium 2026-11-23): the split's close glyph must be BRACKETED -
+    // [ ■ ] - the same chip convention the tab strip uses. The control is
+    // three cells wide: a white '[' cell, the green ■ cell, a white ']' cell.
+    void close_box_brackets_the_green_square() {
+        EditorPane pane;
+        pane.setPaneIndex(1);
+        pane.resize(400, 300);
+        pane.show();
+        QCoreApplication::processEvents();
+        pane.showCloseBox(true);
+        QCoreApplication::processEvents();
+
+        const QRect box = pane.closeBoxRect();
+        const int cw = pane.cellWidth();
+        QCOMPARE(box.width(), 3 * cw);
+        QCOMPARE(box.height(), pane.cellHeight());
+
+        const QImage img = pane.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const auto countWhite = [&img](const QRect& r) {
+            int n = 0;
+            for (int y = r.top(); y <= r.bottom(); ++y)
+                for (int x = r.left(); x <= r.right(); ++x) {
+                    if (!img.rect().contains(x, y))
+                        continue;
+                    const QColor c = img.pixelColor(x, y);
+                    if (c.red() > 200 && c.green() > 200 && c.blue() > 200)
+                        ++n;
+                }
+            return n;
+        };
+        const QRect leftCell(box.left(), box.top(), cw, box.height());
+        const QRect midCell(box.left() + cw, box.top(), cw, box.height());
+        const QRect rightCell(box.right() - cw + 1, box.top(), cw, box.height());
+
+        QVERIFY2(countWhite(leftCell) > 0,
+                 "no '[' ink in the close control's left cell");
+        QVERIFY2(countWhite(rightCell) > 0,
+                 "no ']' ink in the close control's right cell");
+
+        int green = 0;
+        for (int y = midCell.top(); y <= midCell.bottom(); ++y)
+            for (int x = midCell.left(); x <= midCell.right(); ++x) {
+                if (!img.rect().contains(x, y))
+                    continue;
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() <= 30 && qAbs(c.green() - 0xAA) <= 40 && c.blue() <= 30)
+                    ++green;
+            }
+        QVERIFY2(green >= 6,
+                 qPrintable(QStringLiteral("the \u25a0 is missing between the brackets "
+                                           "(%1 green px in the middle cell)")
+                                .arg(green)));
+    }
+
+    // Round 12 (Xadium 2026-11-23): "the statistics of the pane (word count,
+    // character count, cursor line and character, and encoding, filetype and
+    // line ending) are not shown for the created panes". The cursor part is the
+    // per-pane L:C band: each pane owns a band, but only the ACTIVE view's caret
+    // was ever reported, so the created pane's band stayed at 1:1 and pane 0's
+    // band echoed pane 1's caret. Each pane must report its OWN caret.
+    void each_pane_reports_its_own_caret_position() {
+        EditorTabManager tabs;
+        if (KTextEditor::Document* d = tabs.activeDocument()) {
+            QString text;
+            for (int line = 0; line < 40; ++line)
+                text += QStringLiteral("line %1\n").arg(line);
+            d->setText(text);
+        }
+        tabs.openSplitWithActiveDocument();
+        QCoreApplication::processEvents();
+
+        KTextEditor::View* v0 = tabs.viewForPane(0);
+        KTextEditor::View* v1 = tabs.viewForPane(1);
+        QVERIFY2(v0 && v1, "both panes must hold a view");
+
+        QSignalSpy spy(&tabs, &EditorTabManager::paneCursorPositionChanged);
+        QVERIFY2(spy.isValid(), "EditorTabManager::paneCursorPositionChanged missing");
+
+        v1->setCursorPosition(KTextEditor::Cursor(12, 4));
+        bool sawPane1 = false;
+        for (const QList<QVariant>& a : std::as_const(spy)) {
+            if (a.at(0).toInt() == 1 && a.at(1).toInt() == 12 && a.at(2).toInt() == 4)
+                sawPane1 = true;
+        }
+        QVERIFY2(sawPane1,
+                 qPrintable(QStringLiteral("pane 1's caret (12:4) was not reported for "
+                                           "pane 1 (got %1 signals)")
+                                .arg(spy.count())));
+
+        spy.clear();
+        v0->setCursorPosition(KTextEditor::Cursor(3, 2));
+        bool sawPane0 = false;
+        for (const QList<QVariant>& a : std::as_const(spy)) {
+            if (a.at(0).toInt() == 0 && a.at(1).toInt() == 3 && a.at(2).toInt() == 2)
+                sawPane0 = true;
+        }
+        QVERIFY2(sawPane0,
+                 qPrintable(QStringLiteral("pane 0's caret (3:2) was not reported for "
+                                           "pane 0 (got %1 signals)")
+                                .arg(spy.count())));
+    }
+
+    // Round 12: the ■ close box must TELL the manager the split is gone, and
+    // focus must fall back to pane 0. Before this the shell collapsed pane 1
+    // alone: the manager kept m_activePane == 1 pointing at the destroyed
+    // secondary view, so activeView() went null and every statistic on the
+    // status line read blank (0 counts, "-" encoding/type/EOL).
+    void the_close_box_reports_the_cleared_split_and_falls_back_to_pane0() {
+        ShellWindow w;
+        w.resize(640, 480);
+        w.setEditorWidget(new QWidget);
+        w.show();
+        QCoreApplication::processEvents();
+
+        w.setSplitEditorWidget(new QWidget, QStringLiteral("docB.txt"));
+        QVERIFY2(w.splitOpen(), "split must open");
+        w.notePressInWidget(w.paneWidget(1)->bodySlot());
+        QCOMPARE(w.activePane(), 1);
+
+        QSignalSpy cleared(&w, &ShellWindow::splitCleared);
+        QVERIFY2(cleared.isValid(), "ShellWindow::splitCleared missing");
+
+        EditorPane* p1 = w.paneWidget(1);
+        QVERIFY(p1);
+        QTest::mouseClick(p1, Qt::LeftButton, Qt::NoModifier,
+                          p1->closeBoxRect().center());
+        QCoreApplication::processEvents();
+
+        QVERIFY2(!w.splitOpen(), "clicking ■ must collapse the split");
+        QVERIFY2(cleared.count() >= 1,
+                 "the close box must announce the split teardown to the manager");
+        QCOMPARE(w.activePane(), 0);
     }
 };
 

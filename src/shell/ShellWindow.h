@@ -159,6 +159,12 @@ signals:
     // root forwards this to EditorTabManager::setActivePane, so activeView()
     // re-points the minimap/status/fold to the focused pane.
     void activePaneChanged(int pane);
+    // The split was torn down through the pane-1 ■ box (or any other SHELL
+    // path). The composition root forwards this to EditorTabManager::closeSplit()
+    // so the manager's split state cannot outlive pane 1 - a stale
+    // m_activePane == 1 made activeView() point at the destroyed secondary view,
+    // which blanked every statistic on the status line.
+    void splitCleared();
     // Picked a suggestion for the right-clicked word: replace [line, startCol)
     // .. endCol) with \p replacement.
     void spellReplacementRequested(int line, int startCol, int endCol,

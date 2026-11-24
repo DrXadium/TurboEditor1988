@@ -32,6 +32,7 @@
 #include "src/shell/RightScrollBar.h"
 #include "src/shell/Minimap.h"
 #include "src/shell/BottomBand.h"
+#include "src/shell/EditorPane.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/shell/TvFileDock.h"
 #include "src/shell/RecentFilesStore.h"
@@ -349,6 +350,12 @@ int main(int argc, char** argv)
                              shell.clearSplitEditorWidget();
                          }
                      });
+    // The pane-1 \u25a0 box tears pane 1 down inside the SHELL; the manager must
+    // hear about it, or its split state outlives pane 1 (m_activePane == 1 on a
+    // destroyed secondary view -> activeView() null -> every statistic on the
+    // status line blank). Xadium 2026-11-23 finding #4.
+    QObject::connect(&shell, &ShellWindow::splitCleared, &tabs,
+                     [&tabs]() { tabs.closeSplit(); });
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [&repointMinimap](const QStringList&, int) { repointMinimap(); });
     repointMinimap();
@@ -441,21 +448,37 @@ int main(int argc, char** argv)
     // a tab switch.
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [wireScrollbars](const QStringList&, int) { wireScrollbars(); });
-    // Bottom band cursor position "L:C" (spec 6): the ACTIVE view's cursor,
-    // 1-based. The manager owns which view is active and re-binds on every tab
-    // change; connecting the FIRST view here left the indicator frozen at 1:1
-    // as soon as a restored session opened more than one file. The manager
-    // emits its first position before this connection exists, hence the seed.
-    if (BottomBand* band = shell.bottomBand()) {
-        auto showCursor = [band](int line, int column) {
-            band->setCursorPos(line + 1, column + 1);
+    // Bottom band cursor position "L:C" (spec 6): each pane shows ITS OWN
+    // view's cursor, 1-based (Xadium 2026-11-23). The old single connection
+    // pointed pane 0's band at the ACTIVE view: with a split open, pane 0
+    // echoed pane 1's caret while pane 1's band never moved off 1:1 - the
+    // created pane had no position readout at all.
+    {
+        auto paneBand = [&shell](int pane) -> BottomBand* {
+            EditorPane* p = shell.paneWidget(pane);
+            return p ? p->bottomBand() : nullptr;
         };
-        if (KTextEditor::View* v = tabs.activeView()) {
-            const KTextEditor::Cursor c = v->cursorPosition();
-            showCursor(c.line(), c.column());
-        }
-        QObject::connect(&tabs, &EditorTabManager::activeCursorPositionChanged,
-                         band, showCursor);
+        // Seed both bands whenever the active view/split changes: the manager's
+        // signals fire on tab switches and split open/close, and the per-pane
+        // feed only reports a caret once it MOVES.
+        auto seedBands = [&tabs, paneBand]() {
+            for (int i = 0; i < 2; ++i) {
+                BottomBand* b = paneBand(i);
+                KTextEditor::View* v = tabs.viewForPane(i);
+                if (!b || !v)
+                    continue;
+                const KTextEditor::Cursor c = v->cursorPosition();
+                b->setCursorPos(c.line() + 1, c.column() + 1);
+            }
+        };
+        QObject::connect(&tabs, &EditorTabManager::paneCursorPositionChanged,
+                         &shell, [paneBand](int pane, int line, int column) {
+                             if (BottomBand* b = paneBand(pane))
+                                 b->setCursorPos(line + 1, column + 1);
+                         });
+        QObject::connect(&tabs, &EditorTabManager::activeViewChanged, &shell,
+                         [seedBands](KTextEditor::View*) { seedBands(); });
+        seedBands();
     }
     // Status-line selectors (spec 2026-11-14): the four F-row indicators -
     // spell language, encoding, doc type, INS/OVR. Hosted on the right of the

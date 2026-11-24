@@ -322,6 +322,12 @@ signals:
     // this; binding a listener to the FIRST view instead left the indicator
     // frozen at 1:1 as soon as a session restored more than one file.
     void activeCursorPositionChanged(int line, int column);
+    // Per-PANE cursor (2026-11-23): emitted for the pane whose view's caret
+    // moved (0 or 1), and re-emitted for both panes whenever the split or the
+    // pane-0 tab changes. Each pane's bottom band shows ITS OWN "L:C" - feeding
+    // the single active view left the created pane's band frozen at 1:1 and
+    // made pane 0's band echo pane 1's caret.
+    void paneCursorPositionChanged(int pane, int line, int column);
     // Emitted whenever the active view changes (new tab, switch, close). The
     // status-line indicators re-point at the new view/document on this, so
     // none of them freeze on the first view (the L:C band bug class).
@@ -343,6 +349,9 @@ private:
     // the previous view's connection, re-emits the new view's position, and
     // follows it from then on.
     void trackActiveCursor();
+    // Binds a caret listener per pane (0 and 1) and re-emits each pane's
+    // current position, so both bands are seeded on every tab/split change.
+    void trackPaneCursors();
     // Deliver a FocusIn to the view's KateViewInternal canvas so Kate starts
     // its caret-blink timer (never fires on its own on this unmapped shell).
     void startCaretBlink(KTextEditor::View* view);
@@ -386,6 +395,7 @@ private:
                                                // (clearSplitEditorWidget -> pane1 death)
     KTextEditor::Document* m_splitDoc = nullptr;     // the document shown in pane 1
     QMetaObject::Connection m_cursorConn;
+    QMetaObject::Connection m_paneCursorConns[2];   // per-pane caret feeds
     int m_basePointSize = -1;   // font point size at first view (zoom baseline)
     int m_basePixelSize = -1;   // font pixel size at first zoom (pixel-based font)
     QStackedWidget* m_container = nullptr;
