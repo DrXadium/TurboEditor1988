@@ -18,6 +18,7 @@
 #include <QLineEdit>
 #include "src/shell/ColorPickerPanel.h"
 #include "src/shell/TvLineEdit.h"
+#include "src/shell/ColorPickerModal.h"
 
 class TstColorPicker : public QObject
 {
@@ -103,6 +104,27 @@ private slots:
         p.setColor(before);
         p.hexField()->setText(QStringLiteral("#zzzzzz"));
         QCOMPARE(p.color(), before);
+    }
+
+    // The picker is shown through the house modal, not a window of its own:
+    // the dialog owns the panel, seeds it with the clicked token's colour, and
+    // reports what the user is pointing at.
+    void modal_hosts_the_panel_and_seeds_it()
+    {
+        ColorPickerModal modal;
+        QVERIFY2(modal.panel(), "modal has no picker panel");
+        QCOMPARE(modal.buttonCount(), 2);   // Cancel + OK
+
+        modal.setInitialColor(QColor(0x12, 0x34, 0x56));
+        QCOMPARE(modal.initialColor(), QColor(0x12, 0x34, 0x56));
+        QCOMPARE(modal.pickedColor(), QColor(0x12, 0x34, 0x56));
+        QCOMPARE(modal.panel()->originalColor(), QColor(0x12, 0x34, 0x56));
+
+        // Typing a new hex in the panel is what OK would commit.
+        modal.panel()->hexField()->setText(QStringLiteral("#abcdef"));
+        QCOMPARE(modal.pickedColor(), QColor(0xab, 0xcd, 0xef));
+        // ... and it never changed the "before" colour.
+        QCOMPARE(modal.panel()->originalColor(), QColor(0x12, 0x34, 0x56));
     }
 
     void preview_chip_paints_the_candidate_colour()

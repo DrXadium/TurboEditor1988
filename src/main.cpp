@@ -44,6 +44,9 @@
 #include "src/settings/CrtSettings.h"
 #include "src/settings/SettingsDialog.h"
 #include "src/shell/AboutModal.h"
+#include "src/shell/ColorPickerModal.h"
+#include "src/editor/SwatchApply.h"
+#include "src/shell/HexColorScan.h"
 #include "src/editor/FindReplaceDialog.h"
 #include "src/editor/GoToLineDialog.h"
 #include "src/editor/ReloadDialog.h"
@@ -356,6 +359,26 @@ int main(int argc, char** argv)
     // status line blank). Xadium 2026-11-23 finding #4.
     QObject::connect(&shell, &ShellWindow::splitCleared, &tabs,
                      [&tabs]() { tabs.closeSplit(); });
+    // Colour swatches (2026-11-23): clicking the box after a #rrggbb opens the
+    // house "Color" modal seeded with that colour. OK rewrites EXACTLY that
+    // token, in one undoable edit; Cancel (or a no-op pick) touches nothing.
+    // The modal is a child of the shell, so it composites into the CRT texture
+    // and claims the keyboard while it is up - never a window of its own.
+    QObject::connect(&tabs, &EditorTabManager::swatchClicked, &shell,
+                     [&shell](KTextEditor::View* view, const HexColorToken& token,
+                              int line, const QRect&) {
+                         if (!view || !view->document())
+                             return;
+                         QPointer<KTextEditor::View> guard(view);
+
+                         ColorPickerModal modal;
+                         modal.setInitialColor(token.color);
+                         if (TvModal::exec(&shell, &modal) != int(TvModal::Accept))
+                             return;
+                         if (!guard)
+                             return;
+                         applySwatchColor(guard->document(), line, token, modal.pickedColor());
+                     });
     QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
                      [&repointMinimap](const QStringList&, int) { repointMinimap(); });
     repointMinimap();

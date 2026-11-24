@@ -457,9 +457,12 @@ void EditorTabManager::attachSwatchProvider(KTextEditor::View* view)
     auto* provider = new HexSwatchProvider(view, this);
     m_swatchProviders.insert(view, provider);
     view->registerInlineNoteProvider(provider);
+    // The view can be destroyed by pane teardown before the click is handled,
+    // so the re-emit carries a QPointer and never a dangling view.
     connect(provider, &HexSwatchProvider::swatchClicked, this,
-            [this](const HexColorToken& token, int line, const QRect& rect) {
-                emit swatchClicked(token, line, rect);
+            [this, guard = QPointer<KTextEditor::View>(view)](
+                const HexColorToken& token, int line, const QRect& rect) {
+                emit swatchClicked(guard.data(), token, line, rect);
             });
     connect(view, &QObject::destroyed, this, [this, view]() {
         if (HexSwatchProvider* p = m_swatchProviders.take(view))

@@ -78,6 +78,8 @@ add_library(crt-shell STATIC
   src/shell/AboutModal.cpp
   src/shell/ColorPickerPanel.cpp
   src/shell/ColorPickerPanel.h
+  src/shell/ColorPickerModal.cpp
+  src/shell/ColorPickerModal.h
   src/shell/HexColorScan.cpp
   src/shell/HexColorScan.h
   src/shell/AboutModal.h
@@ -162,6 +164,8 @@ add_library(crt-editor STATIC
   src/editor/ColourWiring.h
   src/editor/HexSwatchProvider.cpp
   src/editor/HexSwatchProvider.h
+  src/editor/SwatchApply.cpp
+  src/editor/SwatchApply.h
   src/editor/tvtheme/tvtheme.qrc
 )
 target_include_directories(crt-editor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -357,6 +361,10 @@ add_test(NAME tst_hexcolor COMMAND tst_hexcolor)
 add_executable(tst_hexswatch tests/tst_hexswatch.cpp)
 target_link_libraries(tst_hexswatch PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_hexswatch COMMAND tst_hexswatch)
+
+add_executable(tst_swatchapply tests/tst_swatchapply.cpp)
+target_link_libraries(tst_swatchapply PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_swatchapply COMMAND tst_swatchapply)
 
 add_executable(tst_colorpicker tests/tst_colorpicker.cpp)
 target_link_libraries(tst_colorpicker PRIVATE crt-shell Qt6::Test Qt6::Widgets)

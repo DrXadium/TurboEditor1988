@@ -319,9 +319,11 @@ public:
     bool triggerActiveViewShortcut(const QKeySequence& seq);
 
 signals:
-    // A colour swatch was clicked: the token it belongs to, its line, and the
-    // box's viewport rect so the shell can hang the picker beside it.
-    void swatchClicked(const HexColorToken& token, int line, const QRect& cellRect);
+    // A colour swatch was clicked: WHICH view it belongs to (pane 1 can be the
+    // one clicked while pane 0 is the active tab), the token, its line, and the
+    // box's viewport rect. The view is null if it died first.
+    void swatchClicked(KTextEditor::View* view, const HexColorToken& token, int line,
+                       const QRect& cellRect);
     void tabsChanged(const QStringList& titles, int active);
     // Split opened/closed (2026-11-21): the shell shows/hides pane 1 and its
     // divider in response, and the composition root re-points per-pane chrome.
