@@ -1179,11 +1179,16 @@ private slots:
                                            "column (%1 vs %2)")
                                 .arg(list.left()).arg(places.right())));
         QVERIFY2(list.width() > 40, "the Files box lost its width");
-        // The fields follow the shifted content block, not the old left margin.
+        // The PATH bar follows the shifted content block (right of the column),
+        // but the NAME/TYPE rows sit at the LEFT margin (2026-11-24: "the file
+        // name / type inputs should move to the left") - they span under the
+        // column rather than starting to its right.
         QVERIFY2(dock.pathRect().left() > places.right(),
                  "the path field still starts left of the places column");
-        QVERIFY2(dock.nameRect().left() > places.right(),
-                 "the name field still starts left of the places column");
+        QVERIFY2(dock.nameRect().left() <= places.left() + 2,
+                 qPrintable(QStringLiteral("the name field did not move to the left margin "
+                                           "(starts at %1, margin %2)")
+                                .arg(dock.nameRect().left()).arg(places.left())));
 
         // Rows are laid out top-down inside the column, one per place.
         const QRect r0 = dock.placeRect(0);
@@ -1263,7 +1268,10 @@ private slots:
         dock.reject();
     }
 
-    // The default list is Kate's: Home first, root reachable, and every entry a
+    // The default list is what Kate shows: the user's own bookmarks from
+    // ~/.local/share/user-places.xbel when one exists (2026-11-24: "the places
+    // display doesn't match what kate can see"), otherwise Home, the XDG
+    // folders that actually exist, then the root. Either way every entry is a
     // real directory (an entry that is not a directory would strand the user).
     void the_default_places_are_the_standard_locations()
     {
@@ -1271,10 +1279,10 @@ private slots:
         const QStringList paths = TvFileDock::defaultPlacePaths();
         QVERIFY2(labels.size() >= 6, "too few default places");
         QCOMPARE(labels.size(), paths.size());
-        QCOMPARE(labels.first(), QStringLiteral("Home"));
-        QCOMPARE(QFileInfo(paths.first()).canonicalFilePath(),
-                 QFileInfo(QDir::homePath()).canonicalFilePath());
-        QVERIFY2(paths.contains(QStringLiteral("/")), "root is not offered");
+        QVERIFY2(!paths.isEmpty(), "no default places at all");
+        // When a bookmark file exists its entries replace the XDG set, so the
+        // Home/Root specifics are not asserted here - only that every offered
+        // place is a directory the user can actually open.
         for (const QString& p : paths)
             QVERIFY2(QFileInfo(p).isDir(),
                      qPrintable(QStringLiteral("default place is not a directory: %1").arg(p)));
@@ -1537,6 +1545,204 @@ private slots:
         QCoreApplication::processEvents();
         QVERIFY2(!shell.keyboardIsOwned(),
                  "closing the dock left the keyboard claimed");
+    }
+
+    // ---- Round 15 (Xadium's five-issue list) -------------------------------
+    //
+    // (1) The file name / file type rows must sit at the dock's LEFT margin,
+    // under the Places column - they were shifted right along with the rest of
+    // the content, so the two fields drifted away from the label column.
+    void name_and_type_rows_sit_at_the_left_margin()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        const QRect places = dock.placesRect();
+        QVERIFY2(!places.isEmpty(), "no Places column");
+        // The left margin is the column's own left edge; the name/type rows
+        // start there (they may start slightly inside the column, never to
+        // its right).
+        QVERIFY2(dock.nameRect().left() <= places.left() + 2,
+                 qPrintable(QStringLiteral("file name row starts at %1, left margin is %2")
+                                .arg(dock.nameRect().left()).arg(places.left())));
+        QVERIFY2(dock.typeRect().left() <= places.left() + 2,
+                 qPrintable(QStringLiteral("file type row starts at %1, left margin is %2")
+                                .arg(dock.typeRect().left()).arg(places.left())));
+        QVERIFY2(dock.nameRect().left() < places.right(),
+                 "the file name row still starts to the right of the Places column");
+        QVERIFY2(dock.typeRect().left() < places.right(),
+                 "the file type row still starts to the right of the Places column");
+        dock.reject();
+    }
+
+    // (2) OK / Cancel belong in the LOWER right, stacked close together and
+    // clear of the picker (Files box), so they fit under it instead of sitting
+    // at the top of the list.
+    void ok_and_cancel_sit_in_the_lower_right_close_together()
+    {
+        TvFileDock dock;
+        dock.setDirectory(QStringLiteral("/tmp"));
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        const QRect ok = dock.okRect();
+        const QRect cancel = dock.cancelRect();
+        const QRect list = dock.listRect();
+        QVERIFY2(!ok.isNull() && !cancel.isNull(), "a button has no geometry");
+
+        // Lower right: both buttons are in the bottom half of the dock and
+        // hug the right margin.
+        QVERIFY2(ok.top() > dock.rect().height() / 2,
+                 qPrintable(QStringLiteral("OK sits at y=%1, expected the lower half")
+                                .arg(ok.top())));
+        QVERIFY2(cancel.top() > dock.rect().height() / 2,
+                 qPrintable(QStringLiteral("Cancel sits at y=%1, expected the lower half")
+                                .arg(cancel.top())));
+        QVERIFY2(ok.right() > dock.rect().width() * 3 / 4,
+                 qPrintable(QStringLiteral("OK ends at x=%1, expected the right quarter")
+                                .arg(ok.right())));
+
+        // Stacked, close together: a tight vertical gap, not the old 58px void.
+        const int gap = cancel.top() - ok.bottom() - 1;
+        QVERIFY2(gap >= 0 && gap <= 12,
+                 qPrintable(QStringLiteral("OK/Cancel are %1px apart, expected 0..12").arg(gap)));
+
+        // Clear of the picker: neither plate overlaps the Files box.
+        QVERIFY2(!ok.intersects(list), "the OK plate overlaps the picker");
+        QVERIFY2(!cancel.intersects(list), "the Cancel plate overlaps the picker");
+        QVERIFY2(dock.rect().contains(ok) && dock.rect().contains(cancel),
+                 "a button escapes the dock");
+        dock.reject();
+    }
+
+    // (3) The Places column must show what Kate shows - the user's bookmarks
+    // from ~/.local/share/user-places.xbel (GFX Work, Blockbuster Video,
+    // scratch, ...) - not a hardcoded XDG eight. With a populated xbel on disk
+    // the dock offers those entries; with none it falls back to the XDG set.
+    void the_places_column_reads_the_users_kate_bookmarks()
+    {
+        // A real xbel with two bookmarks, in the location Kate reads.
+        QTemporaryDir dataDir;
+        QVERIFY(dataDir.isValid());
+        const QString xbelPath = dataDir.filePath(QStringLiteral("user-places.xbel"));
+        {
+            QFile f(xbelPath);
+            QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+            f.write(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                "<!DOCTYPE xbel>\n"
+                "<xbel>\n"
+                " <bookmark href=\"file:///tmp/alpha-place\">\n"
+                "  <title>Alpha Place</title>\n"
+                " </bookmark>\n"
+                " <bookmark href=\"file:///tmp/beta-place\">\n"
+                "  <title>Beta Place</title>\n"
+                " </bookmark>\n"
+                "</xbel>\n");
+        }
+        QVERIFY(QDir().mkpath(QStringLiteral("/tmp/alpha-place")));
+        QVERIFY(QDir().mkpath(QStringLiteral("/tmp/beta-place")));
+
+        // Point the loader at our temp XDG data home for this test only.
+        const QByteArray oldXdg = qgetenv("XDG_DATA_HOME");
+        qputenv("XDG_DATA_HOME", dataDir.path().toUtf8());
+
+        TvFileDock dock;
+        const QStringList labels = dock.defaultPlaceLabels();
+        const QStringList paths = dock.defaultPlacePaths();
+
+        if (oldXdg.isEmpty())
+            qunsetenv("XDG_DATA_HOME");
+        else
+            qputenv("XDG_DATA_HOME", oldXdg);
+
+        QVERIFY2(paths.contains(QStringLiteral("/tmp/alpha-place")),
+                 qPrintable(QStringLiteral("bookmarks not read; places = %1")
+                                .arg(paths.join(QLatin1Char(',')))));
+        QVERIFY2(labels.contains(QStringLiteral("Alpha Place")),
+                 qPrintable(QStringLiteral("bookmark title missing; labels = %1")
+                                .arg(labels.join(QLatin1Char(',')))));
+        QVERIFY2(labels.contains(QStringLiteral("Beta Place")),
+                 "second bookmark title missing");
+        QVERIFY2(!paths.contains(QStringLiteral("/")),  // no hardcoded Root
+                 "Root was injected despite a populated xbel");
+        QVERIFY(!xbelPath.isEmpty());
+        QDir().rmpath(QStringLiteral("/tmp/alpha-place"));
+        QDir().rmpath(QStringLiteral("/tmp/beta-place"));
+        dock.reject();
+    }
+
+    // (4) The picker's scrollbars must be the same size as the edit view's
+    // RightScrollBar (one character cell), and a click delivered THROUGH the
+    // bridge (the production path) must actually reach them. Both were broken:
+    // the width was hardcoded to 11px, and the hand-rolled strip was a painted
+    // rect the bridge's childAt() could not route a press to.
+    void picker_scrollbars_match_the_edit_view_and_take_a_bridge_click()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (int i = 0; i < 80; ++i) {
+            QFile f(QDir(dir.path()).absoluteFilePath(
+                QStringLiteral("file_%1.txt").arg(i, 2, 10, QLatin1Char('0'))));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+        }
+
+        ShellWindow shell;
+        shell.resize(900, 700);
+        shell.show();
+        QCoreApplication::processEvents();
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                              QStringLiteral("Open File"), dir.path());
+        QVERIFY(dock);
+        dock->resize(700, 500);
+        QCoreApplication::processEvents();
+
+        QScrollBar* vbar = dock->findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
+        QScrollBar* hbar = dock->findChild<QScrollBar*>(QStringLiteral("fileListHBar"));
+        QVERIFY2(vbar, "the Files box has no vertical scrollbar");
+        QVERIFY2(hbar, "the Files box has no horizontal scrollbar");
+
+        // Same size as the edit view's RightScrollBar: one character cell wide
+        // (and, for the horizontal bar, one cell tall) - the cell the frame
+        // and the edit-view bar both use.
+        const int cell = dock->cellWidth();
+        QVERIFY2(vbar->width() == cell,
+                 qPrintable(QStringLiteral("vertical bar is %1px, edit view uses %2px")
+                                .arg(vbar->width()).arg(cell)));
+        QVERIFY2(hbar->height() == cell,
+                 qPrintable(QStringLiteral("horizontal bar is %1px tall, edit view uses %2px")
+                                .arg(hbar->height()).arg(cell)));
+
+        // A bridge click (production path) on the vertical bar's down-arrow
+        // end must scroll the list - childAt() has to resolve the bar.
+        const int before = dock->scrollOffset();
+        QVERIFY2(vbar->maximum() > 0, "the vertical bar has no scroll range");
+        const QPoint barPt = dock->mapTo(&shell,
+                                         QPoint(vbar->geometry().center().x(),
+                                                vbar->geometry().bottom() - 3));
+        QSignalSpy barSpy(vbar, &QScrollBar::valueChanged);
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier, barPt.x(), barPt.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier, barPt.x(), barPt.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(dock->scrollOffset() > before || barSpy.count() > 0,
+                 qPrintable(QStringLiteral("the bridge click on the vertical bar did nothing "
+                                           "(offset %1 -> %2, valueChanged x%3)")
+                                .arg(before).arg(dock->scrollOffset()).arg(barSpy.count())));
+
+        dock->reject();
+        QCoreApplication::processEvents();
     }
 };
 

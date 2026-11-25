@@ -195,6 +195,14 @@ void BorlandMenu::activateRow(int index)
     if (!a || a->isSeparator() || !a->isEnabled())
         return;
     setActiveAction(a);
+    // Fire the ACTION first: consumers that connect to QAction::triggered (the
+    // File > Recent Files rows, every composition-root action) need a->trigger()
+    // for their slot to run - it was never called here, so a click on a
+    // scrolling menu highlighted the row, dismissed the menu, and did nothing.
+    // QMenu::triggered is a plain signal that a->trigger() does NOT emit, so it
+    // is sent explicitly afterwards for consumers of QMenu::triggered
+    // (StatusSelectors, the file dock's presets, the tab list). Each fires once.
+    a->trigger();
     emit triggered(a);
     hide();
 }
@@ -366,7 +374,15 @@ void BorlandMenu::keyPressEvent(QKeyEvent* ev)
     case Qt::Key_Return:
     case Qt::Key_Enter:
         if (QAction* a = activeAction()) {
-            emit triggered(a);
+            if (!a->isSeparator() && a->isEnabled()) {
+                // Same contract as activateRow(): fire the action (consumers
+                // of QAction::triggered), then the menu's own triggered, then
+                // dismiss. Returning on a highlighted recent row used to emit
+                // only the menu signal, so the row did nothing - the keyboard
+                // twin of the reported click failure.
+                a->trigger();
+                emit triggered(a);
+            }
             hide();
         }
         return;

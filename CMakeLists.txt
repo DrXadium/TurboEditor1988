@@ -499,3 +499,32 @@ target_compile_definitions(probe_shell PRIVATE
 # Task 12 scratch probe: renders SettingsDialog to verify the TV modal treatment.
 add_executable(probe_settings .relay/probe_settings.cpp)
 target_link_libraries(probe_settings PRIVATE crt-settings Qt6::Widgets)
+
+# Round 15 scratch probe (not a ctest test): dumps TvFileDock layout geometry
+# and the picker's scrollbar metrics. Build on demand with:
+#   cmake --build build --target probe_filedlg && ./build/probe_filedlg
+add_executable(probe_filedlg .relay/probe_filedlg.cpp)
+target_link_libraries(probe_filedlg PRIVATE crt-shell crt-editor Qt6::Widgets KF6::TextEditor)
+
+# Round 15 scratch probe: why the type-drop cell click missed.
+#   cmake --build build --target probe_typedrop && ./build/probe_typedrop
+add_executable(probe_typedrop .relay/probe_typedrop.cpp)
+target_link_libraries(probe_typedrop PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
+
+# Round 15 scratch probe (not a ctest test): reproduces the File-menu recent
+# file click failure. Build on demand with:
+#   cmake --build build --target probe_recents && ./build/probe_recents
+add_executable(probe_recents .relay/probe_recents.cpp)
+target_link_libraries(probe_recents PRIVATE crt-shell Qt6::Widgets Qt6::Test)
+
+# Round 15 scratch probe: the recents click driven the way production drives it
+# (through ContentBridge), not by a direct sendEvent.
+#   cmake --build build --target probe_recents_bridge && ./build/probe_recents_bridge
+add_executable(probe_recents_bridge .relay/probe_recents_bridge.cpp)
+target_link_libraries(probe_recents_bridge PRIVATE crt-shell crt-bridge Qt6::Widgets Qt6::Test)
+
+# Round 15 scratch probe: a CAPPED (scrolling) recents submenu - the state
+# StatusSelectors puts menus in - to prove activateRow() drops QAction::triggered.
+#   cmake --build build --target probe_recents_scroll && ./build/probe_recents_scroll
+add_executable(probe_recents_scroll .relay/probe_recents_scroll.cpp)
+target_link_libraries(probe_recents_scroll PRIVATE crt-shell Qt6::Widgets Qt6::Test)

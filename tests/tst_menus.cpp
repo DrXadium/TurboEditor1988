@@ -12,6 +12,11 @@
 #include <QGuiApplication>
 #include <QPainter>
 #include <QStyleOptionMenuItem>
+#include <QTemporaryDir>
+#include <QDir>
+#include <QFile>
+#include <QSignalSpy>
+#include <QMouseEvent>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/BorlandStyle.h"
 #include "src/shell/MenuBar.h"
@@ -558,6 +563,69 @@ private slots:
         // An empty store hides the entry: an empty submenu is a dead end.
         bar.setRecentFiles({});
         QVERIFY2(!entry->isVisible(), "Recent Files stays visible with no files");
+    }
+
+    // Round 15 (Xadium): "clicking a recent file doesn't open it".
+    //
+    // BorlandMenu only takes its OWN row path when the popup is deliberately
+    // height-capped and the content overflows (scrolls()); StatusSelectors caps
+    // every menu that way. That path, activateRow(), used to emit only the
+    // MENU's triggered(QAction*) and never called a->trigger(), so the action's
+    // own triggered - which MenuBar connects to emit recentFileRequested() -
+    // never fired. The menu highlighted the row, closed, and nothing opened.
+    //
+    // A plain (uncapped) submenu went through QMenu::mousePressEvent instead and
+    // worked, which is why the old test (actions.at(2)->trigger(), a direct
+    // action call) passed while the real click failed.
+    void clicking_a_recent_file_in_a_scrolling_submenu_opens_it()
+    {
+        QTemporaryDir td;
+        QVERIFY(td.isValid());
+        QStringList paths;
+        for (int i = 0; i < 5; ++i) {
+            const QString p = QDir(td.path()).absoluteFilePath(
+                QStringLiteral("recent_%1.txt").arg(i));
+            QFile f(p);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            paths << p;
+        }
+
+        MenuBar bar;
+        bar.resize(800, 600);
+        bar.setRecentFiles(paths);
+
+        QAction* entry = bar.findChild<QAction*>(QStringLiteral("actionFileRecentFiles"));
+        QVERIFY2(entry, "the File menu has no Recent Files entry");
+        auto* sub = static_cast<BorlandMenu*>(entry->menu());
+        QVERIFY2(sub, "the Recent Files entry has no BorlandMenu submenu");
+
+        // Cap far below what five rows need so the content genuinely overflows
+        // and BorlandMenu::scrolls() - the activateRow() path - is taken.
+        sub->setMaximumHeight(90);
+        QVERIFY2(sub->scrolls(), "the submenu did not take the scrolling path");
+
+        QSignalSpy spy(&bar, &MenuBar::recentFileRequested);
+        sub->popup(bar.mapToGlobal(QPoint(0, bar.height())));
+        QCoreApplication::processEvents();
+        QVERIFY2(sub->isVisible(), "the recents submenu did not open");
+
+        // Press + release a row through the menu, exactly as ContentBridge
+        // delivers a real click.
+        const int row = 2;
+        const QRect r = sub->actionGeometry(sub->actions().value(row));
+        QVERIFY2(!r.isEmpty(), "the row has no geometry");
+        const QPoint local = r.center();
+        QMouseEvent press(QEvent::MouseButtonPress, local, sub->mapToGlobal(local),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(sub, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, sub->mapToGlobal(local),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(sub, &release);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.first().at(0).toString(), paths.at(row));
     }
 
     // Settings switch: the whole Recent Files block can be turned off.

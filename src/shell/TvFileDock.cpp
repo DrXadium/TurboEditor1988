@@ -25,6 +25,9 @@
 #include <QPolygon>
 #include <QVBoxLayout>
 #include <QStyle>
+#include <QUrl>
+#include <QFile>
+#include <QXmlStreamReader>
 
 namespace {
 const QColor kPanelGray(0xAA, 0xAA, 0xAA);
@@ -36,15 +39,18 @@ const QColor kGreen(0x00, 0xAA, 0x00);
 // DOS bright green: the press flash on a plate or a dropdown cell.
 const QColor kGreenBright(0x55, 0xFF, 0x55);
 const QColor kBlue(0x00, 0x00, 0xAA);
-const int kScrollStrip = 7;      // height of the horizontal bar's row under the list
-const int kBarWidth = 11;        // width of the list's vertical scrollbar
+const int kBarGap = 6;           // clear gap kept between the buttons and the list
 // 2026-11-21, horizontal scrollbar: the strip is now a widget whose geometry
 // lives in layoutChildren (bar + strip under the list), so the NAME ROWS end
-// where the strip begins: listBottom - kScrollStrip. Every read of the row
-// band goes through these two helpers - inlining the old arithmetic is how
-// the strip and the rows drift apart.
+// where the strip begins: listBottom - stripHeight. Every read of the row band
+// goes through these two helpers - inlining the old arithmetic is how the
+// strip and the rows drift apart.
+// The strip's height is one character cell - the SAME cell the edit view's
+// RightScrollBar is sized to (2026-11-24: "make them the same size as the ones
+// for the edit view"). kBarWidth/kScrollStrip used to be hardcoded 11/7px.
 // Row band = the list rect minus the strip at its bottom.
-inline int listBodyBottom(const QRect& list) { return list.bottom() - kScrollStrip; }
+inline int listBodyBottom(const QRect& list, int stripH)
+{ return list.bottom() - stripH; }
 // The drop shadow is the panel's own rect offset down-right by this much, so
 // the panel also insets by it: the shadow then reaches the widget edge exactly
 // and the gutter around it is left unpainted (the CRT background shows through,
@@ -55,11 +61,20 @@ const int kPad = 6;
 const int kMaxRecents = 10;      // the dropdown lists the last ten files
 const int kPlaceRowH = 2;        // extra px under each place row (breathing room)
 
-// Kate's Places list: Home, the XDG user folders that actually exist, then the
-// root. An entry whose folder is missing is skipped rather than shown dead -
-// clicking a place that is not there would strand the user.
+// Kate's bookmark places, read from user-places.xbel (defined below).
+QList<QPair<QString, QString>> kateBookmarkPlaces();
+
+// Kate's Places list: the user's own bookmarks from user-places.xbel when
+// present (what Kate actually shows), otherwise Home, the XDG folders that
+// actually exist, then the root. An entry whose folder is missing is skipped
+// rather than shown dead - clicking a place that is not there would strand
+// the user.
 QList<QPair<QString, QString>> standardPlaces()
 {
+    const QList<QPair<QString, QString>> bookmarks = kateBookmarkPlaces();
+    if (!bookmarks.isEmpty())
+        return bookmarks;
+
     QList<QPair<QString, QString>> out;
     const QString home = QDir::homePath();
     out << qMakePair(QStringLiteral("Home"), home);
@@ -84,6 +99,45 @@ QList<QPair<QString, QString>> standardPlaces()
         out << qMakePair(QString::fromLatin1(d.label), p);
     }
     out << qMakePair(QStringLiteral("Root"), QStringLiteral("/"));
+    return out;
+}
+
+// Kate's Places sidebar reads the user's KDE bookmark file
+// (XDG_DATA_HOME/user-places.xbel): the SAME list Kate's own file dialog
+// shows. Each <bookmark href="file://..."> carries a <title> - the label the
+// sidebar prints. Entries are filtered down to plain local directories that
+// exist: the file also holds remote:/trash:/recentlyused: schemes and dead
+// network mounts, none of which a local listing can navigate.
+//
+// Returns an empty list when there is no bookmark file (or nothing usable in
+// it) so the caller falls back to the XDG standard set.
+QList<QPair<QString, QString>> kateBookmarkPlaces()
+{
+    const QString dataHome = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    const QString xbelPath = dataHome + QLatin1String("/user-places.xbel");
+    QFile f(xbelPath);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+
+    QList<QPair<QString, QString>> out;
+    QXmlStreamReader xml(&f);
+    QString pendingHref;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement() && xml.name() == QLatin1String("bookmark")) {
+            const QString href = xml.attributes().value(QLatin1String("href")).toString();
+            // Only plain file:// entries; skip remote:, trash:, kdeconnect:, etc.
+            pendingHref = href.startsWith(QLatin1String("file://")) ? href : QString();
+        } else if (xml.isStartElement() && xml.name() == QLatin1String("title")) {
+            const QString title = xml.readElementText().trimmed();
+            if (!pendingHref.isEmpty() && !title.isEmpty()) {
+                const QString path = QUrl(pendingHref).toLocalFile();
+                if (!path.isEmpty() && QFileInfo(path).isDir())
+                    out.append(qMakePair(title, path));
+            }
+            pendingHref.clear();
+        }
+    }
     return out;
 }
 } // namespace
@@ -538,8 +592,10 @@ void TvFileDock::layoutChildren()
     const int x0 = inner.left() + kPad;
     const int usable = inner.width() - 2 * kPad;
     // Places column down the LEFT (Kate's file dialog). Everything else - the
-    // path bar, the Files box and the name/type rows - starts right of it, so
-    // the content block shifts right as a whole.
+    // path bar, the Files box - starts right of it, so the content block
+    // shifts right as a whole. The NAME/TYPE rows are the exception: they sit
+    // at the LEFT margin (2026-11-24: "the file name / type inputs should
+    // move to the left"), spanning the full width from under the column.
     const int placesW = qBound(cw * 8, int(usable * 0.24), cw * 18);
     const int contentX = x0 + placesW + cw;
     const int listW = qMax(cw * 12, usable - placesW - cw);
@@ -547,20 +603,26 @@ void TvFileDock::layoutChildren()
     const int btnX = inner.right() - kPad - btnW + 1;
 
     const int entryH = ch + 6;
+    // One character cell for the scroll controls - the SAME cell the edit
+    // view's RightScrollBar uses, so the picker's bars match the edit view
+    // (2026-11-24: "make them the same size as the ones for the edit view").
+    const int barW = cw;
 
-    // Bottom block, laid out UPWARD from the status row so the new rows grow
-    // into the space the list gives up, never past the frame.
+    // The fields start at the LEFT margin; the dropdown cell follows the
+    // field's right edge. The pair (field + cell) must clear the OK/Cancel
+    // column on the right by kBarGap, so the field is (btnX - kBarGap - x0 -
+    // dropW - 6) wide - the 5px cell gap and one pixel for the inclusive edge.
     const int dropW = qMax(cw * 2, 14);          // a real click target, not a sliver
-    const int fieldW = qMax(cw * 8, listW - dropW - 5);
     const int typeTop = m_statusRect.top() - 6 - entryH;
-    m_typeRect = QRect(contentX, typeTop, fieldW, entryH);
-    m_typeLabelRect = QRect(contentX, typeTop - 2 - ch, listW, ch);
+    const int fieldW = qMax(cw * 8, btnX - kBarGap - x0 - dropW - 6);
+    m_typeRect = QRect(x0, typeTop, fieldW, entryH);
+    m_typeLabelRect = QRect(x0, typeTop - 2 - ch, usable, ch);
     m_typeDropRect = QRect(m_typeRect.right() + 5, typeTop, dropW, entryH);
 
     const int nameTop = m_typeLabelRect.top() - 6 - entryH;
-    m_nameRect = QRect(contentX, nameTop, fieldW, entryH);
+    m_nameRect = QRect(x0, nameTop, fieldW, entryH);
     m_nameDropRect = QRect(m_nameRect.right() + 5, nameTop, dropW, entryH);
-    m_nameLabelRect = QRect(contentX, nameTop - 2 - ch, listW, ch);
+    m_nameLabelRect = QRect(x0, nameTop - 2 - ch, usable, ch);
 
     // Top block: the path bar.
     int y = inner.top() + 2;
@@ -580,15 +642,23 @@ void TvFileDock::layoutChildren()
     m_placesLabelRect = QRect(x0, m_filesLabelRect.top(), placesW, ch);
     m_placesRect = QRect(x0, m_listRect.top(), placesW, m_listRect.height());
 
+    // Buttons in the LOWER RIGHT, stacked close together and clear of the
+    // picker (2026-11-24: "the ok / cancel buttons should move down to the
+    // lower right and be closer together so they can fit under the picker").
+    // Cancel anchors to the status row, OK sits one tight gap above it; both
+    // hug btnX on the right and never overlap the Files box.
     const int bh = ch + 6;
-    m_okRect = QRect(btnX, m_listRect.top(), btnW, bh);
-    // Cancel sits under OK, kept clear of the list's bottom edge (the old
-    // third Help slot anchored it there; with Help gone the pair is spaced
-    // from OK and clamped to the frame).
-    m_cancelRect = QRect(btnX, m_listRect.top() + 3 * (bh + 4), btnW, bh);
-    const int lowest = m_listRect.bottom() - bh + 1;
-    if (m_cancelRect.bottom() > lowest)
-        m_cancelRect.moveTop(qMax(m_okRect.bottom() + 4, lowest - bh + 1));
+    const int gap = 4;                          // one tight gap, not a void
+    const int lowestCancelTop = m_statusRect.top() - kBarGap - bh;
+    m_cancelRect = QRect(btnX, lowestCancelTop, btnW, bh);
+    m_okRect = QRect(btnX, m_cancelRect.top() - gap - bh, btnW, bh);
+    // If OK would climb into the list, push the pair down so OK clears it by
+    // kBarGap (Cancel stays at or above the status row).
+    if (m_okRect.top() < m_listRect.bottom() + kBarGap) {
+        const int okTop = m_listRect.bottom() + kBarGap;
+        m_okRect.moveTop(okTop);
+        m_cancelRect.moveTop(okTop + bh + gap);
+    }
 
     if (m_pathEdit)
         m_pathEdit->setGeometry(m_pathRect.adjusted(2, 2, -2, -2));
@@ -609,10 +679,10 @@ void TvFileDock::layoutChildren()
         syncVerticalBar();
     }
     if (m_hBar) {
-        const int barH = kScrollStrip;
+        const int barH = barW;
         m_hBar->setGeometry(m_listRect.left(),
                             m_listRect.bottom() - barH + 1,
-                            qMax(24, m_listRect.width() - kBarWidth), barH);
+                            qMax(24, m_listRect.width() - barW), barH);
         syncHorizontalBar();
     }
 }
@@ -624,7 +694,7 @@ int TvFileDock::visibleRows() const
         return 1;
     // Row band excludes the scroll strip at the box's bottom edge (the band
     // helper keeps paint, hit-test and this count on the same arithmetic).
-    return qMax(1, (listBodyBottom(m_listRect) - m_listRect.top() + 1) / rowH);
+    return qMax(1, (listBodyBottom(m_listRect, cellW()) - m_listRect.top() + 1) / rowH);
 }
 
 QRect TvFileDock::placeRect(int i) const
@@ -690,18 +760,18 @@ QRect TvFileDock::listContentRect() const
 {
     if (m_listRect.isEmpty())
         return QRect();
-    const int bodyH = listBodyBottom(m_listRect) - m_listRect.top() + 1;
+    const int bodyH = listBodyBottom(m_listRect, cellW()) - m_listRect.top() + 1;
     return QRect(m_listRect.left(), m_listRect.top(),
-                 qMax(20, m_listRect.width() - kBarWidth), qMax(1, bodyH));
+                 qMax(20, m_listRect.width() - cellW()), qMax(1, bodyH));
 }
 
 QRect TvFileDock::verticalBarRect() const
 {
     if (m_listRect.isEmpty())
         return QRect();
-    const int bodyH = listBodyBottom(m_listRect) - m_listRect.top() + 1;
-    return QRect(m_listRect.right() - kBarWidth + 1, m_listRect.top(),
-                 kBarWidth, qMax(1, bodyH));
+    const int bodyH = listBodyBottom(m_listRect, cellW()) - m_listRect.top() + 1;
+    return QRect(m_listRect.right() - cellW() + 1, m_listRect.top(),
+                 cellW(), qMax(1, bodyH));
 }
 
 int TvFileDock::maxScroll() const
@@ -801,7 +871,7 @@ int TvFileDock::rowAt(const QPoint& p) const
 {
     if (!m_listRect.contains(p))
         return -1;
-    if (p.y() > listBodyBottom(m_listRect))
+    if (p.y() > listBodyBottom(m_listRect, cellW()))
         return -1;
     const int rowH = cellH();
     const int row = (p.y() - m_listRect.top()) / rowH;
