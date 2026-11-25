@@ -528,3 +528,17 @@ target_link_libraries(probe_recents_bridge PRIVATE crt-shell crt-bridge Qt6::Wid
 #   cmake --build build --target probe_recents_scroll && ./build/probe_recents_scroll
 add_executable(probe_recents_scroll .relay/probe_recents_scroll.cpp)
 target_link_libraries(probe_recents_scroll PRIVATE crt-shell Qt6::Widgets Qt6::Test)
+
+# Round 16 scratch probe: the recents click through the PRODUCTION chain -
+# main.cpp's PopupRegistrar event filter + ContentBridge::forwardMouseEvent -
+# offscreen only.
+#   cmake --build build --target probe_recents_prod && ./build/probe_recents_prod
+add_executable(probe_picker_pixels .relay/probe_picker_pixels.cpp)
+target_link_libraries(probe_picker_pixels PRIVATE crt-shell Qt6::Widgets Qt6::Test)
+
+# Round 16 scratch probe: the recents click through the PRODUCTION chain -
+# main.cpp's PopupRegistrar event filter + ContentBridge::forwardMouseEvent -
+# offscreen only.
+#   cmake --build build --target probe_recents_prod && ./build/probe_recents_prod
+add_executable(probe_recents_prod .relay/probe_recents_prod.cpp)
+target_link_libraries(probe_recents_prod PRIVATE crt-shell crt-bridge Qt6::Widgets Qt6::Test)

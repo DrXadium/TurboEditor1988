@@ -186,22 +186,11 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     m_hBar->show();
     syncHorizontalBar();
 
-    // The list scrolls DOWN, so its control is VERTICAL (2026-11-24 report:
-    // the old bottom strip was horizontal, so it read backwards and - being a
-    // hand-rolled thumb in the dock's own paint - dragged badly). A real
-    // QScrollBar on the Files box's right edge gets drag, the arrow buttons and
-    // track paging from Qt; the bridge's childAt() hit-test routes clicks to it.
-    m_vBar = new TextScrollBar(Qt::Vertical, this);
-    m_vBar->setObjectName(QStringLiteral("fileListVBar"));
-    m_vBar->setSingleStep(1);
-    connect(m_vBar, &QScrollBar::valueChanged, this, [this](int v) {
-        if (v == m_scroll)
-            return;
-        m_scroll = v;
-        update();
-    });
-    m_vBar->show();
-    syncVerticalBar();
+    // 2026-11-24 (round 16): the vertical scrollbar is GONE - Xadium: "remove
+    // the vertical scrollbar as it does nothing". The two-column list scrolls
+    // by wheel (and the arrow keys move the selection, which pages via
+    // ensureVisible); a thumb on the right edge was inert clutter. m_vBar stays
+    // null so every guarded read no-ops and no widget is created.
 
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new TvPlate(text, this);
@@ -648,7 +637,10 @@ void TvFileDock::layoutChildren()
     // Cancel anchors to the status row, OK sits one tight gap above it; both
     // hug btnX on the right and never overlap the Files box.
     const int bh = ch + 6;
-    const int gap = 4;                          // one tight gap, not a void
+    // 2026-11-24 (round 16): "insert some visual space above the cancel button".
+    // The OK/Cancel pair keeps a clear 10px gap so Cancel reads as its own
+    // button, not a label stuck under OK.
+    const int gap = 10;
     const int lowestCancelTop = m_statusRect.top() - kBarGap - bh;
     m_cancelRect = QRect(btnX, lowestCancelTop, btnW, bh);
     m_okRect = QRect(btnX, m_cancelRect.top() - gap - bh, btnW, bh);
@@ -674,10 +666,6 @@ void TvFileDock::layoutChildren()
     // box's RIGHT edge (the list scrolls down), the horizontal bar keeps the
     // box's bottom row for long names. The name rows live in the area left of
     // the bar and above the row - see listContentRect().
-    if (m_vBar) {
-        m_vBar->setGeometry(verticalBarRect());
-        syncVerticalBar();
-    }
     if (m_hBar) {
         const int barH = barW;
         m_hBar->setGeometry(m_listRect.left(),
@@ -1009,11 +997,9 @@ void TvFileDock::paintEvent(QPaintEvent*)
     // widgets, so nothing here may draw over them.
     p.fillRect(m_listRect, kTeal);
     const QRect content = listContentRect();
-    const int listBodyH = content.height();
-    const int half = content.width() / 2;
-    // Dark-blue divider between the two columns (reference: a solid vertical
-    // rule splitting the teal box).
-    p.fillRect(QRect(content.left() + half, content.top(), 2, listBodyH), kBlue);
+    // 2026-11-24 (round 16): the dark-blue divider between the two columns is
+    // gone - Xadium: "remove the blue divider in the file list". The two name
+    // columns are separated by a teal gutter alone now.
 
     p.save();
     p.setClipRect(content);
@@ -1028,8 +1014,13 @@ void TvFileDock::paintEvent(QPaintEvent*)
         p.setFont(inkFont);
         // TV list language: black names on the cyan field, the selected row
         // inverted to white on blue. Long names are read by scrolling the
-        // offset (Shift+wheel), so the text starts left of the row when one is
-        // set and the row clip keeps the neighbour column clean.
+        // offset (Shift+wheel). Clip to THIS column's row rect: drawing into a
+        // rect shifted left by m_hOffset used to let a long name spill past the
+        // column edge into the gutter and over the neighbour column (round 16,
+        // "when scrolling horizontally, one column visually overlaps the
+        // other"). The clip keeps each column's ink inside its own bounds no
+        // matter how far the offset pushes it.
+        p.setClipRect(r, Qt::IntersectClip);
         p.setPen(sel ? kWhite : kBlack);
         p.drawText(r.adjusted(2 - m_hOffset, 0, -2, 0),
                    Qt::AlignLeft | Qt::AlignVCenter, m_files.at(i));

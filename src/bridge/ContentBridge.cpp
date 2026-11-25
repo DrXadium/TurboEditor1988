@@ -438,13 +438,36 @@ QWidget* ContentBridge::popupAt(const QPoint& shellLocal) const
     if (!m_shell)
         return nullptr;
     const QPoint g = m_shell->mapToGlobal(shellLocal);
+    // Collect every visible popup whose rect contains the point. A submenu can
+    // overlap its parent dropdown (the recents submenu opens over the lower
+    // band of the File menu), so "first match" would hand the click to the
+    // PARENT and the row would never fire. Return the INNERMOST: a candidate
+    // that some other candidate claims as its parent is the parent - skip it
+    // and let the child (the submenu) take the point.
+    QWidget* parentHit = nullptr;
+    QWidget* childHit = nullptr;
     for (QWidget* p : m_popups) {
         if (!p || !p->isVisible())
             continue;
-        if (p->rect().contains(p->mapFromGlobal(g)))
-            return p;
+        if (!p->rect().contains(p->mapFromGlobal(g)))
+            continue;
+        if (!parentHit)
+            parentHit = p;
+        // Is p the parent of another visible candidate that also contains g?
+        for (QWidget* q : m_popups) {
+            if (!q || q == p || !q->isVisible())
+                continue;
+            if (q->parent() == p || q->parentWidget() == p) {
+                if (q->rect().contains(q->mapFromGlobal(g))) {
+                    childHit = q;   // the submenu over its parent wins
+                    break;
+                }
+            }
+        }
+        if (childHit)
+            break;
     }
-    return nullptr;
+    return childHit ? childHit : parentHit;
 }
 
 void ContentBridge::forwardWheelEvent(int dx, int dy, int buttons, int modifiers,

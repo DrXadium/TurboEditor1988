@@ -628,6 +628,111 @@ private slots:
         QCOMPARE(spy.first().at(0).toString(), paths.at(row));
     }
 
+    // Round 16 (Xadium): "the recent files still don't launch if clicked" - the
+    // PRODUCTION path, with BOTH the File menu and the recents submenu open and
+    // registered. Round 15 proved activateRow() fires the action, but in the real
+    // app the parent File dropdown and the submenu overlap the same point, and
+    // ContentBridge::popupAt() returned the FIRST registered popup containing it
+    // - the File menu - so the press dismissed the File menu and never reached
+    // the recents row. This test opens both menus, registers both (exactly as
+    // main.cpp's PopupRegistrar does on Show), then clicks a row through the
+    // bridge the way QML delivers it.
+    void clicking_a_recent_file_with_the_file_menu_open_launches_it()
+    {
+        QTemporaryDir td;
+        QVERIFY(td.isValid());
+        QStringList paths;
+        for (int i = 0; i < 3; ++i) {
+            const QString p = QDir(td.path()).absoluteFilePath(
+                QStringLiteral("live_recent_%1.txt").arg(i));
+            QFile f(p);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            paths << p;
+        }
+
+        ShellWindow shell;
+        shell.resize(1000, 700);
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        MenuBar* bar = shell.findChild<MenuBar*>();
+        QVERIFY2(bar, "the shell has no MenuBar");
+        bar->setRecentFiles(paths);
+
+        QAction* entry = bar->findChild<QAction*>(QStringLiteral("actionFileRecentFiles"));
+        QVERIFY2(entry, "the File menu has no Recent Files entry");
+        QMenu* sub = entry->menu();
+        QVERIFY2(sub, "the Recent Files entry has no submenu");
+
+        // Open the File dropdown, then the recents submenu - both stay visible
+        // and both register with the bridge, exactly as the live app does.
+        QMenu* fileMenu = nullptr;
+        for (QAction* a : bar->actions())
+            if (a->menu() && a->text().remove(QLatin1Char('&')) == QLatin1String("File"))
+                fileMenu = a->menu();
+        QVERIFY2(fileMenu, "no File menu");
+        fileMenu->popup(bar->mapToGlobal(QPoint(0, bar->height())));
+        QCoreApplication::processEvents();
+        QVERIFY2(fileMenu->isVisible(), "the File menu did not open");
+
+        // The recents submenu opens from the Recent Files entry INSIDE the File
+        // menu, so it overlaps the File dropdown - BOTH registered popups then
+        // contain the row's point, the exact collision the bridge mis-routes.
+        QVERIFY2(fileMenu->isVisible(), "the File menu did not open");
+        // Open the recents submenu from the Recent Files entry, then (matching a
+        // live File menu where the entry sits low) keep it overlapping the File
+        // dropdown's lower band. popup() places relative to the parent menu; if
+        // the natural spot leaves the row outside the File menu, re-popup higher
+        // so BOTH registered popups contain the row - the collision popupAt()
+        // breaks on.
+        const QRect entryGeom = fileMenu->actionGeometry(entry);
+        QVERIFY2(!entryGeom.isEmpty(), "the Recent Files entry has no geometry");
+        QAction* row = sub->actions().value(1);
+        QVERIFY2(row, "the recents submenu has no rows");
+
+        // Open once to measure where row 1 actually lands, then re-open the
+        // submenu so row 1's centre sits just inside the File menu's lower band
+        // - the live layout, where the recents entry is near the bottom of a
+        // full File menu and its submenu overlaps the dropdown.
+        sub->popup(fileMenu->mapToGlobal(QPoint(entryGeom.left() + 4, entryGeom.top())));
+        QCoreApplication::processEvents();
+        QVERIFY2(sub->isVisible(), "the recents submenu did not open");
+        const int rowOffY = sub->mapToGlobal(sub->actionGeometry(row).center()).y() - sub->y();
+        const int targetY = fileMenu->mapToGlobal(QPoint(0, fileMenu->height() - 10)).y();
+        sub->popup(QPoint(sub->x(), targetY - rowOffY));
+        QCoreApplication::processEvents();
+        QVERIFY2(sub->isVisible(), "the recents submenu closed on reposition");
+        bridge.registerPopup(fileMenu);
+        bridge.registerPopup(sub);
+
+        // Row centre in GLOBAL, then SHELL-local - what QML hands the bridge.
+        const QPoint rowGlobal = sub->mapToGlobal(sub->actionGeometry(row).center());
+        const QPoint shellLocal = shell.mapFromGlobal(rowGlobal);
+        QVERIFY2(fileMenu->rect().contains(fileMenu->mapFromGlobal(rowGlobal)),
+                 qPrintable(QStringLiteral("row not in File menu (rowGlobal=%1,%2 fileMenu=%3,%4 %5x%6)")
+                                .arg(rowGlobal.x()).arg(rowGlobal.y())
+                                .arg(fileMenu->x()).arg(fileMenu->y())
+                                .arg(fileMenu->width()).arg(fileMenu->height())));
+        QVERIFY2(sub->rect().contains(sub->mapFromGlobal(rowGlobal)),
+                 "the row is not in the recents submenu either");
+
+        QSignalSpy spy(bar, &MenuBar::recentFileRequested);
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellLocal.x(), shellLocal.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellLocal.x(), shellLocal.y());
+        QCoreApplication::processEvents();
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.first().at(0).toString(), paths.at(1));
+    }
+
     // Settings switch: the whole Recent Files block can be turned off.
     void the_recent_files_entry_can_be_hidden_from_settings()
     {
