@@ -518,6 +518,68 @@ private slots:
 
     // Task 10: menu entries the composition root wires to real features exist
     // under stable objectNames, and toggles are checkable.
+    // User request 2026-11-24: "a recent files display on the file dropdown
+    // with the last 5 opened files, toggleable on and off from settings."
+    void the_file_menu_lists_the_five_most_recent_files()
+    {
+        MenuBar bar;
+        const QStringList paths = {
+            QStringLiteral("/tmp/a.txt"), QStringLiteral("/tmp/b.txt"),
+            QStringLiteral("/tmp/c.txt"), QStringLiteral("/tmp/d.txt"),
+            QStringLiteral("/tmp/e.txt"), QStringLiteral("/tmp/f.txt"),
+            QStringLiteral("/tmp/g.txt"),
+        };
+        bar.setRecentFiles(paths);
+
+        QAction* entry = bar.findChild<QAction*>(QStringLiteral("actionFileRecentFiles"));
+        QVERIFY2(entry, "the File menu has no Recent Files entry");
+        QVERIFY2(entry->isVisible(), "the Recent Files entry is hidden with 7 files");
+        QMenu* sub = entry->menu();
+        QVERIFY2(sub, "the Recent Files entry has no submenu");
+
+        // Last five, newest first: the sixth and seventh are not offered.
+        const QList<QAction*> actions = sub->actions();
+        QCOMPARE(actions.size(), 5);
+        for (int i = 0; i < 5; ++i) {
+            QVERIFY2(actions.at(i)->text().contains(paths.at(i)),
+                     qPrintable(QStringLiteral("row %1 says '%2', expected %3")
+                                    .arg(i).arg(actions.at(i)->text()).arg(paths.at(i))));
+            QCOMPARE(actions.at(i)->objectName(),
+                     QStringLiteral("actionFileRecent%1").arg(i));
+        }
+        QCOMPARE(bar.recentFiles(), paths.mid(0, 5));
+
+        // Picking one asks the app to open exactly that file.
+        QSignalSpy spy(&bar, &MenuBar::recentFileRequested);
+        actions.at(2)->trigger();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.first().at(0).toString(), paths.at(2));
+
+        // An empty store hides the entry: an empty submenu is a dead end.
+        bar.setRecentFiles({});
+        QVERIFY2(!entry->isVisible(), "Recent Files stays visible with no files");
+    }
+
+    // Settings switch: the whole Recent Files block can be turned off.
+    void the_recent_files_entry_can_be_hidden_from_settings()
+    {
+        MenuBar bar;
+        bar.setRecentFiles({ QStringLiteral("/tmp/a.txt") });
+        QAction* entry = bar.findChild<QAction*>(QStringLiteral("actionFileRecentFiles"));
+        QVERIFY(entry);
+
+        bar.setRecentFilesVisible(false);
+        QVERIFY2(!entry->isVisible(), "the setting did not hide Recent Files");
+
+        bar.setRecentFilesVisible(true);
+        QVERIFY2(entry->isVisible(), "turning the setting back on did not restore it");
+
+        // ...and a store update must not resurrect it while it is off.
+        bar.setRecentFilesVisible(false);
+        bar.setRecentFiles({ QStringLiteral("/tmp/b.txt") });
+        QVERIFY2(!entry->isVisible(), "a new recent file ignored the off setting");
+    }
+
     void menu_entries_expose_wiring_targets() {
         ShellWindow w;
         QMenuBar* mb = w.menuBar();

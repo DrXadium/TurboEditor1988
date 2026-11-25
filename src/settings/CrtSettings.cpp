@@ -65,6 +65,7 @@ void CrtSettings::resetToDefaults()
     m_autosaveIntervalSeconds = kAutosaveIntervalSeconds;
     m_backgroundColor = kBackgroundColor;
     m_minimapVisible = false;
+    m_showRecentFiles = true;
 }
 
 bool CrtSettings::scanlinesEnabled() const
@@ -101,6 +102,7 @@ CRT_SET(QColor, FontColor, m_fontColor, fontColorChanged)
 CRT_SET(int, FontSize, m_fontSize, fontSizeChanged)
 CRT_SET(QColor, BackgroundColor, m_backgroundColor, backgroundColorChanged)
 CRT_SET(bool, MinimapVisible, m_minimapVisible, minimapVisibleChanged)
+CRT_SET(bool, ShowRecentFiles, m_showRecentFiles, showRecentFilesChanged)
 // Clamped to the spin box range: 0/negative would mean "never" or a hot loop.
 void CrtSettings::setAutosaveIntervalSeconds(int v)
 {
@@ -187,6 +189,7 @@ bool CrtSettings::load()
         1, 3600);
     m_backgroundColor = s.value(QStringLiteral("backgroundColor"), kBackgroundColor).value<QColor>();
     m_minimapVisible = s.value(QStringLiteral("minimapVisible"), false).toBool();
+    m_showRecentFiles = s.value(QStringLiteral("showRecentFiles"), true).toBool();
     s.endGroup();
 
     // Notify all listeners of the bulk reload (values likely changed).
@@ -255,6 +258,7 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("autosaveIntervalSeconds"), m_autosaveIntervalSeconds);
     s.setValue(QStringLiteral("backgroundColor"), m_backgroundColor);
     s.setValue(QStringLiteral("minimapVisible"), m_minimapVisible);
+    s.setValue(QStringLiteral("showRecentFiles"), m_showRecentFiles);
     s.endGroup();
     s.sync();
     return s.status() == QSettings::NoError;

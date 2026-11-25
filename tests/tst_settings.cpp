@@ -330,6 +330,13 @@ private slots:
 
         {
             CrtSettings s;
+            // Recent files on the File menu: ON by default - it is a
+            // convenience the user asked for, and the menu hides itself when
+            // there is nothing to show.
+            QCOMPARE(s.showRecentFiles(), true);
+            s.setShowRecentFiles(false);
+            QCOMPARE(s.showRecentFiles(), false);
+
             QCOMPARE(s.minimapVisible(), false);   // default off
             s.setStorePath(store);
             s.setMinimapVisible(true);

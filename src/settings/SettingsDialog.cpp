@@ -86,6 +86,7 @@ void SettingsDialog::snapshot()
     m_snapshot.jitter = m_settings->jitter();
     m_snapshot.fontSize = m_settings->fontSize();
     m_snapshot.autosaveSeconds = m_settings->autosaveIntervalSeconds();
+    m_snapshot.showRecentFiles = m_settings->showRecentFiles();
 }
 
 void SettingsDialog::restore()
@@ -100,6 +101,7 @@ void SettingsDialog::restore()
     m_settings->setScanlinesEnabled(m_snapshot.scanlines);
     m_settings->setFontSize(m_snapshot.fontSize);
     m_settings->setAutosaveIntervalSeconds(m_snapshot.autosaveSeconds);
+    m_settings->setShowRecentFiles(m_snapshot.showRecentFiles);
 }
 
 void SettingsDialog::reject()
@@ -243,10 +245,18 @@ QWidget* SettingsDialog::buildAppearanceTab()
     grid->addWidget(tvLabel(tr("Autosave interval")), 1, 0);
     grid->addWidget(intervalSpin, 1, 1);
 
+    // Recent files on the File menu (user request 2026-11-24). Live like every
+    // other control here; Cancel puts it back through restore().
+    auto* recents = new TvCheckBox(tr("Recent files on the File menu"));
+    recents->setObjectName(QStringLiteral("showRecentFilesCheck"));
+    recents->setChecked(m_settings->showRecentFiles());
+    connect(recents, &TvCheckBox::toggled, m_settings, &CrtSettings::setShowRecentFiles);
+    grid->addWidget(recents, 2, 0, 1, 2);
+
     auto* note = tvLabel(tr("Editor scheme, chrome theme and minimap options are "
                             "configured by the theme and editor settings."));
     note->setWordWrap(true);
-    grid->addWidget(note, 2, 0, 1, 2);
-    grid->setRowStretch(3, 1);
+    grid->addWidget(note, 3, 0, 1, 2);
+    grid->setRowStretch(4, 1);
     return page;
 }

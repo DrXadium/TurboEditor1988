@@ -2,6 +2,7 @@
 #include "MenuBar.h"
 #include "BorlandMenu.h"
 #include "src/AppIdentity.h"
+#include <QDir>
 #include <QPalette>
 #include <QColor>
 #include <QPainter>
@@ -58,6 +59,15 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     file->addSeparator();
     added(file, QStringLiteral("&Save"), QStringLiteral("actionFileSave"));
     added(file, QStringLiteral("Save &As..."), QStringLiteral("actionFileSaveAs"));
+    // Recent files (user request 2026-11-24). Built empty and hidden; the
+    // composition root feeds it from RecentFilesStore and the Settings switch.
+    file->addSeparator();
+    m_recentMenu = new BorlandMenu(file);
+    m_recentMenu->setObjectName(QStringLiteral("menuFileRecentFiles"));
+    m_recentEntry = file->addMenu(m_recentMenu);
+    m_recentEntry->setObjectName(QStringLiteral("actionFileRecentFiles"));
+    m_recentEntry->setText(QStringLiteral("Recent &Files"));
+    m_recentEntry->setVisible(false);
 
     QMenu* edit = addMenu(QStringLiteral("Edit"));
     // Undo / redo head the menu, as in Kate and Turbo Vision. Both start
@@ -194,6 +204,40 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     QMenu* help = addMenu(QStringLiteral("&Help"));
     added(help, QStringLiteral("&About ") + AppIdentity::displayName(),
           QStringLiteral("actionHelpAbout"));
+}
+
+void MenuBar::setRecentFiles(const QStringList& paths)
+{
+    // The dropdown owns the "last five" rule, so a caller holding a longer
+    // MRU (RecentFilesStore keeps ten) cannot flood the menu.
+    m_recentPaths = paths.mid(0, kRecentCount);
+    rebuildRecentFiles();
+}
+
+void MenuBar::setRecentFilesVisible(bool on)
+{
+    m_recentsWanted = on;
+    rebuildRecentFiles();
+}
+
+void MenuBar::rebuildRecentFiles()
+{
+    if (!m_recentMenu || !m_recentEntry)
+        return;
+    // Removing the old rows destroys the previous actions; the lambdas go with
+    // them, so a file that left the list can never be triggered from the menu.
+    m_recentMenu->clear();
+    const int n = qMin(kRecentCount, m_recentPaths.size());
+    for (int i = 0; i < n; ++i) {
+        const QString path = m_recentPaths.at(i);
+        QAction* a = m_recentMenu->addAction(QDir::toNativeSeparators(path));
+        a->setObjectName(QStringLiteral("actionFileRecent%1").arg(i));
+        a->setData(path);
+        connect(a, &QAction::triggered, this, [this, path] {
+            emit recentFileRequested(path);
+        });
+    }
+    m_recentEntry->setVisible(m_recentsWanted && n > 0);
 }
 
 QMenu* MenuBar::addMenu(const QString& title)

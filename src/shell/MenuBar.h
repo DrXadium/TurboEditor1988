@@ -19,6 +19,17 @@ public:
     // Title may include a hotkey marker ("&File"); it is matched after stripping.
     QMenu* menu(const QString& title) const;
 
+    // Recent files on the File dropdown (user request 2026-11-24): the last
+    // five opened files, newest first, in a "Recent Files" submenu. Entries
+    // carry actionFileRecent0..4; picking one emits recentFileRequested() and
+    // the composition root opens it - the bar itself never touches the tabs.
+    // An empty list hides the submenu (an empty menu is a dead end), and
+    // setRecentFilesVisible(false) removes it whatever the list says.
+    void setRecentFiles(const QStringList& paths);
+    QStringList recentFiles() const { return m_recentPaths; }
+    void setRecentFilesVisible(bool on);
+    bool recentFilesVisible() const { return m_recentsWanted; }
+
     // Titles of the top-level menus, in order (hotkey markers stripped).
     QStringList topLevelTitles() const;
 
@@ -35,6 +46,17 @@ public:
     // the TV dropdown painting.
     QMenu* addMenu(const QString& title);
 
+signals:
+    void recentFileRequested(const QString& path);
+
 protected:
     void paintEvent(QPaintEvent* ev) override;
+
+private:
+    static constexpr int kRecentCount = 5;
+    void rebuildRecentFiles();
+    QMenu* m_recentMenu = nullptr;        // the "Recent Files" submenu
+    QAction* m_recentEntry = nullptr;     // its entry on the File menu
+    QStringList m_recentPaths;
+    bool m_recentsWanted = true;          // the Settings switch
 };

@@ -744,13 +744,33 @@ int main(int argc, char** argv)
                                  [fn = std::move(fn)](bool) { fn(); });
         };
 
+        // File > Recent Files (2026-11-24): the bar owns the "last five" and the
+        // Settings switch; this root feeds it and opens what the user picks.
+        auto refreshRecents = [menuBar, &recentFiles, &crtSettings] {
+            menuBar->setRecentFiles(recentFiles.entries());
+            menuBar->setRecentFilesVisible(crtSettings.showRecentFiles());
+        };
+        refreshRecents();
+        QObject::connect(menuBar, &MenuBar::recentFileRequested, menuBar,
+                         [&tabs, &recentFiles, &refreshRecents](const QString& path) {
+                             if (path.isEmpty() || !QFileInfo::exists(path))
+                                 return;   // a file that moved: nothing to open
+                             tabs.openFile(QUrl::fromLocalFile(path));
+                             recentFiles.add(path);
+                             refreshRecents();
+                         });
+        // Turning the switch off removes the submenu at once; turning it back on
+        // restores it with the current history (the store is untouched).
+        QObject::connect(&crtSettings, &CrtSettings::showRecentFilesChanged, menuBar,
+                         [refreshRecents]() { refreshRecents(); });
+
         // File
         on(act("actionFileNew"), [&tabs] { tabs.newDocument(); });
         // File > Open / Save As use the app's OWN Turbo Vision dock, drawn as a
         // child of the shell so it lands inside the CRT texture. A native
         // QFileDialog opens a host-themed top-level window above the CRT scene,
         // which is exactly what the user asked to get rid of.
-        on(act("actionFileOpen"), [&shell, &tabs, &recentFiles] {
+        on(act("actionFileOpen"), [&shell, &tabs, &recentFiles, &refreshRecents] {
             const QString f = TvFileDock::getOpenFileName(
                 &shell, QObject::tr("Open File"),
                 QDir::currentPath(), QStringLiteral("All files (*)"),
@@ -758,12 +778,14 @@ int main(int argc, char** argv)
             if (!f.isEmpty()) {
                 tabs.openFile(QUrl::fromLocalFile(f));
                 recentFiles.add(f);
+                refreshRecents();
             }
         });
         // File > Open as Split Document (2026-11-21): pick a file and show it
         // in the RIGHT pane of a new split (max one split; the file also opens
         // as its own tab, so closing the split never closes the document).
-        on(act("actionFileOpenAsSplit"), [&shell, &tabs, &recentFiles] {
+        on(act("actionFileOpenAsSplit"),
+           [&shell, &tabs, &recentFiles, &refreshRecents] {
             const QString f = TvFileDock::getOpenFileName(
                 &shell, QObject::tr("Open File as Split"),
                 QDir::currentPath(), QStringLiteral("All files (*)"),
@@ -774,10 +796,11 @@ int main(int argc, char** argv)
                 // new tab in pane 0 and the split would mirror it into both.
                 tabs.openFileAsSplit(QUrl::fromLocalFile(f));
                 recentFiles.add(f);
+                refreshRecents();
             }
         });
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
-        on(act("actionFileSaveAs"), [&shell, &tabs, &recentFiles] {
+        on(act("actionFileSaveAs"), [&shell, &tabs, &recentFiles, &refreshRecents] {
             QString start = QDir::currentPath();
             if (auto* d = tabs.activeDocument())
                 if (!d->url().isEmpty())
@@ -788,6 +811,7 @@ int main(int argc, char** argv)
             if (!f.isEmpty()) {
                 tabs.saveActiveAs(QUrl::fromLocalFile(f));
                 recentFiles.add(f);
+                refreshRecents();
             }
         });
 

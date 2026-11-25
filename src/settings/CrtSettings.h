@@ -49,6 +49,10 @@ public:
     // View > Show Minimap survives a restart (user request 2026-11-21).
     Q_PROPERTY(bool minimapVisible READ minimapVisible WRITE setMinimapVisible
                    NOTIFY minimapVisibleChanged)
+    // File > Recent Files (user request 2026-11-24): the last five opened files
+    // on the File dropdown, ON unless the user turns it off.
+    Q_PROPERTY(bool showRecentFiles READ showRecentFiles WRITE setShowRecentFiles
+                   NOTIFY showRecentFilesChanged)
 
     // --- Per-effect on/off accessors (map to the float model) ---
     Q_PROPERTY(bool scanlinesEnabled READ scanlinesEnabled WRITE setScanlinesEnabled NOTIFY scanlinesEnabledChanged)
@@ -80,6 +84,8 @@ public:
     QColor backgroundColor() const { return m_backgroundColor; }
     bool minimapVisible() const { return m_minimapVisible; }
     void setMinimapVisible(bool on);
+    bool showRecentFiles() const { return m_showRecentFiles; }
+    void setShowRecentFiles(bool on);
 
     bool scanlinesEnabled() const;
     bool curvatureEnabled() const { return m_screenCurvature > 0; }
@@ -149,6 +155,7 @@ signals:
     void autosaveIntervalSecondsChanged();
     void backgroundColorChanged();
     void minimapVisibleChanged();
+    void showRecentFilesChanged();
     void scanlinesEnabledChanged();
 
 private:
@@ -175,6 +182,7 @@ private:
     int m_autosaveIntervalSeconds;
     QColor m_backgroundColor;
     bool m_minimapVisible = false;   // off unless the user turned it on
+    bool m_showRecentFiles = true;   // the File menu's Recent Files submenu
     QString m_storePath;   // empty => default QSettings location
     double m_savedBrightness = -1.0;   // brightness before applyDevBrightness (>=0 when active)
 };

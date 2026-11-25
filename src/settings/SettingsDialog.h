@@ -40,6 +40,7 @@ private:
         double jitter = 0.0;
         int fontSize = 16;
         int autosaveSeconds = 120;
+        bool showRecentFiles = true;
     };
     Snapshot m_snapshot;
 };
