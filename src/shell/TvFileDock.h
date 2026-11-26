@@ -119,6 +119,11 @@ public:
     int scrollOffset() const { return m_scroll; }
     int horizontalOffset() const { return m_hOffset; }
     void setHorizontalOffset(int px);
+    // The offset cap: how far the strip may slide (pixels). It is the widest
+    // NAME minus the two-cell strip - i.e. the point where even the widest
+    // name has left its cell. Public so tests can push the bar to its end.
+    int maxHorizontalOffset() const;
+    int widestNameWidth() const;            // widest name's advance in px
     // The horizontal bar under the Files box (Kate-style, TV glyph look).
     // Range = 0..maxHorizontalOffset(); value = the sideways offset of the
     // names in pixels. Public for tests and hit-testing.
@@ -202,7 +207,6 @@ private:
     int rowAt(const QPoint& p) const;      // -1 when the point is not on a row
     int columnAt(const QPoint& p) const;   // 0 = left column, 1 = right
     int rowIndex(int column, int row) const;   // list index for a cell
-    int maxHorizontalOffset() const;           // widest name vs the column width
     void ensureVisible(int index);
     void syncHorizontalBar();                  // range/value -> m_hBar
     void syncVerticalBar();                    // range/value -> m_vBar

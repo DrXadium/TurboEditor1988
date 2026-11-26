@@ -506,6 +506,12 @@ target_link_libraries(probe_settings PRIVATE crt-settings Qt6::Widgets)
 add_executable(probe_filedlg .relay/probe_filedlg.cpp)
 target_link_libraries(probe_filedlg PRIVATE crt-shell crt-editor Qt6::Widgets KF6::TextEditor)
 
+# Round 18 scratch probe: horizontal-scroll ink boxes (columns shift vs text
+# slides). Build on demand with:
+#   cmake --build build --target probe_hscroll && QT_QPA_PLATFORM=offscreen ./build/probe_hscroll
+add_executable(probe_hscroll .relay/probe_hscroll.cpp)
+target_link_libraries(probe_hscroll PRIVATE crt-shell Qt6::Widgets)
+
 # Round 15 scratch probe: why the type-drop cell click missed.
 #   cmake --build build --target probe_typedrop && ./build/probe_typedrop
 add_executable(probe_typedrop .relay/probe_typedrop.cpp)

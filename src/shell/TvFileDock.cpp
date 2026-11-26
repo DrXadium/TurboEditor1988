@@ -781,18 +781,32 @@ void TvFileDock::setScroll(int value)
 
 int TvFileDock::maxHorizontalOffset() const
 {
-    const int colW = qMax(0, m_listRect.width() / 2 - 4);
-    if (colW <= 0)
-        return 0;
+    // How far the strip may slide: the widest name's length beyond what one
+    // row cell can hold (a cell + the gutter), so the bar's range exists only
+    // when a name actually overflows a cell - and the thumb stops when the
+    // widest name has been fully revealed. Same arithmetic as the setter.
+    return qMax(0, widestNameWidth() - (qMax(1, cellW()) + 6));
+}
+
+int TvFileDock::widestNameWidth() const
+{
     int widest = 0;
     for (const QString& name : m_files)
         widest = qMax(widest, fontMetrics().horizontalAdvance(name));
-    return qMax(0, widest + 4 - colW);
+    return widest;
 }
 
 void TvFileDock::setHorizontalOffset(int px)
 {
-    const int next = qBound(0, px, maxHorizontalOffset());
+    // Round 18: the offset shifts the WHOLE two-cell strip (rowRect() moves
+    // every cell). The bar's range opens when the widest name no longer fits
+    // in ONE cell (cell + gutter) - the length a row can actually hold. The
+    // old cap (widest + 4 - cellWidth) overflowed when a single name outgrew
+    // BOTH cells and pinned the bar; the arithmetic lives in ONE place now.
+    const int colW = qMax(1, cellW());
+    const int reveal = qMax(0, widestNameWidth() - (colW + 6));
+    const int cap = reveal;
+    const int next = qBound(0, px, cap);
     if (next == m_hOffset)
         return;
     m_hOffset = next;
@@ -840,6 +854,14 @@ int TvFileDock::rowIndex(int column, int row) const
     return column == 0 ? m_scroll + row : m_scroll + perCol + row;
 }
 
+// Row rect in DOCK coordinates (round 18): the two-column strip is laid out
+// left-to-right starting at content.left() - with the gutter between them
+// (left ends at half-4, right starts at half+2) - and the whole strip slides
+// left by m_hOffset. That is Xadium's contract: "the two columns should shift
+// sideways as a group (carrying their names)". rowAt() divides by the SAME
+// shifted cell width, so paint, hit-testing and selection all share one
+// geometry. A per-name offset inside a fixed cell (round 16) slid the text
+// within the columns instead of moving the columns.
 QRect TvFileDock::rowRect(int index) const
 {
     const int perCol = visibleRows();
@@ -850,9 +872,12 @@ QRect TvFileDock::rowRect(int index) const
     const int row = index - (right ? m_scroll + perCol : m_scroll);
     if (row < 0 || row >= perCol)
         return QRect();
-    const int x = content.left() + (right ? half + 2 : 0);
+    // Cell origins come from the SAME division rowAt() and the paint loop use
+    // (right column starts at half + 2, cells are half - 4 wide with a 6px
+    // gutter), so a shifted rect and a shifted hit-test agree.
+    const int cellLeft = content.left() + (right ? half + 2 : 0) - m_hOffset;
     const int w = half - 4;
-    return QRect(x, m_listRect.top() + row * rowH, w, rowH);
+    return QRect(cellLeft, m_listRect.top() + row * rowH, w, rowH);
 }
 
 int TvFileDock::rowAt(const QPoint& p) const
@@ -864,7 +889,10 @@ int TvFileDock::rowAt(const QPoint& p) const
     const int rowH = cellH();
     const int row = (p.y() - m_listRect.top()) / rowH;
     const QRect content = listContentRect();
-    const int col = p.x() < content.left() + content.width() / 2 ? 0 : 1;
+    const int half = content.width() / 2;
+    // The shift line between the columns is half - m_hOffset: left of it the
+    // point is on the (shifted) left column, right of it the right column.
+    const int col = p.x() < content.left() + half - m_hOffset ? 0 : 1;
     const int idx = rowIndex(col, row);
     return (idx >= 0 && idx < m_files.size()) ? idx : -1;
 }
@@ -1000,6 +1028,14 @@ void TvFileDock::paintEvent(QPaintEvent*)
     // 2026-11-24 (round 16): the dark-blue divider between the two columns is
     // gone - Xadium: "remove the blue divider in the file list". The two name
     // columns are separated by a teal gutter alone now.
+    //
+    // 2026-11-26 (round 18): horizontal scrolling moves the STRIP, not the
+    // text inside it: rowRect() has already slid every cell left by m_hOffset,
+    // so each name travels with its cell (the columns shift as a group). The
+    // only clip is the content rect - it keeps a name that has slid past the
+    // viewport (or out the left edge) off the bars and the panel, and the
+    // 6px gutter plus the neighbour cell stay clean by construction because
+    // no cell is ever painted outside its own shifted rect.
 
     p.save();
     p.setClipRect(content);
@@ -1014,15 +1050,14 @@ void TvFileDock::paintEvent(QPaintEvent*)
         p.setFont(inkFont);
         // TV list language: black names on the cyan field, the selected row
         // inverted to white on blue. Long names are read by scrolling the
-        // offset (Shift+wheel). Clip to THIS column's row rect: drawing into a
-        // rect shifted left by m_hOffset used to let a long name spill past the
-        // column edge into the gutter and over the neighbour column (round 16,
-        // "when scrolling horizontally, one column visually overlaps the
-        // other"). The clip keeps each column's ink inside its own bounds no
-        // matter how far the offset pushes it.
-        p.setClipRect(r, Qt::IntersectClip);
+        // offset (Shift+wheel / the horizontal bar). Round 18: rowRect() has
+        // ALREADY slid the whole strip left by m_hOffset - each name moves
+        // with its cell (the columns shift as a group) - so the ink is drawn
+        // at plain (r.adjusted(2, 0, -2, 0)). The clip is only the content
+        // rect (set once above): a name exiting the viewport there must not
+        // draw over the bar strip below it.
         p.setPen(sel ? kWhite : kBlack);
-        p.drawText(r.adjusted(2 - m_hOffset, 0, -2, 0),
+        p.drawText(r.adjusted(2, 0, -2, 0),
                    Qt::AlignLeft | Qt::AlignVCenter, m_files.at(i));
         p.restore();
     }

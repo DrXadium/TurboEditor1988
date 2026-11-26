@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
+#include <QDebug>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TvFileDock.h"
 #include "src/shell/TvLineEdit.h"
@@ -1751,20 +1752,27 @@ private slots:
     }
 
     // Issue B - scrolling names sideways must not let a left-column name bleed
-    // into the right column. The row text is clipped to the WHOLE content rect,
-    // so a long name pushed by m_hOffset spills across the column gap. Each
-    // column must clip its own text.
+    // into the right column. Round 16 clipped each name INSIDE its fixed cell
+    // (a per-name offset), which Xadium rejected on 2026-11-26: "the columns
+    // stay fixed and the names slide WITHIN them (acts like a split pane)."
+    //
+    // Round 18 moves the WHOLE strip: rowRect() shifts every cell by
+    // m_hOffset and the ink is drawn at the cell's own origin, so a name
+    // travels WITH its cell. The gutter is not a hard boundary any more - a
+    // name that fills its cell slides its tail across it as the strip moves
+    // (that is the group move). What must hold: a name never ORIGINATES in the
+    // gutter - for a short name (which fits its cell) the ink's left edge is
+    // the cell's own left edge, whatever the offset. That is the geometry/
+    // paint agreement the split-pane bug broke.
     void horizontal_scroll_does_not_bleed_a_name_into_the_neighbour_column()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
-        // Enough long names to fill BOTH columns (the list lays out two columns
-        // once the first page is full) so a horizontal scroll pushes the right
-        // column's own text toward the gutter - the overlap the user reported.
+        // One SHORT name per row (fits its cell) so its ink origin is exactly
+        // its cell's left edge; rows fill left, right, left, ...
         for (int i = 0; i < 40; ++i) {
             QFile f(QDir(dir.path()).absoluteFilePath(
-                QStringLiteral("a_name_long_enough_to_need_side_scroll_%1.txt")
-                    .arg(i, 2, 10, QLatin1Char('0'))));
+                QStringLiteral("n%1.txt").arg(i, 2, 10, QLatin1Char('0'))));
             QVERIFY(f.open(QIODevice::WriteOnly));
             f.write("x");
         }
@@ -1775,26 +1783,177 @@ private slots:
         dock.setDirectory(dir.path());
         QCoreApplication::processEvents();
 
-        // Scroll the names well to the right so the long name is pushed left by
-        // a large offset - the case where it would cross the column boundary.
-        dock.setHorizontalOffset(dock.horizontalOffset() + 60);
+        // Scroll the names well to the right so the cells move under the ink.
+        dock.setHorizontalOffset(60);
         QCoreApplication::processEvents();
         QVERIFY2(dock.horizontalOffset() > 0, "names did not scroll sideways");
 
         const QRect content = dock.listContentRect();
         const int half = content.width() / 2;
-        // The two columns are separated by a 6px gutter: the left column ends at
-        // content.left()+half-4, the right starts at content.left()+half+2. After
-        // a horizontal scroll NEITHER column's text may enter that gutter - it
-        // must stay pure teal. Left-column text bleeding right (or right-column
-        // text bleeding left) shows up as black ink here.
         const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
-        const QRect gutter(content.left() + half - 4, content.top(),
-                           6, content.height());
-        const int black = countColorIn(img, QColor(0, 0, 0), 10, gutter);
-        QVERIFY2(black == 0,
-                 qPrintable(QStringLiteral("%1 px of text bled into the column gutter during horizontal scroll")
-                                .arg(black)));
+        const int rowH = dock.cellHeight();
+        const int gutterL = content.left() + half - 4;   // gutter band starts
+        const int gutterR = content.left() + half + 2;   // right cell starts (= gutter end)
+        // Both cells at their SHIFTED origins (rowRect()'s arithmetic). A cell
+        // entirely out of view contributes nothing to check.
+        int originsInGutter = 0;
+        for (int row = 0; row * rowH + rowH <= content.height(); ++row) {
+            const int y0 = content.top() + row * rowH;
+            for (const int cellLeft : {content.left() - dock.horizontalOffset(),
+                                       gutterR - dock.horizontalOffset()}) {
+                const QRect vis = QRect(cellLeft, y0, half - 4, rowH)
+                                      .intersected(QRect(content.left(), y0,
+                                                         content.width(), rowH));
+                if (vis.isEmpty())
+                    continue;   // this cell slid entirely out of view
+                // First ink in the visible part of this cell.
+                int ink = -1;
+                for (int x = vis.left(); x <= vis.right() && ink < 0; ++x)
+                    for (int y = vis.top(); y < vis.bottom(); ++y) {
+                        const QColor c = img.pixelColor(x, y);
+                        if (qAbs(c.red()) < 60 && qAbs(c.green()) < 60 && qAbs(c.blue()) < 60) {
+                            ink = x;
+                            break;
+                        }
+                    }
+                if (ink < 0)
+                    continue;   // this short name's ink slid out of the visible part
+                // The name must ORIGINATE at its own cell's left edge (+ the 2px
+                // padding), NOT in the gutter band [gutterL, gutterR). Ink sitting
+                // in the gutter that is NOT the cell's own origin means the text
+                // slid across the boundary (the split-pane bug).
+                const bool inGutter = ink >= gutterL && ink < gutterR;
+                const bool atOwnOrigin = qAbs(ink - (cellLeft + 2)) <= 1
+                                         && cellLeft + 2 >= gutterR;   // right cell's origin
+                if (inGutter && !atOwnOrigin)
+                    ++originsInGutter;
+            }
+        }
+        QVERIFY2(originsInGutter == 0,
+                 qPrintable(QStringLiteral(
+                                "%1 name(s) originate in the column gutter during horizontal scroll")
+                                .arg(originsInGutter)));
+        dock.reject();
+    }
+
+    // 2026-11-26 (round 18): horizontal scrolling must move the COLUMNS as a
+    // group. Xadium: the two columns "should shift sideways as a group
+    // (carrying their names)" to reveal what is to their right, but round 16's
+    // model slid each name INSIDE its fixed cell (drawText(r.adjusted(
+    // 2 - m_hOffset ...))) - the names slid within the columns while the
+    // columns themselves stayed put.
+    //
+    // Contract (the whole fix in two rules):
+    //   1. LEFT column: every name's ink origin must shift left by exactly
+    //      m_hOffset (a group move, proven by ink starting a shifted row rect).
+    //   2. RIGHT column: a name must leave its home cell when the offset is
+    //      large - it must NOT stay pinned at its cell's left edge sliding only
+    //      its first characters out of view (the old split-pane behaviour).
+    void horizontal_scroll_shifts_the_columns_as_a_group()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // A long name in the LEFT column (no ".." and no subdirs, so index 0
+        // is a file and the columns fill row-major left, right, ...). Names
+        // sorted by QDir::Name end up in BOTH columns, so the WIDEST one also
+        // sets the horizontal cap.
+        QVERIFY(QFile(QDir(dir.path()).absoluteFilePath(
+                          QStringLiteral("left_column_long_name_shows_how_the_strip_must_move.txt")))
+                    .open(QIODevice::WriteOnly));
+        // Names long enough to overflow the two-cell strip - the horizontal
+        // cap only opens up when one name is wider than both columns, and the
+        // group-move rules need ink to measure on both sides.
+        const QString first = QStringLiteral(
+            "a_rather_long_left_column_name_that_will_not_fit_inside_a_single_cell_"
+            "so_it_needs_a_side_scroll_to_read_all_of_it_%1.txt");
+        QVERIFY(QFile(QDir(dir.path()).absoluteFilePath(first.arg(0)))
+                    .open(QIODevice::WriteOnly));
+        for (int i = 1; i < 60; ++i) {
+            QVERIFY(QFile(QDir(dir.path()).absoluteFilePath(first.arg(i)))
+                        .open(QIODevice::WriteOnly));
+        }
+
+        TvFileDock dock;
+        dock.resize(700, 500);
+        dock.show();
+        dock.setDirectory(dir.path());
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.files().size(), 62);   // ".." + long name + 60 fills
+
+        const QRect content = dock.listContentRect();
+        QVERIFY(content.width() > 100);
+        const int half = content.width() / 2;
+
+        // Ink bounding box of one row band, across the whole content width.
+        auto rowInkBox = [&](const QImage& img, int row) {
+            const int top = content.top() + row * dock.cellHeight();
+            QRect box;
+            for (int x = content.left(); x <= content.right(); ++x)
+                for (int y = top; y < top + dock.cellHeight(); ++y) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (qAbs(c.red()) < 60 && qAbs(c.green()) < 60 && qAbs(c.blue()) < 60)
+                        box = box.united(QRect(x, y, 1, 1));
+                }
+            return box;
+        };
+
+        // ---- offset 0: the long left name (row 1: ".." is row 0) must START
+        // inside the left cell. (It OVERFLOWS to the right - there is no clip
+        // now - but its origin is what a horizontal scroll moves.)
+        QCoreApplication::processEvents();
+        const QImage base = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect ink1_0 = rowInkBox(base, 1);
+        QVERIFY2(!ink1_0.isEmpty(), "row 1 draws no ink at offset 0");
+        QVERIFY2(ink1_0.left() < content.left() + half - 4,
+                 qPrintable(QStringLiteral("the left name starts at x=%1, not inside the left cell (%2)")
+                                .arg(ink1_0.left()).arg(content.left() + half - 4)));
+
+        // ---- RULE 1 (the group move): the name must travel left by EXACTLY
+        // m_hOffset. The text ORIGIN cannot be measured directly - the content
+        // clip pins every visible left edge at the viewport - so the band's
+        // RIGHT edge is the honest metric: it moves with the text, and under
+        // the old model (text sliding inside a FIXED cell) it stayed put.
+        const int shift = 24;   // small enough that the strip stays in view
+        dock.setHorizontalOffset(shift);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.horizontalOffset() == shift,
+                 qPrintable(QStringLiteral("the horizontal bar refused the offset: cap=%1, bar range=%2..%3")
+                                .arg(dock.maxHorizontalOffset())
+                                .arg(dock.horizontalScrollBarWidget()->minimum())
+                                .arg(dock.horizontalScrollBarWidget()->maximum())));
+        const QImage moved = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect ink1_s = rowInkBox(moved, 1);
+        QVERIFY2(!ink1_s.isEmpty(), "the left long name drew no ink after the shift");
+        const int movedPx = ink1_0.right() - ink1_s.right();
+        QVERIFY2(qAbs(movedPx - shift) <= 2,
+                 qPrintable(QStringLiteral(
+                                "the left column did not shift as a group: its name moved %1px, "
+                                "want ~%2px (m_hOffset); names are still sliding within fixed cells")
+                                .arg(movedPx).arg(shift)));
+
+        // ---- RULE 2 (the columns leave their cells too): at the CAP the strip
+        // is so far left that the right column's home cell - where a name sits
+        // at offset 0 - is OUT of the content rect. If the columns moved as a
+        // group there is nothing but teal there; if they stayed fixed the
+        // pinned names would still be drawn (the split-pane bug).
+        const int cap = dock.maxHorizontalOffset();
+        QVERIFY2(cap > half,
+                 qPrintable(QStringLiteral("cap %1 cannot shift even one column (%2 wide) off its home cell")
+                                .arg(cap).arg(half)));
+        dock.setHorizontalOffset(cap);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.horizontalOffset() == cap, "the horizontal bar refused the cap");
+        const QImage atCap = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const QRect rightHome(content.left() + half + 2, content.top(),
+                              8, dock.cellHeight() * 3);
+        const int pinned = countColorIn(atCap, QColor(0, 0, 0), 60, rightHome);
+        const int pinnedBase = countColorIn(base, QColor(0, 0, 0), 60, rightHome);
+        QVERIFY2(pinnedBase > 0, "the right column's names drew no ink at offset 0");
+        QVERIFY2(pinned == 0,
+                 qPrintable(QStringLiteral(
+                                "the right column is pinned: %1 px of names still start at their home "
+                                "cells after a full %2px horizontal scroll")
+                                .arg(pinned).arg(cap)));
         dock.reject();
     }
 
