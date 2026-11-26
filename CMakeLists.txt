@@ -372,7 +372,7 @@ add_test(NAME tst_colorpicker COMMAND tst_colorpicker)
 
 # Task 9B test: ctest -R tst_menus
 add_executable(tst_menus tests/tst_menus.cpp)
-target_link_libraries(tst_menus PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_menus PRIVATE crt-shell crt-bridge crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_menus COMMAND tst_menus)
 
 # Task 12: Turbo Vision grid proof (two-size palette/layout) - ctest -R tst_tv_grid
@@ -542,3 +542,16 @@ target_link_libraries(probe_picker_pixels PRIVATE crt-shell Qt6::Widgets Qt6::Te
 #   cmake --build build --target probe_recents_prod && ./build/probe_recents_prod
 add_executable(probe_recents_prod .relay/probe_recents_prod.cpp)
 target_link_libraries(probe_recents_prod PRIVATE crt-shell crt-bridge Qt6::Widgets Qt6::Test)
+
+# Round 17 scratch probe: does the recents click fire WITHOUT ContentBridge's
+# ownsTarget guard (the fix's mutation check)? No hover - the bare live click.
+#   cmake --build build --target probe_guard_mutant && ./build/probe_guard_mutant
+add_executable(probe_guard_mutant .relay/probe_guard_mutant.cpp)
+target_link_libraries(probe_guard_mutant PRIVATE crt-shell crt-bridge Qt6::Widgets Qt6::Test)
+
+# Round 17 scratch probe: reproduce "File > Recent Files > click -> nothing
+# loads" faithfully offscreen - real recents.ini + real main.cpp:754 handler
+# (exists -> openFile) + natural submenu placement + real QML event sequence.
+#   cmake --build build --target probe_recents_live && ./build/probe_recents_live
+add_executable(probe_recents_live .relay/probe_recents_live.cpp)
+target_link_libraries(probe_recents_live PRIVATE crt-shell crt-bridge crt-editor Qt6::Widgets Qt6::Test KF6::TextEditor)

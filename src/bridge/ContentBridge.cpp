@@ -211,6 +211,24 @@ void ContentBridge::forwardMouseEvent(int type, int button, int buttons,
             const QPoint inPopup = popup->mapFromGlobal(shellGlobal);
             if (popup->rect().contains(inPopup))
                 continue;               // inside: handled as a normal target
+            // A click that landed INSIDE a child popup must never dismiss that
+            // child's ANCESTOR. The recents submenu hangs outside the parent
+            // File menu's rect, so a press on a recents row is "outside" the
+            // File menu but inside its submenu. Sending the File menu a dismiss
+            // press hides it - and hides the submenu with it (its child) - before
+            // the RELEASE reaches the row, so the action never fires (measured
+            // live: press hit=menuFileRecentFiles, release hit=KateViewInternal).
+            // A popup that owns the resolved target belongs to the same menu
+            // chain and must stay up. Qt's isAncestorOf() does NOT link these
+            // popups (measured: submenu->parentWidget()==File menu but
+            // FileMenu->isAncestorOf(submenu)==0), so walk the parent chain.
+            if (target) {
+                bool ownsTarget = false;
+                for (QWidget* w = target; w; w = w->parentWidget())
+                    if (w == popup) { ownsTarget = true; break; }
+                if (ownsTarget)
+                    continue;
+            }
             auto* ev = new QMouseEvent(QEvent::MouseButtonPress, QPointF(inPopup),
                                        QPointF(shellGlobal),
                                        static_cast<Qt::MouseButton>(button),

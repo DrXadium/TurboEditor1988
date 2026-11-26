@@ -25,6 +25,9 @@
 #include "src/shell/TabListMenu.h"
 #include "src/shell/FKeyStatusBar.h"
 #include "src/bridge/ContentBridge.h"
+#include "src/editor/EditorTabManager.h"
+#include <ktexteditor/document.h>
+#include <ktexteditor/view.h>
 
 class TstMenus : public QObject
 {
@@ -731,6 +734,197 @@ private slots:
 
         QCOMPARE(spy.count(), 1);
         QCOMPARE(spy.first().at(0).toString(), paths.at(1));
+    }
+
+    // Round 17 (Xadium): "The links from recent files still don't navigate
+    // anywhere."
+    //
+    // Round 16 fixed WHICH popup receives the press (the innermost submenu).
+    // The DISMISS loop above it was still wrong: on a press it walks the
+    // registered popups and sends a dismissing press into the FIRST visible one
+    // that does not contain the point. In the live layout the recents submenu
+    // hangs to the RIGHT of (and usually below) the File dropdown, so the File
+    // menu does not contain the row - it receives the dismiss press, hides, and
+    // takes its submenu down with it. The release then lands on a hidden menu
+    // and no action fires. A popup that OWNS the click's target must never be
+    // dismissed.
+    void clicking_a_recent_file_hanging_outside_the_file_menu_opens_it()
+    {
+        QTemporaryDir td;
+        QVERIFY(td.isValid());
+        QStringList paths;
+        for (int i = 0; i < 3; ++i) {
+            const QString p = QDir(td.path()).absoluteFilePath(
+                QStringLiteral("live_recent_%1.txt").arg(i));
+            QFile f(p);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            paths << p;
+        }
+
+        ShellWindow shell;
+        shell.resize(1000, 700);
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        MenuBar* bar = shell.findChild<MenuBar*>();
+        QVERIFY2(bar, "the shell has no MenuBar");
+        bar->setRecentFiles(paths);
+
+        QAction* entry = bar->findChild<QAction*>(QStringLiteral("actionFileRecentFiles"));
+        QVERIFY2(entry, "the File menu has no Recent Files entry");
+        QMenu* sub = entry->menu();
+        QVERIFY2(sub, "the Recent Files entry has no submenu");
+
+        QMenu* fileMenu = nullptr;
+        for (QAction* a : bar->actions())
+            if (a->menu() && a->text().remove(QLatin1Char('&')) == QLatin1String("File"))
+                fileMenu = a->menu();
+        QVERIFY2(fileMenu, "no File menu");
+        fileMenu->popup(bar->mapToGlobal(QPoint(0, bar->height())));
+        QCoreApplication::processEvents();
+        QVERIFY2(fileMenu->isVisible(), "the File menu did not open");
+
+        // Register in the live order: the parent dropdown first, the submenu
+        // second (PopupRegistrar registers on Show, parent shows first).
+        bridge.registerPopup(fileMenu);
+
+        QAction* row = sub->actions().value(1);
+        QVERIFY2(row, "the recents submenu has no rows");
+        const QRect entryGeom = fileMenu->actionGeometry(entry);
+        QVERIFY2(!entryGeom.isEmpty(), "the Recent Files entry has no geometry");
+        // The live geometry: the submenu hangs off the RIGHT edge of the File
+        // dropdown, so the row is OUTSIDE the parent menu's rect.
+        sub->popup(fileMenu->mapToGlobal(
+            QPoint(fileMenu->width() + 8, entryGeom.top())));
+        QCoreApplication::processEvents();
+        QVERIFY2(sub->isVisible(), "the recents submenu did not open");
+        bridge.registerPopup(sub);
+
+        const QPoint rowGlobal = sub->mapToGlobal(sub->actionGeometry(row).center());
+        const QPoint shellLocal = shell.mapFromGlobal(rowGlobal);
+        // Preconditions: the row is in the SUBMENU and NOT in the File menu.
+        QVERIFY2(sub->rect().contains(sub->mapFromGlobal(rowGlobal)),
+                 "the row is not in the recents submenu");
+        QVERIFY2(!fileMenu->rect().contains(fileMenu->mapFromGlobal(rowGlobal)),
+                 "test setup is wrong: the row overlaps the File menu");
+
+        QSignalSpy spy(bar, &MenuBar::recentFileRequested);
+        // A real pointer always hovers the row before pressing; QMenu only
+        // selects the item once the move has registered it, so the hover first,
+        // then the press/release pair that must activate it.
+        bridge.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton, Qt::NoButton,
+                                 Qt::NoModifier, shellLocal.x(), shellLocal.y());
+        QCoreApplication::processEvents();
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellLocal.x(), shellLocal.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(sub->isVisible(),
+                 "the press dismissed the submenu before the release");
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellLocal.x(), shellLocal.y());
+        QCoreApplication::processEvents();
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.first().at(0).toString(), paths.at(1));
+        // The guard's own RED/GREEN check (mutation 2026-11-26): without the
+        // ownsTarget skip in ContentBridge's dismiss loop, this press also
+        // went to the File menu, which hid and took the submenu down with it -
+        // spy stayed 0. Also proven on the LIVE app's own log: every pre-fix
+        // recents click read press hit=menuFileRecentFiles then release
+        // hit=KateViewInternal (the menu was gone by release time).
+        QVERIFY2(sub->isVisible() || spy.count() == 1,
+                 "the submenu was dismissed by the press before the release");
+    }
+
+    // Round 17 (Xadium): "The links from recent files still don't navigate
+    // anywhere." Round 16 proved recentFileRequested FIRES; this proves the
+    // WHOLE chain the user actually cares about - the click opens a TAB. It
+    // wires recentFileRequested -> EditorTabManager::openFile exactly as the
+    // composition root does (main.cpp), then clicks a recent row through the
+    // bridge and asserts a document tab appears with that file's URL. This is
+    // the coverage round 16 was missing (it only counted the signal).
+    void clicking_a_recent_file_opens_a_document_tab()
+    {
+        QTemporaryDir td;
+        QVERIFY(td.isValid());
+        QStringList paths;
+        for (int i = 0; i < 3; ++i) {
+            const QString p = QDir(td.path()).absoluteFilePath(
+                QStringLiteral("navigating_recent_%1.txt").arg(i));
+            QFile f(p);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(QStringLiteral("content %1").arg(i).toUtf8());
+            paths << p;
+        }
+
+        ShellWindow shell;
+        shell.resize(1000, 700);
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        MenuBar* bar = shell.findChild<MenuBar*>();
+        QVERIFY2(bar, "the shell has no MenuBar");
+
+        // The tab manager the composition root would own, plus the exact
+        // recentFileRequested -> openFile wiring from main.cpp:754.
+        EditorTabManager tabs;
+        const int before = tabs.viewCount();
+        QObject::connect(bar, &MenuBar::recentFileRequested, bar,
+                         [&tabs](const QString& path) {
+                             if (path.isEmpty() || !QFileInfo::exists(path))
+                                 return;
+                             tabs.openFile(QUrl::fromLocalFile(path));
+                         });
+
+        bar->setRecentFiles(paths);
+        QAction* entry = bar->findChild<QAction*>(QStringLiteral("actionFileRecentFiles"));
+        QVERIFY2(entry, "the File menu has no Recent Files entry");
+        QMenu* sub = entry->menu();
+        QVERIFY2(sub, "the Recent Files entry has no submenu");
+
+        QMenu* fileMenu = nullptr;
+        for (QAction* a : bar->actions())
+            if (a->menu() && a->text().remove(QLatin1Char('&')) == QLatin1String("File"))
+                fileMenu = a->menu();
+        QVERIFY2(fileMenu, "no File menu");
+        fileMenu->popup(bar->mapToGlobal(QPoint(0, bar->height())));
+        QCoreApplication::processEvents();
+        QVERIFY2(fileMenu->isVisible(), "the File menu did not open");
+        bridge.registerPopup(fileMenu);
+
+        QAction* row = sub->actions().value(1);
+        QVERIFY2(row, "the recents submenu has no rows");
+        sub->popup(fileMenu->mapToGlobal(QPoint(20, fileMenu->actionGeometry(entry).top())));
+        QCoreApplication::processEvents();
+        QVERIFY2(sub->isVisible(), "the recents submenu did not open");
+        bridge.registerPopup(sub);
+
+        const QPoint rowGlobal = sub->mapToGlobal(sub->actionGeometry(row).center());
+        const QPoint shellLocal = shell.mapFromGlobal(rowGlobal);
+        // Hover the row first - a real pointer always does - so QMenu selects
+        // it before the press.
+        bridge.forwardMouseEvent(QEvent::MouseMove, Qt::NoButton, Qt::NoButton,
+                                 Qt::NoModifier, shellLocal.x(), shellLocal.y());
+        QCoreApplication::processEvents();
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier,
+                                 shellLocal.x(), shellLocal.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier,
+                                 shellLocal.x(), shellLocal.y());
+        QCoreApplication::processEvents();
+
+        // THE NAVIGATION: a document tab opened and it is the clicked file.
+        QCOMPARE(tabs.viewCount(), before + 1);
+        QVERIFY(tabs.activeDocument());
+        QCOMPARE(tabs.activeDocument()->url(), QUrl::fromLocalFile(paths.at(1)));
     }
 
     // Settings switch: the whole Recent Files block can be turned off.
