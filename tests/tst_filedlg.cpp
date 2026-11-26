@@ -224,21 +224,33 @@ private slots:
                  qPrintable(QStringLiteral("list names are not black ink (%1 black px)")
                                 .arg(black)));
 
-        // Round 16: the vertical scrollbar (and its green thumb) and the blue
-        // column divider are BOTH gone - Xadium: "remove the blue divider" and
-        // "remove the vertical scrollbar". The box is plain teal with black
-        // names; the right edge carries no green thumb and the middle carries
-        // no blue rule.
+        // Round 18b: the vertical scrollbar is BACK (Xadium: "horizontal works,
+        // we need the vertical bar") - its green thumb must sit in the bar's
+        // own column on the right edge. What must never happen is green ink
+        // spilling LEFT of the bar into the name area. (The blue column divider
+        // stays gone - checked below.)
+        const QRect bar = dock.verticalBarRect();
+        QVERIFY2(!bar.isEmpty(), "the vertical bar has no geometry");
         int thumb = 0;
         for (int y = list.top(); y < list.bottom() - 7; ++y)
-            for (int x = list.right() - 10; x <= list.right(); ++x) {
+            for (int x = bar.left(); x <= bar.right(); ++x) {
                 const QColor c = img.pixelColor(x, y);
                 if (c.green() > 120 && c.red() < 60 && c.blue() < 60)
                     ++thumb;
             }
-        QVERIFY2(thumb == 0,
-                 qPrintable(QStringLiteral("a green scroll thumb still sits on the box's right edge "
-                                           "(%1 px)").arg(thumb)));
+        QVERIFY2(thumb > 0,
+                 "the vertical bar draws no green thumb on the box's right edge");
+
+        int greenLeftOfBar = 0;
+        for (int y = list.top(); y < list.bottom() - 7; ++y)
+            for (int x = list.left(); x < bar.left(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.green() > 120 && c.red() < 60 && c.blue() < 60)
+                    ++greenLeftOfBar;
+            }
+        QVERIFY2(greenLeftOfBar == 0,
+                 qPrintable(QStringLiteral("green scroll ink spilled into the name area (%1 px)")
+                                .arg(greenLeftOfBar)));
 
         int divider = 0;
         const QRect content = dock.listContentRect();
@@ -1091,11 +1103,14 @@ private slots:
     // The list scrolls VERTICALLY (two columns, top to bottom), so its control
     // is a vertical bar on the right edge of the Files box - a real QScrollBar
     // child, so dragging, the arrows and the track all behave like a scrollbar.
-    // Round 16 (Xadium): the vertical scrollbar is REMOVED ("remove the
-    // vertical scrollbar as it does nothing"). This test now pins the new
-    // contract: no vertical bar widget exists, and vertical scrolling still
-    // works by wheel.
-    void the_file_list_has_no_vertical_bar_and_wheel_still_scrolls_it()
+    //
+    // History: round 16 removed the bar ("remove the vertical scrollbar as it
+    // does nothing"). 2026-11-26 (round 18b), Xadium: "horizontal works, we
+    // need the vertical bar" - it is BACK, and this test pins that it is real:
+    // visible, on the right edge, one character cell wide (the edit view's
+    // size), above the horizontal strip, with a range over the whole listing
+    // and a thumb that actually moves the rows.
+    void the_file_list_has_a_working_vertical_bar()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -1111,19 +1126,51 @@ private slots:
         dock.setDirectory(dir.path());
         QCoreApplication::processEvents();
 
-        QVERIFY2(dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar")) == nullptr,
-                 "the Files box still has a vertical scrollbar");
+        QScrollBar* vbar = dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
+        QVERIFY2(vbar, "the Files box has no vertical scrollbar");
+        QVERIFY2(vbar->isVisible(), "the vertical scrollbar is hidden");
+        QVERIFY2(vbar->orientation() == Qt::Vertical, "wrong orientation");
+        QVERIFY2(vbar->height() >= dock.cellHeight(),
+                 "the vertical bar is too short to grab");
 
-        // Wheel scrolls the list vertically, with no bar to drive it.
-        const QRect list = dock.listRect();
-        const QPoint local(list.center());
+        // Right edge, one character cell wide (the edit view's bar size), and
+        // it stops above the horizontal strip at the box's bottom edge.
+        const int cell = dock.cellWidth();
+        QCOMPARE(vbar->width(), cell);
+        QCOMPARE(vbar->geometry().right(), dock.listRect().right());
+        QVERIFY2(vbar->geometry().bottom() < dock.listRect().bottom(),
+                 "the vertical bar runs into the horizontal strip");
+        // The two bars meet in the bottom-right corner without overlapping.
+        QScrollBar* hbar = dock.findChild<QScrollBar*>(QStringLiteral("fileListHBar"));
+        QVERIFY2(hbar, "the horizontal scrollbar vanished");
+        QVERIFY2(!vbar->geometry().intersects(hbar->geometry()),
+                 "the scrollbars overlap in the corner");
+
+        // A listing this long must give the thumb somewhere to travel.
+        QVERIFY2(vbar->maximum() > vbar->minimum(),
+                 qPrintable(QStringLiteral("the vertical bar has no range (max=%1)")
+                                .arg(vbar->maximum())));
+
+        // Dragging the thumb scrolls the rows, and the thumb stays in step
+        // when the wheel moves them instead.
+        QCOMPARE(dock.scrollOffset(), 0);
+        vbar->setValue(vbar->maximum() / 2);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.scrollOffset() > 0,
+                 qPrintable(QStringLiteral("the vertical bar did not move the rows (offset=%1)")
+                                .arg(dock.scrollOffset())));
+        QCOMPARE(vbar->value(), dock.scrollOffset());
+
+        // The wheel still scrolls vertically too.
+        const int before = dock.scrollOffset();
+        const QPoint local(dock.listRect().center());
         QWheelEvent down(QPointF(local), QPointF(dock.mapToGlobal(local)),
                          QPoint(0, 0), QPoint(0, -120), Qt::NoButton,
                          Qt::NoModifier, Qt::NoScrollPhase, false);
         QApplication::sendEvent(&dock, &down);
         QCoreApplication::processEvents();
-        QVERIFY2(dock.scrollOffset() > 0, "wheel did not scroll the list down");
-
+        QVERIFY2(dock.scrollOffset() > before, "wheel did not scroll the list down");
+        QCOMPARE(vbar->value(), dock.scrollOffset());
         dock.reject();
     }
 
@@ -1273,9 +1320,9 @@ private slots:
     // makes a click on it land: pressed on the track below the thumb it pages
     // the list, pressed on an arrow it steps by one row.
     // Round 16: the vertical bar is gone, so there is nothing to click. This
-    // replaces the old "clicking the vertical bar pages the list" test, whose
-    // subject no longer exists.
-    void there_is_no_vertical_bar_to_click()
+    // replaces the round-16 "no vertical bar" test. The bar is back (round
+    // 18b), so a click on its down-arrow must step the list.
+    void clicking_the_vertical_bar_moves_the_list()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -1291,8 +1338,20 @@ private slots:
         dock.setDirectory(dir.path());
         QCoreApplication::processEvents();
 
-        QVERIFY2(dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar")) == nullptr,
-                 "the Files box still has a vertical scrollbar to click");
+        QScrollBar* vbar = dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
+        QVERIFY2(vbar, "the Files box has no vertical scrollbar to click");
+        QCOMPARE(dock.scrollOffset(), 0);
+
+        // The down-arrow button sits in the bar's bottom cell (TextScrollBar
+        // reserves a square at each end, same as a DOS scrollbar).
+        const QPoint arrow(vbar->width() / 2, vbar->height() - 3);
+        QTest::mouseClick(vbar, Qt::LeftButton, Qt::NoModifier, arrow);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.scrollOffset() > 0,
+                 qPrintable(QStringLiteral("clicking the vertical bar's down arrow "
+                                           "did not scroll the list (offset=%1)")
+                                .arg(dock.scrollOffset())));
+        QCOMPARE(vbar->value(), dock.scrollOffset());
         dock.reject();
     }
 
@@ -1680,18 +1739,22 @@ private slots:
         dock->resize(700, 500);
         QCoreApplication::processEvents();
 
-        // Round 16 contract: the VERTICAL bar is gone (it did nothing); the
-        // HORIZONTAL bar stays, one character cell tall like the edit view's
-        // RightScrollBar, and a bridge click must still reach it.
+        // Round 18b contract: BOTH bars are real. The vertical bar sits on the
+        // right edge, one character cell wide like the edit view's bars; the
+        // horizontal bar is one cell tall; a bridge click (the live app's only
+        // input path) must reach each of them.
         QScrollBar* vbar = dock->findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
         QScrollBar* hbar = dock->findChild<QScrollBar*>(QStringLiteral("fileListHBar"));
-        QVERIFY2(vbar == nullptr, "the Files box still has a vertical scrollbar");
+        QVERIFY2(vbar, "the Files box has no vertical scrollbar");
         QVERIFY2(hbar, "the Files box has no horizontal scrollbar");
 
         const int cell = dock->cellWidth();
         QVERIFY2(hbar->height() == cell,
                  qPrintable(QStringLiteral("horizontal bar is %1px tall, edit view uses %2px")
                                 .arg(hbar->height()).arg(cell)));
+        QVERIFY2(vbar->width() == cell,
+                 qPrintable(QStringLiteral("vertical bar is %1px wide, edit view uses %2px")
+                                .arg(vbar->width()).arg(cell)));
 
         // A bridge click (production path) on the horizontal bar's right-arrow
         // end must scroll the names sideways - childAt() has to resolve the bar.
@@ -1710,6 +1773,24 @@ private slots:
                  qPrintable(QStringLiteral("the bridge click on the horizontal bar did nothing "
                                            "(offset %1 -> %2, valueChanged x%3)")
                                 .arg(before).arg(dock->horizontalOffset()).arg(barSpy.count())));
+
+        // Same production path for the VERTICAL bar: a bridge click on its
+        // down-arrow end must move the rows (round 18b).
+        const int rowsBefore = dock->scrollOffset();
+        QVERIFY2(vbar->maximum() > vbar->minimum(), "the vertical bar has no scroll range");
+        const QPoint vPt = dock->mapTo(&shell,
+                                       QPoint(vbar->geometry().center().x(),
+                                              vbar->geometry().bottom() - 3));
+        QSignalSpy vSpy(vbar, &QScrollBar::valueChanged);
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::LeftButton,
+                                 Qt::LeftButton, Qt::NoModifier, vPt.x(), vPt.y());
+        bridge.forwardMouseEvent(QEvent::MouseButtonRelease, Qt::LeftButton,
+                                 Qt::NoButton, Qt::NoModifier, vPt.x(), vPt.y());
+        QCoreApplication::processEvents();
+        QVERIFY2(dock->scrollOffset() > rowsBefore,
+                 qPrintable(QStringLiteral("the bridge click on the vertical bar did not move the rows "
+                                           "(offset %1 -> %2, valueChanged x%3)")
+                                .arg(rowsBefore).arg(dock->scrollOffset()).arg(vSpy.count())));
 
         dock->reject();
         QCoreApplication::processEvents();
@@ -1957,9 +2038,12 @@ private slots:
         dock.reject();
     }
 
-    // Issue C - the Files box's vertical scrollbar does nothing useful and is
-    // to be removed. It is gone; vertical scrolling still works by wheel.
-    void the_file_list_has_no_vertical_scrollbar()
+    // 2026-11-26 (round 18b): the vertical bar is back (see
+    // the_file_list_has_a_working_vertical_bar). This test used to pin its
+    // absence; the absence assertions live there now, and the vertical bar's
+    // production click path is covered by
+    // picker_scrollbars_match_the_edit_view_and_take_a_bridge_click.
+    void the_file_list_keeps_its_horizontal_bar_alongside_the_vertical_one()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -1975,11 +2059,13 @@ private slots:
         dock.setDirectory(dir.path());
         QCoreApplication::processEvents();
 
-        QVERIFY2(dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar")) == nullptr,
-                 "the Files box still has a vertical scrollbar");
-        // The horizontal bar stays.
-        QVERIFY2(dock.findChild<QScrollBar*>(QStringLiteral("fileListHBar")) != nullptr,
-                 "the horizontal scrollbar was removed too");
+        // Both bars exist and neither covers the other.
+        QScrollBar* vbar = dock.findChild<QScrollBar*>(QStringLiteral("fileListVBar"));
+        QScrollBar* hbar = dock.findChild<QScrollBar*>(QStringLiteral("fileListHBar"));
+        QVERIFY2(vbar != nullptr, "the Files box lost its vertical scrollbar");
+        QVERIFY2(hbar != nullptr, "the horizontal scrollbar was removed too");
+        QVERIFY2(!vbar->geometry().intersects(hbar->geometry()),
+                 "the two bars overlap in the bottom-right corner");
 
         // Vertical scrolling still works by wheel.
         const int before = dock.scrollOffset();

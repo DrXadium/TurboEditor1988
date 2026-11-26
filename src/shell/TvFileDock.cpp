@@ -186,11 +186,20 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     m_hBar->show();
     syncHorizontalBar();
 
-    // 2026-11-24 (round 16): the vertical scrollbar is GONE - Xadium: "remove
-    // the vertical scrollbar as it does nothing". The two-column list scrolls
-    // by wheel (and the arrow keys move the selection, which pages via
-    // ensureVisible); a thumb on the right edge was inert clutter. m_vBar stays
-    // null so every guarded read no-ops and no widget is created.
+    // 2026-11-26 (round 18b): the vertical bar is BACK. Round 16 removed it
+    // ("remove the vertical scrollbar as it does nothing"), but Xadium asked
+    // for it again: "horizontal works, we need the vertical bar". It is a real
+    // QScrollBar on the box's right edge, one character cell wide like the
+    // edit view's bars, and it drives the SAME m_scroll the wheel does - so the
+    // thumb, the arrows, the track and the wheel can never drift apart. The
+    // row band already stops left of it (listContentRect subtracts one cell).
+    m_vBar = new TextScrollBar(Qt::Vertical, this);
+    m_vBar->setObjectName(QStringLiteral("fileListVBar"));
+    m_vBar->setSingleStep(1);   // one row per arrow click
+    connect(m_vBar, &QScrollBar::valueChanged, this,
+            [this](int v) { setScroll(v); });
+    m_vBar->show();
+    syncVerticalBar();
 
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new TvPlate(text, this);
@@ -672,6 +681,14 @@ void TvFileDock::layoutChildren()
                             m_listRect.bottom() - barH + 1,
                             qMax(24, m_listRect.width() - barW), barH);
         syncHorizontalBar();
+    }
+    // The vertical bar owns the box's right edge, from the top down to the
+    // horizontal strip (verticalBarRect() keeps that arithmetic in one place).
+    if (m_vBar) {
+        const QRect vr = verticalBarRect();
+        if (!vr.isEmpty())
+            m_vBar->setGeometry(vr);
+        syncVerticalBar();
     }
 }
 
