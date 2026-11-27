@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Task 3: Borland chrome shell contract test.
 // Asserts ShellWindow exists, has MenuBar / TabStrip / FKeyStatusBar chrome,
-// uses BorlandStyle, and the window title is "TURBO Editor 1998 Edition".
+// uses BorlandStyle, and the window title is "TurboEditor1988".
 #include <QtTest>
 #include <QApplication>
 #include <QMenuBar>
@@ -39,19 +39,19 @@ private slots:
         QCOMPARE(QApplication::font().family(), QStringLiteral("PxPlus IBM VGA8"));
     }
 
-    // Rename: the app is TURBO Editor 1998 Edition to the user, but its on-disk
+    // Rename: the app is TurboEditor1988 to the user, but its on-disk
     // identity is
     // still CRT-Kate (sessions/settings live under ~/.config/CRT-Kate and are
     // NOT migrated), so the two names must be deliberately separate.
     void app_identity_separates_display_name_from_storage_dir() {
         QCOMPARE(AppIdentity::displayName(),
-                 QStringLiteral("TURBO Editor 1998 Edition"));
+                 QStringLiteral("TurboEditor1988"));
         QCOMPARE(AppIdentity::storageDirName(), QStringLiteral("CRT-Kate"));
     }
 
-    void windowTitle_is_turbo_editor_1998() {
+    void windowTitle_is_turboeditor1988() {
         ShellWindow w;
-        QCOMPARE(w.windowTitle(), QStringLiteral("TURBO Editor 1998 Edition"));
+        QCOMPARE(w.windowTitle(), QStringLiteral("TurboEditor1988"));
     }
 
     // The Help menu is user-facing text: it must name the app.
@@ -59,11 +59,11 @@ private slots:
         ShellWindow w;
         QAction* about = w.findChild<QAction*>(QStringLiteral("actionHelpAbout"));
         QVERIFY2(about, "no actionHelpAbout");
-        QVERIFY2(about->text().contains(QStringLiteral("TURBO Editor 1998 Edition")),
+        QVERIFY2(about->text().contains(QStringLiteral("TurboEditor1988")),
                  qPrintable(QStringLiteral("About action still says '%1'").arg(about->text())));
         QAction* configure = w.findChild<QAction*>(QStringLiteral("actionSettingsConfigure"));
         QVERIFY2(configure, "no actionSettingsConfigure");
-        QVERIFY2(configure->text().contains(QStringLiteral("TURBO Editor 1998 Edition")),
+        QVERIFY2(configure->text().contains(QStringLiteral("TurboEditor1988")),
                  qPrintable(QStringLiteral("Configure action still says '%1'").arg(configure->text())));
     }
 

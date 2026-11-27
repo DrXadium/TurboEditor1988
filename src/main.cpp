@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// CRT-Kate entry: Borland ShellWindow rendered offscreen by ContentBridge
+// TurboEditor1988 entry: Borland ShellWindow rendered offscreen by ContentBridge
 // into the QML CRT scene (EffectChain), which is the visible window —
 // CRT effects cover the entire display per the design spec.
 #include <QApplication>

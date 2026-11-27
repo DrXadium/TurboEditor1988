@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Build CRT-Kate-x86_64.AppImage.
+# Build TurboEditor1988-x86_64.AppImage.
 #   1. configure + build + install into staging/ (prefix /usr)
 #   2. fetch linuxdeploy + linuxdeploy-plugin-qt (cached in .tmp/tools)
 #   3. stage syntax-highlighting data (Fedora F43 ships NO KSyntaxHighlighting
@@ -66,7 +66,7 @@ if [ ! -d "$SYNTAX_DIR/data/syntax" ]; then
 fi
 
 echo "== [4/4] seed AppDir + linuxdeploy"
-rm -rf AppDir CRT-Kate-*.AppImage
+rm -rf AppDir CRT-Kate-*.AppImage TurboEditor1988-*.AppImage
 mkdir -p AppDir/usr/share/KSyntaxHighlighting
 cp -a staging/usr/. AppDir/usr/
 # Upstream data layout: data/syntax/*.xml (definitions) + data/themes/*.theme
@@ -128,7 +128,7 @@ cp -a /usr/lib64/qt6/qml/. AppDir/usr/qml/
 rm -f AppDir/AppRun
 cat > AppDir/AppRun <<'APPRUN'
 #!/bin/sh
-# CRT-Kate AppImage launcher: export payload paths, then exec the real binary.
+# TurboEditor1988 AppImage launcher: export payload paths, then exec the binary.
 HERE="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QML2_IMPORT_PATH="$HERE/usr/qml${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
@@ -199,13 +199,13 @@ cp -f "$ROOT/staging/usr/bin/turbo-kate" AppDir/usr/bin/turbo-kate
 # APPIMAGE_EXTRACT_AND_RUN is the bisected-good shape (FUSE works in this
 # box); a linuxdeploy --output step would just re-patch what we restored.
 echo "   packing AppDir with appimagetool"
-rm -f CRT-Kate-*x86_64*.AppImage
+rm -f CRT-Kate-*x86_64*.AppImage TurboEditor1988-*x86_64*.AppImage
 if ! env -u APPIMAGE_EXTRACT_AND_RUN \
-       "$TOOLS/appimagetool-x86_64.AppImage" AppDir "$ROOT/CRT-Kate-x86_64.AppImage" \
+       "$TOOLS/appimagetool-x86_64.AppImage" AppDir "$ROOT/TurboEditor1988-x86_64.AppImage" \
        > "$ROOT/.tmp/appimagetool.log" 2>&1; then
   echo "ERROR: appimagetool failed"
   tail -10 "$ROOT/.tmp/appimagetool.log"
   exit 1
 fi
-[ -s "$ROOT/CRT-Kate-x86_64.AppImage" ] || { echo "ERROR: no AppImage produced"; exit 1; }
-echo "OK: $ROOT/CRT-Kate-x86_64.AppImage ($(du -h CRT-Kate-x86_64.AppImage | cut -f1))"
+[ -s "$ROOT/TurboEditor1988-x86_64.AppImage" ] || { echo "ERROR: no AppImage produced"; exit 1; }
+echo "OK: $ROOT/TurboEditor1988-x86_64.AppImage ($(du -h TurboEditor1988-x86_64.AppImage | cut -f1))"

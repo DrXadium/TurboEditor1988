@@ -50,6 +50,11 @@ TestCase {
         id: chain
         anchors.fill: parent
         sourceItem: src
+        // Tests run against the .qsb files compiled by run_qml_tests.sh into
+        // the build dir (an internal path tests are allowed to name; shipped
+        // EffectChain.qml must not). Without this the default resolves to a
+        // relative "shaders/" that does not exist under tests/.
+        shaderBaseUrl: Qt.resolvedUrl("../.superpowers/qmlbuild/shaders/")
     }
 
     property var grabResult

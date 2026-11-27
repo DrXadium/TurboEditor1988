@@ -1,6 +1,6 @@
 # TurboEditor1988
 
-**TURBO Editor 1998 Edition** — a Kate-class text editor wearing a Borland/Turbo
+**TurboEditor1988** — a Kate-class text editor wearing a Borland/Turbo
 Vision shell, with cool-retro-term's CRT pipeline running over the whole window.
 
 ![TurboEditor1988 icon](packaging/turbo-kate.png)

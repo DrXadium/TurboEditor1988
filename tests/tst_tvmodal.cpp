@@ -180,13 +180,13 @@ void TstTvModal::the_title_changes_the_top_row()
     const QImage a = blank.grab().toImage().convertToFormat(QImage::Format_RGB32);
 
     TvModal titled;
-    titled.setTitle(QStringLiteral("About TURBO Editor 1998 Edition"));
+    titled.setTitle(QStringLiteral("About TurboEditor1988"));
     titled.resize(480, 300);
     titled.show();
     QVERIFY(QTest::qWaitForWindowExposed(&titled));
     const QImage b = titled.grab().toImage().convertToFormat(QImage::Format_RGB32);
 
-    QCOMPARE(titled.title(), QStringLiteral("About TURBO Editor 1998 Edition"));
+    QCOMPARE(titled.title(), QStringLiteral("About TurboEditor1988"));
 
     const QRect topRow(0, titled.frameRect().top(), b.width(), titled.cellHeight());
     int diff = 0;

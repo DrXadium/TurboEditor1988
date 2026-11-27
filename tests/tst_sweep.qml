@@ -51,6 +51,12 @@ TestCase {
         anchors.fill: parent
         sourceItem: src
         sweepTime: phase
+        // Tests run against the .qsb files run_qml_tests.sh compiles into the
+        // build dir (tests may name this internal path; shipped
+        // EffectChain.qml must not). Without it the default resolves to a
+        // relative "shaders/" that does not exist under tests/, so the chain
+        // grabs a blank frame and upright.py finds no markers.
+        shaderBaseUrl: Qt.resolvedUrl("../.superpowers/qmlbuild/shaders/")
         function resetChain() {
             scanlinesEnabled = false
             glowEnabled = false

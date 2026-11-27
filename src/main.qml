@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// TURBO Editor 1998 Edition root window: the bridged Borland shell frame,
+// TurboEditor1988 root window: the bridged Borland shell frame,
 // run edge-to-edge
 // through the CRT effect chain. This is the only visible window (no bezel).
 import QtQuick
@@ -10,7 +10,7 @@ Window {
     id: root
     width: 1280
     height: 800
-    title: "TURBO Editor 1998 Edition"
+    title: "TurboEditor1988"
     visible: true
     color: "black"
 

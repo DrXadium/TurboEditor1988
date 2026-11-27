@@ -251,12 +251,12 @@ private slots:
                  "fontSizeSpin missing from the Appearance tab");
     }
 
-    // Rename: the Settings dialog is user-facing and must name the app
-    // the new display name, not the old CRT-Kate.
-    void settings_dialog_title_names_turbo_kate() {
+    // Rename: the Settings dialog is user-facing and must name the app the
+    // canonical TurboEditor1988, not the legacy CRT-Kate storage identity.
+    void settings_dialog_title_names_turboeditor1988() {
         CrtSettings s;
         SettingsDialog dlg(&s);
-        QVERIFY2(dlg.windowTitle().contains(QStringLiteral("TURBO Editor 1998 Edition")),
+        QVERIFY2(dlg.windowTitle().contains(QStringLiteral("TurboEditor1988")),
                  qPrintable(QStringLiteral("Settings title still says '%1'")
                                 .arg(dlg.windowTitle())));
         QVERIFY2(!dlg.windowTitle().contains(QStringLiteral("CRT-Kate")),
