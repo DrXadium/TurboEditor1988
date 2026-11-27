@@ -9,6 +9,7 @@ third_party/crt-src/
 AppDir/
 CRT-Kate-*.AppImage
 TurboEditor1988-*.AppImage
+TurboEditor1988-*.AppImage.sha256
 __pycache__/
 
 # Internal working notes: never publish session handoffs or the superpowers
