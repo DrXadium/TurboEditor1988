@@ -741,6 +741,10 @@ int main(int argc, char** argv)
     tabs.setBackupOnOpen(crtSettings.backupOnOpen());
     QObject::connect(&crtSettings, &CrtSettings::backupOnOpenChanged, &tabs,
                      [&tabs, &crtSettings] { tabs.setBackupOnOpen(crtSettings.backupOnOpen()); });
+    // The launch-time session restore above ran before this settings instance
+    // existed, so those files opened while the gate was still OFF. Sweep the
+    // already-open documents once now that the real value is known.
+    tabs.backupOpenFiles();
 
     // Task 10: wire Kate-option menus (MenuBar builds the structure and the
     // Borland palette; here the actions get their real features). The session

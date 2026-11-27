@@ -905,6 +905,14 @@ void EditorTabManager::setBackupOnOpen(bool on)
     m_backupOnOpen = on;
 }
 
+void EditorTabManager::backupOpenFiles()
+{
+    if (!m_backupOnOpen)
+        return;
+    for (KTextEditor::Document* doc : std::as_const(m_docs))
+        writeBackup(doc);
+}
+
 // Automatic .bak backup: a copy of the file as it is on disk, dropped beside it
 // when the file is opened, so a later bad edit or mangled save still has an
 // untouched sibling one directory away. Best-effort by design - a backup that

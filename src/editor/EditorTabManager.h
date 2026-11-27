@@ -74,6 +74,11 @@ public:
     // setFontSize); OFF by default so a caller that forgets to opt in is silent.
     void setBackupOnOpen(bool on);
     bool backupOnOpen() const { return m_backupOnOpen; }
+    // Writes a .bak for every document already open with a real path. Needed
+    // because launch-time session restore runs before CrtSettings exists, so
+    // those files opened while the gate was still at its default; the
+    // composition root sweeps once after the settings load. Obeys the gate.
+    void backupOpenFiles();
     void setActiveIndex(int index);
     // Close one tab (the chip's green square). The active index follows the
     // removal; closing the LAST tab leaves one fresh untitled document, so the

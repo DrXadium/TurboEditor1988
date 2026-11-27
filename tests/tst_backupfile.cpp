@@ -147,6 +147,50 @@ private slots:
         // No crash and no stray file: the guard skips empty paths entirely.
         QVERIFY(true);
     }
+
+    // Launch-time ordering (found 2026-11-27 while validating the shipped
+    // AppImage): main.cpp restores the last session BEFORE it can construct
+    // CrtSettings, so restored files open while the gate is still at its
+    // default OFF. After the settings load, the composition root must sweep
+    // the already-open documents and back them up - otherwise every
+    // "reopen last session" launch silently skips the .bak.
+    void files_opened_before_the_gate_are_backed_up_by_the_sweep()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString a = writeFile(dir, QStringLiteral("session-a.txt"),
+                                    QStringLiteral("restored A\n"));
+        const QString b = writeFile(dir, QStringLiteral("session-b.txt"),
+                                    QStringLiteral("restored B\n"));
+
+        EditorTabManager m;                           // gate still OFF (launch)
+        m.replaceWithFiles({QUrl::fromLocalFile(a), QUrl::fromLocalFile(b)}, 0);
+        QVERIFY(!QFile::exists(a + QStringLiteral(".bak")));
+        QVERIFY(!QFile::exists(b + QStringLiteral(".bak")));
+
+        m.setBackupOnOpen(true);                      // settings finished loading
+        m.backupOpenFiles();                          // catch up with open docs
+
+        QVERIFY2(QFile::exists(a + QStringLiteral(".bak")),
+                 "the open-file sweep skipped the first restored document");
+        QVERIFY2(QFile::exists(b + QStringLiteral(".bak")),
+                 "the open-file sweep skipped the second restored document");
+        QCOMPARE(readFile(a + QStringLiteral(".bak")), QStringLiteral("restored A\n"));
+    }
+
+    // The sweep must obey the gate too (and skip untitled tabs without fuss).
+    void the_sweep_respects_a_disabled_gate()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = writeFile(dir, QStringLiteral("quiet2.txt"),
+                                       QStringLiteral("still quiet\n"));
+        EditorTabManager m;
+        m.openFile(QUrl::fromLocalFile(path));
+        m.setBackupOnOpen(false);
+        m.backupOpenFiles();
+        QVERIFY(!QFile::exists(path + QStringLiteral(".bak")));
+    }
 };
 
 QTEST_MAIN(TstBackupFile)
