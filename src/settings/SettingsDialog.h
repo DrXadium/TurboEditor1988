@@ -70,6 +70,7 @@ private:
         int fontSize = 16;
         int autosaveSeconds = 120;
         bool showRecentFiles = true;
+        bool backupOnOpen = true;
     };
     Snapshot m_snapshot;
 };

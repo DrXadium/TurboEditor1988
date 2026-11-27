@@ -877,6 +877,8 @@ KTextEditor::Document* EditorTabManager::addTabForUrl(const QUrl& url, bool acti
     finishView(view);
     trackActiveCursor();
     armWatch(doc);
+    // .bak gate: snapshot the file as opened (only when the toggle is on).
+    writeBackup(doc);
     return doc;
 }
 
@@ -896,6 +898,43 @@ void EditorTabManager::openFileAsSplit(const QUrl& url)
     if (!doc)
         return;
     openSplitWithDocument(doc);
+}
+
+void EditorTabManager::setBackupOnOpen(bool on)
+{
+    m_backupOnOpen = on;
+}
+
+// Automatic .bak backup: a copy of the file as it is on disk, dropped beside it
+// when the file is opened, so a later bad edit or mangled save still has an
+// untouched sibling one directory away. Best-effort by design - a backup that
+// cannot be written (read-only folder, permissions) must never block or warn
+// about the open itself.
+void EditorTabManager::writeBackup(const KTextEditor::Document* doc)
+{
+    if (!m_backupOnOpen || !doc)
+        return;
+    const QString path = doc->url().toLocalFile();
+    if (path.isEmpty())
+        return;                                   // untitled or remote: no folder
+    if (path.endsWith(QLatin1String(".bak"), Qt::CaseInsensitive))
+        return;                                   // never back a backup onto itself
+
+    const QFileInfo info(path);
+    if (!info.exists() || !info.isFile())
+        return;
+    const QString bakPath = path + QStringLiteral(".bak");
+    QFile src(path);
+    if (!src.open(QIODevice::ReadOnly))
+        return;
+    const QByteArray bytes = src.readAll();
+    src.close();
+
+    QFile dst(bakPath);
+    if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return;
+    dst.write(bytes);
+    dst.close();
 }
 
 void EditorTabManager::setActiveIndex(int index)

@@ -184,6 +184,7 @@ void SettingsDialog::snapshot()
     m_snapshot.fontSize = m_settings->fontSize();
     m_snapshot.autosaveSeconds = m_settings->autosaveIntervalSeconds();
     m_snapshot.showRecentFiles = m_settings->showRecentFiles();
+    m_snapshot.backupOnOpen = m_settings->backupOnOpen();
 }
 
 void SettingsDialog::restore()
@@ -223,6 +224,7 @@ void SettingsDialog::restore()
     m_settings->setFontSize(m_snapshot.fontSize);
     m_settings->setAutosaveIntervalSeconds(m_snapshot.autosaveSeconds);
     m_settings->setShowRecentFiles(m_snapshot.showRecentFiles);
+    m_settings->setBackupOnOpen(m_snapshot.backupOnOpen);
 
     syncControls();
 }
@@ -287,6 +289,7 @@ void SettingsDialog::syncControls()
     setSpinEnabled("motionSpin", m_settings->jitter() > 0);
 
     setCheck("phosphorCheck", m_settings->phosphorEnabled());
+    setCheck("backupOnOpenCheck", m_settings->backupOnOpen());
     setSpin("chromaSpin", m_settings->chromaColor());
     setSpin("saturationSpin", m_settings->saturationColor());
     setSpinEnabled("chromaSpin", m_settings->phosphorEnabled());
@@ -689,10 +692,18 @@ QWidget* SettingsDialog::buildAppearanceTab()
     connect(recents, &TvCheckBox::toggled, m_settings, &CrtSettings::setShowRecentFiles);
     grid->addWidget(recents, 2, 0, 1, 2);
 
+    // Automatic .bak backup (user request 2026-11-27): a sibling copy is
+    // written next to a file whenever it is opened. ON by default.
+    auto* backup = new TvCheckBox(tr("Back up files as .bak when opened"));
+    backup->setObjectName(QStringLiteral("backupOnOpenCheck"));
+    backup->setChecked(m_settings->backupOnOpen());
+    connect(backup, &TvCheckBox::toggled, m_settings, &CrtSettings::setBackupOnOpen);
+    grid->addWidget(backup, 3, 0, 1, 2);
+
     auto* note = tvLabel(tr("Editor scheme, chrome theme and minimap options are "
                             "configured by the theme and editor settings."));
     note->setWordWrap(true);
-    grid->addWidget(note, 3, 0, 1, 2);
-    grid->setRowStretch(4, 1);
+    grid->addWidget(note, 4, 0, 1, 2);
+    grid->setRowStretch(5, 1);
     return page;
 }

@@ -734,6 +734,14 @@ int main(int argc, char** argv)
     QObject::connect(&crtSettings, &CrtSettings::fontSizeChanged, &tabs,
                      [&tabs, &crtSettings] { tabs.setFontSize(crtSettings.fontSize()); });
 
+    // Automatic .bak backup (user request 2026-11-27): opening a local file
+    // writes a sibling `<name>.bak` beside it, gated by Settings > Editor.
+    // Applied now (last value the user chose) and re-applied on every change,
+    // mirroring the fontSize wiring above.
+    tabs.setBackupOnOpen(crtSettings.backupOnOpen());
+    QObject::connect(&crtSettings, &CrtSettings::backupOnOpenChanged, &tabs,
+                     [&tabs, &crtSettings] { tabs.setBackupOnOpen(crtSettings.backupOnOpen()); });
+
     // Task 10: wire Kate-option menus (MenuBar builds the structure and the
     // Borland palette; here the actions get their real features). The session
     // collect/restore helpers above are reused so menu, quit and launch paths

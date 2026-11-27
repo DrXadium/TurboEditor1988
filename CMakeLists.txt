@@ -220,6 +220,11 @@ add_executable(tst_restore tests/tst_restore.cpp)
 target_link_libraries(tst_restore PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
 add_test(NAME tst_restore COMMAND tst_restore)
 
+# 2026-11-27: opening a local file also writes a sibling .bak (toggle-gated).
+add_executable(tst_backupfile tests/tst_backupfile.cpp)
+target_link_libraries(tst_backupfile PRIVATE crt-editor Qt6::Test Qt6::Widgets KF6::TextEditor)
+add_test(NAME tst_backupfile COMMAND tst_backupfile)
+
 # 2026-11-20: single-quoted text must be #40A769 in code files too (the theme's
 # Char style; a MovingRange cannot recolour text the highlighter owns).
 add_executable(tst_theme tests/tst_theme.cpp)

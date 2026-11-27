@@ -78,6 +78,10 @@ public:
     // on the File dropdown, ON unless the user turns it off.
     Q_PROPERTY(bool showRecentFiles READ showRecentFiles WRITE setShowRecentFiles
                    NOTIFY showRecentFilesChanged)
+    // Automatic .bak backup (user request 2026-11-27): opening a local file
+    // also drops a sibling `<name>.bak` beside it. ON unless turned off.
+    Q_PROPERTY(bool backupOnOpen READ backupOnOpen WRITE setBackupOnOpen
+                   NOTIFY backupOnOpenChanged)
 
     // --- Per-effect on/off accessors (map to the float model) ---
     Q_PROPERTY(bool scanlinesEnabled READ scanlinesEnabled WRITE setScanlinesEnabled NOTIFY scanlinesEnabledChanged)
@@ -124,6 +128,8 @@ public:
     void setMinimapVisible(bool on);
     bool showRecentFiles() const { return m_showRecentFiles; }
     void setShowRecentFiles(bool on);
+    bool backupOnOpen() const { return m_backupOnOpen; }
+    void setBackupOnOpen(bool on);
 
     bool scanlinesEnabled() const;
     bool curvatureEnabled() const { return m_screenCurvature > 0; }
@@ -227,6 +233,7 @@ signals:
     void backgroundColorChanged();
     void minimapVisibleChanged();
     void showRecentFilesChanged();
+    void backupOnOpenChanged();
     void scanlinesEnabledChanged();
 
 private:
@@ -269,6 +276,7 @@ private:
     QColor m_backgroundColor;
     bool m_minimapVisible = false;   // off unless the user turned it on
     bool m_showRecentFiles = true;   // the File menu's Recent Files submenu
+    bool m_backupOnOpen = true;      // write a sibling .bak when a file opens
     QMap<QString, QVariantMap> m_profiles;   // name -> effect values
     // Names deleted in THIS instance; a stale instance must not resurrect
     // them when save() merges profiles written since it loaded.

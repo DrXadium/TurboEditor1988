@@ -84,6 +84,7 @@ CrtSettings::CrtSettings(QObject* parent) : QObject(parent)
         &CrtSettings::autosaveIntervalSecondsChanged,
         &CrtSettings::backgroundColorChanged,
         &CrtSettings::minimapVisibleChanged, &CrtSettings::showRecentFilesChanged,
+        &CrtSettings::backupOnOpenChanged,
         &CrtSettings::scanlinesEnabledChanged,
     };
     for (Signal signal : changed)
@@ -132,6 +133,7 @@ void CrtSettings::resetToDefaults()
     m_backgroundColor = kBackgroundColor;
     m_minimapVisible = false;
     m_showRecentFiles = true;
+    m_backupOnOpen = true;
 }
 
 bool CrtSettings::scanlinesEnabled() const
@@ -172,6 +174,7 @@ CRT_SET(int, FontSize, m_fontSize, fontSizeChanged)
 CRT_SET(QColor, BackgroundColor, m_backgroundColor, backgroundColorChanged)
 CRT_SET(bool, MinimapVisible, m_minimapVisible, minimapVisibleChanged)
 CRT_SET(bool, ShowRecentFiles, m_showRecentFiles, showRecentFilesChanged)
+CRT_SET(bool, BackupOnOpen, m_backupOnOpen, backupOnOpenChanged)
 // Clamped to the spin box range: 0/negative would mean "never" or a hot loop.
 void CrtSettings::setAutosaveIntervalSeconds(int v)
 {
@@ -331,6 +334,7 @@ bool CrtSettings::load()
     m_backgroundColor = s.value(QStringLiteral("backgroundColor"), kBackgroundColor).value<QColor>();
     m_minimapVisible = s.value(QStringLiteral("minimapVisible"), false).toBool();
     m_showRecentFiles = s.value(QStringLiteral("showRecentFiles"), true).toBool();
+    m_backupOnOpen = s.value(QStringLiteral("backupOnOpen"), true).toBool();
 
     // Named profiles are one JSON object so arbitrary (slash-containing) names
     // never collide with QSettings' hierarchical key syntax.
@@ -387,6 +391,8 @@ bool CrtSettings::load()
     emit autosaveIntervalSecondsChanged();
     emit backgroundColorChanged();
     emit minimapVisibleChanged();
+    emit showRecentFilesChanged();
+    emit backupOnOpenChanged();
     emit scanlinesEnabledChanged();
     m_loading = false;
     return true;
@@ -442,6 +448,7 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("backgroundColor"), m_backgroundColor);
     s.setValue(QStringLiteral("minimapVisible"), m_minimapVisible);
     s.setValue(QStringLiteral("showRecentFiles"), m_showRecentFiles);
+    s.setValue(QStringLiteral("backupOnOpen"), m_backupOnOpen);
 
     // Merge profiles written by another instance since this one loaded: a
     // stale instance (a second window, a dev probe, a slow quit) must not

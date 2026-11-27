@@ -68,6 +68,12 @@ public:
     // then show it in the right pane. Plain openFile() activates the new tab,
     // so the open-then-split order used to mirror one file into both panes.
     void openFileAsSplit(const QUrl& url);
+    // Automatic .bak backup (user request 2026-11-27): when ON, opening a local
+    // file also writes a sibling `<name>.bak` beside it. Wired from
+    // CrtSettings::backupOnOpen in the composition root (same pattern as
+    // setFontSize); OFF by default so a caller that forgets to opt in is silent.
+    void setBackupOnOpen(bool on);
+    bool backupOnOpen() const { return m_backupOnOpen; }
     void setActiveIndex(int index);
     // Close one tab (the chip's green square). The active index follows the
     // removal; closing the LAST tab leaves one fresh untitled document, so the
@@ -356,6 +362,10 @@ private:
     // tab. `activate` moves pane 0 onto the new tab (plain File > Open); false
     // leaves pane 0 exactly where it was (File > Open as Split).
     KTextEditor::Document* addTabForUrl(const QUrl& url, bool activate);
+    // Writes `<path>.bak` beside a freshly opened local file (the .bak gate).
+    // Skips untitled/remote documents (no folder to write into) and any path
+    // that already ends in `.bak` (never back up a backup onto itself).
+    void writeBackup(const KTextEditor::Document* doc);
     void syncTabs();
     // Points the activeCursorPositionChanged signal at the CURRENT view: drops
     // the previous view's connection, re-emits the new view's position, and
@@ -424,6 +434,7 @@ private:
     QFileSystemWatcher m_watcher;
     FileChangeTracker m_tracker;
     ExternalChangeHandler m_externalHandler;
+    bool m_backupOnOpen = false;   // gate: main.cpp sets it from CrtSettings
     QWidget* m_dialogAnchor = nullptr;
     bool m_externalPromptOpen = false;
     // path -> document, so a watcher event can find its buffer after a tab move.

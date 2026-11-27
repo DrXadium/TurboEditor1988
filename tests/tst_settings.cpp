@@ -388,6 +388,79 @@ private slots:
         QCOMPARE(s.autosaveIntervalSeconds(), 30);
     }
 
+    // --- Automatic .bak backup (user request 2026-11-27) -----------------
+
+    // Opening a file also writes a sibling .bak next to it. The toggle is ON
+    // by default (a backup is harmless and the safety is what the user asked
+    // for), persists across restarts, and emits NOTIFY like every other bool.
+    void backup_on_open_defaults_on_and_roundtrips() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        {
+            CrtSettings s;
+            QCOMPARE(s.backupOnOpen(), true);          // ON unless turned off
+            s.setStorePath(store);
+            s.setBackupOnOpen(false);
+            QCOMPARE(s.backupOnOpen(), false);
+            QVERIFY2(s.save(), "save() returned false");
+        }
+
+        CrtSettings loaded;
+        loaded.setStorePath(store);
+        QVERIFY(loaded.load());
+        QCOMPARE(loaded.backupOnOpen(), false);
+
+        // Turning it back ON must stick too.
+        loaded.setBackupOnOpen(true);
+        QVERIFY(loaded.save());
+        CrtSettings reloaded;
+        reloaded.setStorePath(store);
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.backupOnOpen(), true);
+    }
+
+    // The toggle must emit NOTIFY (a QML/dialog binding needs it) and be
+    // picked up by the coalesced autosave, so flipping it survives a SIGTERM
+    // without an explicit File > Save.
+    void backup_on_open_emits_notify_and_autosaves() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        CrtSettings s;
+        s.setStorePath(dir.filePath("crt-kate.ini"));
+        QSignalSpy spy(&s, &CrtSettings::backupOnOpenChanged);
+        s.setBackupOnOpen(false);
+        QCOMPARE(spy.count(), 1);                     // real change notifies
+        s.setBackupOnOpen(false);                     // no-op does not
+        QCOMPARE(spy.count(), 1);
+        s.setBackupOnOpen(true);
+        QCOMPARE(spy.count(), 2);
+
+        // scheduleSave is wired from backupOnOpenChanged; give the 250 ms
+        // coalesced timer a beat, then confirm the value hit disk.
+        QTest::qWait(400);
+        QVERIFY(s.save());                            // harmless if already saved
+        CrtSettings fresh;
+        fresh.setStorePath(dir.filePath("crt-kate.ini"));
+        QVERIFY(fresh.load());
+        QCOMPARE(fresh.backupOnOpen(), true);
+    }
+
+    // The Settings dialog exposes the toggle as a house-style TvCheckBox,
+    // seeded from the setting and wired live into it (the path main.cpp reads).
+    void settings_dialog_offers_a_backup_on_open_checkbox() {
+        CrtSettings s;
+        s.setBackupOnOpen(false);
+        SettingsDialog dlg(&s);
+        auto* check = dlg.findChild<TvCheckBox*>(QStringLiteral("backupOnOpenCheck"));
+        QVERIFY2(check, "no backupOnOpenCheck in the Settings dialog");
+        QVERIFY(!check->isChecked());                 // reflects settings value
+
+        check->setChecked(true);                      // live write-through
+        QVERIFY(s.backupOnOpen());
+    }
+
     // --- 2026-11-26 four-stage pipeline settings --------------------------
 
     void pipeline_defaults_match_the_spec() {
