@@ -54,6 +54,11 @@ shaders are only instantiated when `CRT_KATE_FX` is set. The in-app master
 switch then controls the look at runtime; the last chosen values are loaded on
 the next launch.
 
+The released AppImage sets `CRT_KATE_FX=1` in its own launcher, so downloading
+it and running it is enough to get the CRT look. Start it plain with
+`CRT_KATE_FX=0 ./TurboEditor1988-x86_64.AppImage`; the in-app master switch
+still works either way.
+
 ## Tests
 
 ```sh

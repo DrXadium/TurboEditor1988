@@ -130,6 +130,15 @@ cat > AppDir/AppRun <<'APPRUN'
 #!/bin/sh
 # TurboEditor1988 AppImage launcher: export payload paths, then exec the binary.
 HERE="$(dirname "$(readlink -f "$0")")"
+# The packaged app ships with the CRT pipeline ON: launching the AppImage is
+# what most users will ever do, and a plain editor would not be the product.
+# A dev build still opts in with CRT_KATE_FX=1 by hand. To start this AppImage
+# plain, set CRT_KATE_FX=0 (or false/no/off) - it is then left unset so the
+# ContentBridge gate reads "off".
+case "${CRT_KATE_FX:-1}" in
+  0|false|no|off) unset CRT_KATE_FX ;;
+  *) export CRT_KATE_FX=1 ;;
+esac
 export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QML2_IMPORT_PATH="$HERE/usr/qml${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
 export QML_IMPORT_PATH="$QML2_IMPORT_PATH"
@@ -140,6 +149,10 @@ export XDG_DATA_DIRS="$HERE/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 exec "$HERE/usr/bin/turbo-kate" "$@"
 APPRUN
 chmod +x AppDir/AppRun
+# Packaging guard: a released AppImage must launch with the effects pipeline
+# on, so fail the build if the launcher lost that export.
+grep -q 'CRT_KATE_FX=1' AppDir/AppRun \
+  || { echo "ERROR: AppRun no longer enables CRT_KATE_FX"; exit 1; }
 
 # Close the DT_NEEDED graph: linuxdeploy skips some system libraries
 # (notably the GLVND family libOpenGL/libGLX/libEGL), which only surfaces
