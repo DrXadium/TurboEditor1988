@@ -1,6 +1,7 @@
 .superpowers/
 .opide/
 build/
+build-release/
 staging/
 spike/out/
 third_party/crt-src/

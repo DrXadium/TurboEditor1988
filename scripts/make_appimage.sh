@@ -17,10 +17,26 @@ KFVER="${CRT_KATE_KF_VERSION:-6.30.0}"
 JOBS="$(nproc)"
 
 echo "== [1/4] configure + build + install (prefix /usr, DESTDIR staging)"
-cmake -B build -DCMAKE_INSTALL_PREFIX=/usr >/dev/null
-cmake --build build -j"$JOBS"
+# Release builds use a SEPARATE build tree (build-release) configured as
+# Release, so the developer's Debug tree is never packaged and the artifact
+# stays as small as it needs to be.
+#
+# The prefix-map flags rewrite __FILE__ to a neutral path and
+# -gno-record-gcc-switches drops the argv0 line, so no reference to the build
+# machine (home directory, project path) is left in the shipped ELF.
+BLD="$ROOT/build-release"
+PREFIX_FLAGS=(
+  -ffile-prefix-map:"$ROOT"=.
+  -fdebug-prefix-map:"$ROOT"=.
+  -gno-record-gcc-switches
+)
+cmake -B "$BLD" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_FLAGS="${PREFIX_FLAGS[*]}" \
+  -DCMAKE_CXX_FLAGS="${PREFIX_FLAGS[*]}" \
+  >/dev/null
+cmake --build "$BLD" -j"$JOBS"
 rm -rf staging
-DESTDIR="$ROOT/staging" cmake --install build >/dev/null
+DESTDIR="$ROOT/staging" cmake --install "$BLD" >/dev/null
 
 echo "== [2/4] tool downloads (cached)"
 TOOLS="$ROOT/.tmp/tools"
@@ -99,7 +115,7 @@ cp -a /usr/lib64/qt6/plugins/. "$PLUGINROOT/"
 # linuxdeploy's bundled patchelf rewrites DT_RUNPATH on every deployed lib.
 # On the small QML plugin ELFs (+40% size growth) combined with Fedora's RELR
 # (.relr.dyn) relocations this corrupts relocation targets: dlopen of
-# QtQuick.Window's plugin ctor SIGSEGVs (dumped in handoff/task-11.md).
+# QtQuick.Window's plugin ctor SIGSEGVs.
 # The QML plugins do not need patching: the AppRun wrapper below exports
 # LD_LIBRARY_PATH=$APPDIR/usr/lib, which regular dlopen resolution honors.
 # Restore the pristine system QML tree over the patched copy:

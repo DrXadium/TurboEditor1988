@@ -1289,9 +1289,12 @@ int main(int argc, char** argv)
                 // it: parented to the shell (TvModal::exec reparents it to its
                 // anchor). agi_dialogshots renders it standalone, so this is the
                 // only path that proves the restyle inside the real shell.
+                // Dev aid only: name a real file so the prompt has something to
+                // show. No machine-specific path is baked into the binary (the
+                // build must stay portable for release).
                 modal = new ReloadDialog(
                     ReloadDialog::Mode::Modified,
-                    QStringLiteral("/var/home/dr_xadium/projects/CRT_Kate/src/editor/ReloadDialog.cpp"),
+                    QStringLiteral("README.md"),
                     &shell);
             }
             else if (which == "goto") {

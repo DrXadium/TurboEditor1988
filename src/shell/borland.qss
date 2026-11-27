@@ -18,8 +18,8 @@ QMenuBar {
        padding-left ONLY -- Qt also applies a QSS *margin* to the vertical size
        hint (margin-left inflated the bar to 3 rows; regression test:
        menu_bar_is_one_flat_row). padding-left is vertical-clean. The ::item
-       padding gives the ~4-space separation between titles (bisect probe:
-       .relay/menurule.cpp cases A-G). */
+       padding gives the ~4-space separation between titles (bisected by
+       enabling and disabling the ::item padding across cases A-G). */
     padding-left: 0.4em;
 }
 /* QMenuBar::item rules REMOVED: QStyleSheetStyle takes over item painting when

@@ -2,11 +2,11 @@
 // Multi-stage CRT effect chain: burn-in accumulation -> bloom -> dynamic pass
 // -> static pass. Ported from cool-retro-term's four-stage pipeline, adapted for
 // an edge-to-edge GUI (no bezel) as described in
-// docs/superpowers/specs/2026-11-26-crt-effects-pipeline-design.md.
+// the design spec that introduced it.
 //
 // The public contract is unchanged: sourceItem / settings / convenience aliases.
-// `shaderBaseUrl` points at the compiled .qsb files (the test harness uses the
-// .superpowers/qmlbuild output; the app points at its embedded qrc copies).
+// `shaderBaseUrl` points at the compiled .qsb files (the test harness uses its
+// own qmlbuild output; the app points at its embedded qrc copies).
 import QtQuick
 import QtQuick.Window
 import QtQuick.Effects
@@ -48,7 +48,7 @@ Item {
     // Compiled shader locations. Default resolves to the qmlbuild output the
     // test runner produces; main.qml points this at qrc.
     property url shaderBaseUrl:
-        Qt.resolvedUrl("../.superpowers/qmlbuild/shaders/")
+        Qt.resolvedUrl("shaders/")
 
     // --- Source texture ------------------------------------------------------
     ShaderEffectSource {
