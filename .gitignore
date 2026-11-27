@@ -8,3 +8,10 @@ third_party/crt-src/
 AppDir/
 CRT-Kate-*.AppImage
 __pycache__/
+
+# Internal working notes: never publish session handoffs or the superpowers
+# planning/spec tree. They stay on the developer's disk only.
+HANDOFF.md
+CRT-Kate-HANDOFF-*.md
+docs/superpowers/
+.relay/
