@@ -1307,6 +1307,147 @@ private slots:
         dock.reject();
     }
 
+    // --- Places: overflow scrolling and keyboard navigation (2026-11-27) ---
+    //
+    // Reported live with a 38-bookmark user-places.xbel: the Places column is
+    // taller than the dialog, so the rows past the bottom were unreachable
+    // (no scroll offset at all), and Up/Down moved the FILE selection even
+    // when the user was working in Places.
+
+    void places_scroll_reaches_rows_past_the_column_bottom()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile(QDir(dir.path()).absoluteFilePath(QStringLiteral("one.txt")))
+            .open(QIODevice::WriteOnly);
+
+        QStringList labels, paths;
+        for (int i = 0; i < 40; ++i) {
+            labels << QStringLiteral("Place %1").arg(i);
+            paths << dir.path();
+        }
+
+        TvFileDock dock;
+        dock.setPlaces(labels, paths);
+        dock.setDirectory(dir.path());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        QCOMPARE(dock.placeCount(), 40);
+        QVERIFY2(dock.maxPlaceScroll() > 0,
+                 "40 places fit a 500px dialog - the fixture is not exercising overflow");
+        QVERIFY2(dock.placeRect(39).isEmpty(),
+                 "the last place is already visible; nothing overflows");
+        QCOMPARE(dock.placeScrollOffset(), 0);
+
+        // Wheel over the column scrolls it (it used to scroll the file list).
+        const QPoint local(dock.placesRect().center());
+        QWheelEvent down(QPointF(local), QPointF(dock.mapToGlobal(local)),
+                         QPoint(0, 0), QPoint(0, -120), Qt::NoButton,
+                         Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&dock, &down);
+        QCoreApplication::processEvents();
+        QVERIFY2(dock.placeScrollOffset() > 0, "the wheel did not scroll Places");
+        QCOMPARE(dock.scrollOffset(), 0);        // the file list must not move
+
+        // The column's bar drives the same offset and reaches the end.
+        QScrollBar* bar = dock.placesScrollBarWidget();
+        QVERIFY2(bar, "Places has no vertical scrollbar");
+        QCOMPARE(bar->value(), dock.placeScrollOffset());
+        bar->setValue(bar->maximum());
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.placeScrollOffset(), dock.maxPlaceScroll());
+        const QRect last = dock.placeRect(39);
+        QVERIFY2(!last.isEmpty(), "the last place is still unreachable at full scroll");
+        QVERIFY2(dock.placesRect().contains(last.center()),
+                 "the last place row paints outside the column");
+
+        dock.reject();
+    }
+
+    void up_and_down_move_the_place_highlight_not_the_file_list()
+    {
+        QTemporaryDir a, b, c;
+        QVERIFY(a.isValid() && b.isValid() && c.isValid());
+        QFile(QDir(a.path()).absoluteFilePath(QStringLiteral("in-a.txt")))
+            .open(QIODevice::WriteOnly);
+        QFile(QDir(b.path()).absoluteFilePath(QStringLiteral("in-b.txt")))
+            .open(QIODevice::WriteOnly);
+        QFile(QDir(c.path()).absoluteFilePath(QStringLiteral("in-c.txt")))
+            .open(QIODevice::WriteOnly);
+
+        TvFileDock dock;
+        dock.setPlaces({ QStringLiteral("A"), QStringLiteral("B"), QStringLiteral("C") },
+                       { a.path(), b.path(), c.path() });
+        dock.setDirectory(a.path());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        // Click place 0: that focuses Places and highlights it.
+        const QRect row0 = dock.placeRect(0);
+        QVERIFY(!row0.isEmpty());
+        const QPoint p = row0.center();
+        QMouseEvent press(QEvent::MouseButtonPress, p, dock.mapToGlobal(p),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, p, dock.mapToGlobal(p),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&dock, &release);
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.placeCursor(), 0);
+        QCOMPARE(dock.currentPlace(), 0);
+
+        // Down moves the highlight; it must not navigate and must not touch
+        // the file selection (that is the reported bug).
+        QTest::keyClick(&dock, Qt::Key_Down);
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.placeCursor(), 1);
+        QCOMPARE(dock.currentPlace(), 0);        // still showing place A
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(a.path()).canonicalFilePath());
+
+        QTest::keyClick(&dock, Qt::Key_Up);
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.placeCursor(), 0);
+
+        dock.reject();
+    }
+
+    void return_opens_the_highlighted_place()
+    {
+        QTemporaryDir a, b, c;
+        QVERIFY(a.isValid() && b.isValid() && c.isValid());
+        QFile(QDir(c.path()).absoluteFilePath(QStringLiteral("in-c.txt")))
+            .open(QIODevice::WriteOnly);
+
+        TvFileDock dock;
+        dock.setPlaces({ QStringLiteral("A"), QStringLiteral("B"), QStringLiteral("C") },
+                       { a.path(), b.path(), c.path() });
+        dock.setDirectory(a.path());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        dock.setPlaceCursor(0);
+        QTest::keyClick(&dock, Qt::Key_Down);
+        QTest::keyClick(&dock, Qt::Key_Down);
+        QCoreApplication::processEvents();
+        QCOMPARE(dock.placeCursor(), 2);
+
+        QTest::keyClick(&dock, Qt::Key_Return);
+        QCoreApplication::processEvents();
+        QCOMPARE(QFileInfo(dock.directory()).canonicalFilePath(),
+                 QFileInfo(c.path()).canonicalFilePath());
+        QVERIFY(dock.files().contains(QStringLiteral("in-c.txt")));
+
+        dock.reject();
+    }
+
     // The default list is what Kate shows: the user's own bookmarks from
     // ~/.local/share/user-places.xbel when one exists (2026-11-24: "the places
     // display doesn't match what kate can see"), otherwise Home, the XDG
@@ -1381,7 +1522,10 @@ private slots:
         QCoreApplication::processEvents();
         QVERIFY2(dock.horizontalOffset() == 0, "names start scrolled");
 
-        const QPoint local(60, dock.listRect().center().y());
+        // Aim inside the Files box: x=60 landed in the Places column once the
+        // sidebar was added (2026-11-24), so this fixture was wheeling over
+        // Places and only passed because the wheel ignored it (2026-11-27).
+        const QPoint local = dock.listRect().center();
         QWheelEvent shiftWheel(QPointF(local), QPointF(dock.mapToGlobal(local)),
                                QPoint(0, 0), QPoint(0, -120), Qt::NoButton,
                                Qt::ShiftModifier, Qt::NoScrollPhase, false);

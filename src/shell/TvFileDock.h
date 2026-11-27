@@ -88,6 +88,19 @@ public:
     QRect placeRect(int i) const;
     int placeAt(const QPoint& p) const;      // -1 when not on a place row
     int currentPlace() const;                // the place showing m_dir, or -1
+    // Overflow and keyboard navigation (2026-11-27): a Places column taller
+    // than the dialog scrolls by whole rows (wheel, its bar, or the arrows).
+    // Clicking the column gives it the keyboard: Up/Down move this highlight,
+    // Return opens it. Without a highlight the arrows keep driving the file
+    // list, exactly as before.
+    int placeScrollOffset() const { return m_placeScroll; }
+    int maxPlaceScroll() const;
+    int visiblePlaceRows() const;
+    void scrollPlacesBy(int rows);
+    int placeCursor() const { return m_placeCursor; }
+    void setPlaceCursor(int index);          // clamps, focuses, scrolls into view
+    bool placesFocused() const { return m_placesFocused; }
+    QScrollBar* placesScrollBarWidget() const { return m_placesBar; }
 
     // The last-10 recents shown by the name box's green dropdown cell.
     void setRecents(const QStringList& paths);
@@ -198,6 +211,7 @@ private:
     void moveSelection(int delta);
     int maxScroll() const;                     // last legal m_scroll
     void setScroll(int value);                 // clamp + echo to the bar
+    void syncPlacesBar();                      // range + thumb for the Places bar
     void descendInto(const QString& name);
     QString resolvedPath() const;
 
@@ -220,6 +234,12 @@ private:
     QStringList m_recents;
     int m_selected = -1;
     int m_scroll = 0;
+    // Places column (2026-11-27): first visible row, keyboard highlight, and
+    // whether the column owns Up/Down. m_placeCursor == -1 means none.
+    int m_placeScroll = 0;
+    int m_placeCursor = -1;
+    bool m_placesFocused = false;
+    QScrollBar* m_placesBar = nullptr;        // the column's own vertical bar
     // Sideways offset for long names (Shift+wheel, or dragging the strip's
     // thumb with the horizontal part). Clamped to the widest visible name.
     int m_hOffset = 0;

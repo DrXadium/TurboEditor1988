@@ -201,6 +201,20 @@ TvFileDock::TvFileDock(QWidget* parent) : QWidget(parent)
     m_vBar->show();
     syncVerticalBar();
 
+    // Places column bar (2026-11-27): a 38-bookmark Places list overflows the
+    // dialog, and the rows past the bottom were unreachable. Same TextScrollBar
+    // language as the file list's, one cell wide, driving m_placeScroll.
+    m_placesBar = new TextScrollBar(Qt::Vertical, this);
+    m_placesBar->setObjectName(QStringLiteral("placesVBar"));
+    m_placesBar->setSingleStep(1);   // one place per arrow click
+    connect(m_placesBar, &QScrollBar::valueChanged, this, [this](int v) {
+        if (v == m_placeScroll)
+            return;
+        m_placeScroll = v;
+        update();
+    });
+    m_placesBar->hide();             // shown only when the column overflows
+
     auto makeButton = [this](const QString& text, const char* name) {
         auto* b = new TvPlate(text, this);
         b->setObjectName(QLatin1String(name));
@@ -639,6 +653,12 @@ void TvFileDock::layoutChildren()
     // The column runs the full height of the Files box, caption above it.
     m_placesLabelRect = QRect(x0, m_filesLabelRect.top(), placesW, ch);
     m_placesRect = QRect(x0, m_listRect.top(), placesW, m_listRect.height());
+    // The Places bar owns the column's right edge, mirroring the file list.
+    if (m_placesBar) {
+        m_placesBar->setGeometry(m_placesRect.right() - barW + 1,
+                                 m_placesRect.top(), barW, m_placesRect.height());
+        syncPlacesBar();
+    }
 
     // Buttons in the LOWER RIGHT, stacked close together and clear of the
     // picker (2026-11-24: "the ok / cancel buttons should move down to the
@@ -707,11 +727,74 @@ QRect TvFileDock::placeRect(int i) const
     if (m_placesRect.isEmpty() || i < 0 || i >= m_placePaths.size())
         return QRect();
     const int rowH = qMax(1, cellH() + kPlaceRowH);
-    const int top = m_placesRect.top() + 2 + i * rowH;
+    // Rows scroll together (2026-11-27): the first visible row is m_placeScroll,
+    // so a row above it has no rect and cannot be clicked or painted.
+    const int rel = i - m_placeScroll;
+    if (rel < 0)
+        return QRect();
+    const int top = m_placesRect.top() + 2 + rel * rowH;
     if (top > m_placesRect.bottom())
         return QRect();
-    return QRect(m_placesRect.left() + 2, top, m_placesRect.width() - 4,
+    int width = m_placesRect.width() - 4;
+    if (m_placesBar)
+        width -= m_placesBar->width();      // keep names clear of the bar
+    return QRect(m_placesRect.left() + 2, top, qMax(8, width),
                  qMin(rowH, m_placesRect.bottom() - top + 1));
+}
+
+int TvFileDock::visiblePlaceRows() const
+{
+    if (m_placesRect.isEmpty())
+        return 1;
+    const int rowH = qMax(1, cellH() + kPlaceRowH);
+    return qMax(1, (m_placesRect.height() - 2) / rowH);
+}
+
+int TvFileDock::maxPlaceScroll() const
+{
+    return qMax(0, m_placePaths.size() - visiblePlaceRows());
+}
+
+void TvFileDock::scrollPlacesBy(int rows)
+{
+    if (rows == 0)
+        return;
+    const int next = qBound(0, m_placeScroll + rows, maxPlaceScroll());
+    if (next == m_placeScroll)
+        return;
+    m_placeScroll = next;
+    syncPlacesBar();
+    update();
+}
+
+void TvFileDock::setPlaceCursor(int index)
+{
+    if (m_placePaths.isEmpty()) {
+        m_placeCursor = -1;
+        return;
+    }
+    m_placesFocused = true;
+    m_placeCursor = qBound(0, index, int(m_placePaths.size()) - 1);
+    // Keep the highlight inside the visible band, exactly like the file list.
+    const int visible = visiblePlaceRows();
+    if (m_placeCursor < m_placeScroll)
+        m_placeScroll = m_placeCursor;
+    else if (m_placeCursor >= m_placeScroll + visible)
+        m_placeScroll = m_placeCursor - visible + 1;
+    m_placeScroll = qBound(0, m_placeScroll, maxPlaceScroll());
+    syncPlacesBar();
+    update();
+}
+
+void TvFileDock::syncPlacesBar()
+{
+    if (!m_placesBar)
+        return;
+    m_placesBar->setRange(0, maxPlaceScroll());
+    m_placesBar->setPageStep(qMax(1, visiblePlaceRows()));
+    const QSignalBlocker blocker(m_placesBar);
+    m_placesBar->setValue(m_placeScroll);
+    m_placesBar->setVisible(maxPlaceScroll() > 0);
 }
 
 int TvFileDock::placeAt(const QPoint& p) const
@@ -1093,7 +1176,9 @@ void TvFileDock::paintEvent(QPaintEvent*)
         const QRect r = placeRect(i);
         if (r.isEmpty())
             continue;
-        const bool sel = (i == current);
+        // The place showing m_dir, plus the keyboard highlight while Places
+        // owns the arrows (2026-11-27).
+        const bool sel = (i == current) || (m_placesFocused && i == m_placeCursor);
         if (sel)
             p.fillRect(r, kBlue);
         p.save();
@@ -1150,8 +1235,10 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
     // and the name box is cleared - a name from the old folder is meaningless
     // in the new one.
     if (m_placesRect.contains(pos)) {
+        m_placesFocused = true;          // the arrows now drive Places
         const int i = placeAt(pos);
         if (i >= 0) {
+            setPlaceCursor(i);
             setDirectory(m_placePaths.at(i));
             m_edit->clear();
         }
@@ -1159,6 +1246,8 @@ void TvFileDock::mousePressEvent(QMouseEvent* ev)
         update();
         return;
     }
+    // Anywhere else: the file list owns the arrows again.
+    m_placesFocused = false;
     if (m_listRect.contains(pos)) {
         const int idx = rowAt(pos);
         if (idx >= 0) {
@@ -1213,6 +1302,16 @@ void TvFileDock::mouseDoubleClickEvent(QMouseEvent* ev)
 
 void TvFileDock::wheelEvent(QWheelEvent* ev)
 {
+    // Over the Places column the wheel scrolls the places, not the file list
+    // (2026-11-27: the column is taller than the dialog and had no scroll).
+    // A column that does not overflow has nothing to scroll, so the wheel
+    // falls through to the file list instead of dying on the Places rect.
+    if (maxPlaceScroll() > 0 && !m_placesRect.isEmpty()
+        && m_placesRect.contains(ev->position().toPoint())) {
+        scrollPlacesBy(ev->angleDelta().y() > 0 ? -1 : 1);
+        ev->accept();
+        return;
+    }
     // Sideways first: Shift+wheel (and a real horizontal wheel) scrolls long
     // names. The dedicated horizontal bar (fileListHBar) does the same job
     // with a visible control; this stays for muscle memory and for wheel mice
@@ -1239,9 +1338,31 @@ void TvFileDock::keyPressEvent(QKeyEvent* ev)
     switch (ev->key()) {
     case Qt::Key_Escape: reject(); return;
     case Qt::Key_Return:
-    case Qt::Key_Enter: accept(); return;
-    case Qt::Key_Down: moveSelection(+1); return;
-    case Qt::Key_Up: moveSelection(-1); return;
+    case Qt::Key_Enter:
+        // Places owns Return while it holds the keyboard: open the highlight.
+        if (m_placesFocused && m_placeCursor >= 0
+            && m_placeCursor < m_placePaths.size()) {
+            setDirectory(m_placePaths.at(m_placeCursor));
+            m_edit->clear();
+            update();
+            return;
+        }
+        accept();
+        return;
+    case Qt::Key_Down:
+        if (m_placesFocused && placeCount() > 0) {
+            setPlaceCursor(m_placeCursor + 1);   // -1 -> 0 on the first press
+            return;
+        }
+        moveSelection(+1);
+        return;
+    case Qt::Key_Up:
+        if (m_placesFocused && placeCount() > 0) {
+            setPlaceCursor(m_placeCursor < 0 ? 0 : m_placeCursor - 1);
+            return;
+        }
+        moveSelection(-1);
+        return;
     default: break;
     }
     QWidget::keyPressEvent(ev);
