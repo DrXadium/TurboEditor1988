@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Task 1 (2026-11-17 GUI pass): Turbo Vision file dialogs drawn ON the app
 // screen (not a separate native popup). Reference: the TV "Save File As"
-// dialog - gray panel, white double-line frame, black drop shadow, yellow
-// labels, blue entry field, teal Files list box, green OK/Cancel, blue
+// dialog - gray panel, black double-line frame, black drop shadow, black
+// section labels, blue entry field, teal Files list box, green OK/Cancel, blue
 // path status row.
 //
 // TDD: these tests are written FIRST and must fail because TvFileDock /
@@ -73,7 +73,7 @@ class TstFiledlg : public QObject
 {
     Q_OBJECT
 private slots:
-    // The dock must look like the reference TV modal: gray panel, white
+    // The dock must look like the reference TV modal: gray panel, black
     // double-line frame, black drop shadow, teal Files box, green buttons.
     void file_dock_is_a_tv_modal_with_the_reference_panels()
     {
@@ -92,10 +92,13 @@ private slots:
         QVERIFY2(gray > img.width() * img.height() / 4,
                  qPrintable(QStringLiteral("only %1 gray px - panel is not TV gray").arg(gray)));
 
-        // White double-line frame (#FFFFFF) present.
+        // The double-line frame is BLACK (2026-11-26, Xadium: white trim and
+        // titles are illegible with the CRT effects on). The dock still has
+        // white pixels - the inverted selected row in the lists and the path
+        // status line - so pin the frame's INK, not the absence of white.
         const int white = countColor(img, QColor(0xFF, 0xFF, 0xFF), 6);
         QVERIFY2(white > 40,
-                 qPrintable(QStringLiteral("only %1 white px - no white frame").arg(white)));
+                 qPrintable(QStringLiteral("only %1 white px - the list/status white is gone").arg(white)));
 
         // Black drop shadow (#000000) present.
         const int black = countColor(img, QColor(0x00, 0x00, 0x00), 6);
@@ -112,10 +115,17 @@ private slots:
         QVERIFY2(green > 100,
                  qPrintable(QStringLiteral("only %1 green px - no green buttons").arg(green)));
 
-        // Yellow labels (#FFFF55) present ("Save file as", "Files").
-        const int yellow = countColor(img, QColor(0xFF, 0xFF, 0x55), 6);
-        QVERIFY2(yellow > 30,
-                 qPrintable(QStringLiteral("only %1 yellow px - no yellow labels").arg(yellow)));
+        // Section labels ("Path", "Places", "Files", ...) are black on the
+        // grey panel (2026-11-26). The 2 px focus ring around the active field
+        // is still the editor yellow - that is a cursor, not a heading - but
+        // it only exists while a field holds focus, and this fresh dock has
+        // none, so it is asserted separately below where the field is clicked.
+        const int blackLabels = countColorIn(img, QColor(0x00, 0x00, 0x00), 6,
+                                             QRect(dock.x(), dock.y(),
+                                                   img.width(), img.height() / 3));
+        QVERIFY2(blackLabels > 60,
+                 qPrintable(QStringLiteral("only %1 black px in the upper third - no black section labels")
+                                .arg(blackLabels)));
 
         dock.reject();
     }
@@ -792,7 +802,7 @@ private slots:
     // TvFrame::drawDoubleFrame, so pin what it must keep producing. Green
     // before AND after the extraction - a red here means the frame was already
     // broken and the refactor must not start.
-    void the_frame_is_a_white_double_line_box_with_a_centred_title()
+    void the_frame_is_a_black_double_line_box_with_a_centred_title()
     {
         TvFileDock dock;
         dock.setTitle(QStringLiteral("Save File As"));
@@ -807,18 +817,18 @@ private slots:
         const int ch = dock.cellHeight();
         QVERIFY2(cw > 0 && ch > 0, "the dock has no character cell");
 
-        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+        QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                               QRect(f.left(), f.top(), f.width(), ch)) > 100,
-                 "the top row carries no white frame ink");
-        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                 "the top row carries no black frame ink");
+        QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                               QRect(f.left(), f.bottom() - ch + 1, f.width(), ch)) > 100,
-                 "the bottom row carries no white frame ink");
-        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                 "the bottom row carries no black frame ink");
+        QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                               QRect(f.left(), f.top(), cw, f.height())) > 100,
-                 "the left column carries no white frame ink");
-        QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+                 "the left column carries no black frame ink");
+        QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                               QRect(f.right() - cw + 1, f.top(), cw, f.height())) > 100,
-                 "the right column carries no white frame ink");
+                 "the right column carries no black frame ink");
 
         // The too-small guard inside the frame drawing is unreachable through
         // the dock (it enforces a minimum size), so it is covered directly on
@@ -1225,8 +1235,9 @@ private slots:
         QVERIFY2(r0.top() < r1.top(), "place rows are not stacked downwards");
         QVERIFY2(r1.top() >= r0.bottom(), "place rows overlap");
 
-        // Styled to match the Files box: teal field, black names, and a yellow
-        // "Places" caption over the column.
+        // Styled to match the Files box: teal field, black names, and a black
+        // "Places" caption over the column (2026-11-26: yellow headings went
+        // illegible with the CRT effects on).
         const QImage img = dock.grab().toImage().convertToFormat(QImage::Format_RGB32);
         int teal = 0, black = 0;
         for (int y = places.top(); y <= places.bottom(); ++y)

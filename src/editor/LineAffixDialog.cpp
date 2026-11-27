@@ -28,7 +28,8 @@ LineAffixDialog::LineAffixDialog(Mode mode, QWidget* parent)
     grid->setColumnStretch(1, 1);
 
     auto* label = new QLabel(tr("Text:"), body);
-    label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+    // Black label ink on the gray panel (2026-11-26, user request).
+    label->setStyleSheet(QStringLiteral("color: #000000; background: transparent;"));
 
     m_cell = new FieldCell(body);
     // TvLineEdit (caret), same as Find/Replace and Go to Line - the shell is
@@ -47,6 +48,9 @@ LineAffixDialog::LineAffixDialog(Mode mode, QWidget* parent)
     if (mode == Mode::End) {
         m_box = new TvCheckBox(tr("Line break"), body);
         m_box->setObjectName(QStringLiteral("lineAffixBreak"));
+        // This modal's panel is grey, not the blue option strip: black ink, so
+        // the labels match "Text:" (2026-11-26, user request).
+        m_box->setInk(Qt::black);
         grid->addWidget(m_box, 1, 0, 1, 2);
         connect(m_box, &TvCheckBox::toggled, this, [this] { refreshFieldEnabled(); });
     }
@@ -56,6 +60,7 @@ LineAffixDialog::LineAffixDialog(Mode mode, QWidget* parent)
     // the dialog can never report both operations at once.
     m_removeBox = new TvCheckBox(tr("Remove"), body);
     m_removeBox->setObjectName(QStringLiteral("lineAffixRemove"));
+    m_removeBox->setInk(Qt::black);
     grid->addWidget(m_removeBox, mode == Mode::End ? 2 : 1, 0, 1, 2);
     connect(m_removeBox, &TvCheckBox::toggled, this, [this](bool on) {
         if (on) {

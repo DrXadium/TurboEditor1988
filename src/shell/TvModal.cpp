@@ -78,7 +78,10 @@ bool TvModal::eventFilter(QObject* watched, QEvent* ev)
         } else if (ev->type() == QEvent::Hide) {
             if (auto* shell = qobject_cast<ShellWindow*>(window()))
                 if (shell->keyboardOwner() == this)
-                    shell->setKeyboardOwner(nullptr);
+                    // A nested modal (the colour picker over Settings) must
+                    // hand the keyboard back to its parent modal, not to the
+                    // editor behind both.
+                    shell->setKeyboardOwner(qobject_cast<TvModal*>(parentWidget()));
         }
     }
     return QWidget::eventFilter(watched, ev);
@@ -243,7 +246,10 @@ void TvModal::paintEvent(QPaintEvent*)
 
     // The plates own their block shadows (TvPlate paints shadow + plate + the
     // press travel), so this pass draws none of them.
-    TvFrame::drawDoubleFrame(p, m_frameRect, m_title, cellWidth(), cellHeight());
+    // 2026-11-26 (Xadium): every dialog's trim and title go BLACK - white
+    // chrome turned illegible once the CRT effects were switched on.
+    TvFrame::drawDoubleFrame(p, m_frameRect, m_title, cellWidth(), cellHeight(),
+                             QColor(Qt::black));
 }
 
 void TvModal::keyPressEvent(QKeyEvent* ev)

@@ -20,21 +20,32 @@ QtObject {
     property real brightness: 0.5
     property real ambientLight: 0.2
     property real staticNoise: 0.12
-    property real screenCurvature: 0.3
+    property real screenCurvature: 0.0
     property real glowingLine: 0.2
     property real burnIn: 0.25
     property real bloom: 0.55
-    property real chromaColor: 0.25
-    property real saturationColor: 0.25
+    property real chromaColor: 0.0      // keep the UI's own colours by default
+    property real saturationColor: 0.0
     property real jitter: 0.2
     property real horizontalSync: 0.08
     property real flickering: 0.1
     property real rgbShift: 0.0
-    property real sweep: 0.0    // sweep band amplitude (content, not a uniform
-                                // in crt_effect.frag; reserved for shaders that
-                                // implement it)
-    property real frameShininess: 0.0      // bezel-related: keep 0 (no bezel)
-    property real frameSize: 0.0           // bezel-related: keep 0 (no bezel)
+    property real sweep: 0.0    // TV-revision2 band amplitude (0 = off)
+    // Master bypass; only main.qml's Loader reads it. Values stay put.
+    property bool effectsEnabled: true
+
+    // Phase-2 pipeline knobs (2026-11-26 spec).
+    property bool phosphorEnabled: false   // gates convertWithChroma
+    property int scanlinePitch: 2          // physical px per raster cell
+    property real glassSheen: 0.0          // CRT frame shininess, adapted
+    property real screenRadius: 0.0        // rounded glass corners
+    property real screenInset: 0.0         // CRT frame size, adapted
+    property real bloomQuality: 0.5        // blur resolution
+    property real burnInQuality: 0.5       // feedback resolution
+
+    // Bezel-era names kept as aliases for callers that still use them.
+    property real frameShininess: glassSheen
+    property real frameSize: screenInset
 
     // Rasterization intensity: 0 disables scanlines.
     property int rasterization: 1          // default scanline_rasterization
@@ -52,6 +63,10 @@ QtObject {
     property bool glowEnabled: bloom > 0 || glowingLine > 0
     property bool flickerEnabled: flickering > 0
     property bool motionEnabled: jitter > 0 || horizontalSync > 0
+    property bool burnInEnabled: burnIn > 0
+    property bool horizontalSyncEnabled: horizontalSync > 0
+    property bool rgbShiftEnabled: rgbShift > 0
+    property bool sheenEnabled: glassSheen > 0
 
     // Compose as cool-retro-term does (kept for parity/debug).
     function composeProfile() {
@@ -62,7 +77,11 @@ QtObject {
             saturationColor: saturationColor, staticNoise: staticNoise,
             jitter: jitter, horizontalSync: horizontalSync,
             flickering: flickering, rgbShift: rgbShift,
-            rasterization: rasterization, rasterizationIntensity: rasterizationIntensity
+            rasterization: rasterization, rasterizationIntensity: rasterizationIntensity,
+            phosphorEnabled: phosphorEnabled, scanlinePitch: scanlinePitch,
+            glassSheen: glassSheen, screenRadius: screenRadius,
+            screenInset: screenInset, bloomQuality: bloomQuality,
+            burnInQuality: burnInQuality, sweep: sweep
         })
     }
 }

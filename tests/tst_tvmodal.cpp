@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // House-style modals (2026-11-18): one TvModal owns the Turbo Vision chrome
-// every dialog in the app wears - gray panel, white double-line frame with the
+// every dialog in the app wears - gray panel, black double-line frame with the
 // title in the top row, hard black offset shadow, green plates with block
 // shadows - and the local event-loop round trip the file dock proved works in
 // a shell that is never an active window.
@@ -119,8 +119,10 @@ private slots:
 };
 
 // The chrome the file dock established, on a bare modal: gray panel inside a
-// white double frame, a hard black shadow that reaches the widget edge on the
-// right and bottom, a clear gutter above that shadow, and a closed corner.
+// BLACK double frame (2026-11-26, Xadium: white trim and titles are illegible
+// with the CRT effects on), a hard black shadow that reaches the widget edge
+// on the right and bottom, a clear gutter above that shadow, and a closed
+// corner.
 void TstTvModal::chrome_is_the_house_style()
 {
     TvModal m;
@@ -138,16 +140,19 @@ void TstTvModal::chrome_is_the_house_style()
     const QColor panel = img.pixelColor(f.left() + cw + 1, f.center().y());
     QVERIFY2(isPanelGrey(panel), qPrintable(QStringLiteral("panel is %1").arg(rgb(panel))));
 
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20, QRect(f.left(), f.top(), f.width(), ch)) > 100,
-             "the top row carries no white frame ink");
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20, QRect(f.left(), f.top(), f.width(), ch)) > 100,
+             "the top row carries no black frame ink");
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                           QRect(f.left(), f.bottom() - ch + 1, f.width(), ch)) > 100,
-             "the bottom row carries no white frame ink");
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20, QRect(f.left(), f.top(), cw, f.height())) > 100,
-             "the left column carries no white frame ink");
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+             "the bottom row carries no black frame ink");
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20, QRect(f.left(), f.top(), cw, f.height())) > 100,
+             "the left column carries no black frame ink");
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                           QRect(f.right() - cw + 1, f.top(), cw, f.height())) > 100,
-             "the right column carries no white frame ink");
+             "the right column carries no black frame ink");
+    // ...and white chrome is GONE from the dialog (that was the bug).
+    QVERIFY2(countColorIn(img, QColor(Qt::white), 20, QRect(f.left(), f.top(), f.width(), ch)) < 40,
+             "the top row still carries white trim");
 
     const QColor right = img.pixelColor(f.right() + 3, f.center().y());
     QVERIFY2(isBlack(right),

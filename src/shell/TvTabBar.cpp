@@ -11,8 +11,13 @@
 namespace {
 const QColor kPanelGray(0xAA, 0xAA, 0xAA);
 const QColor kFieldBlue(0x00, 0x00, 0xAA);
+// Ink for the active chip's frame and the INACTIVE chip's label (white on the
+// blue field). The active chip's frame used to be white too; 2026-11-26
+// Xadium: white trim on dialogs is illegible with the CRT effects on, so the
+// frame is black now.
 const QColor kInk(Qt::white);
-// A disabled chip's label: visible on the blue field, clearly dimmer than white.
+// A disabled chip's label: visible on the blue field, clearly dimmer than the
+// active label.
 const QColor kInkDim(0x55, 0x55, 0x55);
 const QColor kBlack(Qt::black);
 const int kStartX = 2;
@@ -120,14 +125,19 @@ void TvTabBar::paintEvent(QPaintEvent*)
         const bool active = (i == m_current);
         p.fillRect(r, active ? kPanelGray : kFieldBlue);
         if (active) {
-            // White frame, and the chip is open at the bottom so it reads as
-            // continuous with the page underneath.
-            p.fillRect(QRect(r.left(), r.top(), r.width(), 1), kInk);
-            p.fillRect(QRect(r.left(), r.top(), 1, r.height()), kInk);
-            p.fillRect(QRect(r.right(), r.top(), 1, r.height()), kInk);
+            // Black frame, and the chip is open at the bottom so it reads as
+            // continuous with the page underneath. (Was white - the chips are
+            // dialog chrome and 2026-11-26 Xadium ruled white illegible with
+            // the CRT effects on.)
+            p.fillRect(QRect(r.left(), r.top(), r.width(), 1), kBlack);
+            p.fillRect(QRect(r.left(), r.top(), 1, r.height()), kBlack);
+            p.fillRect(QRect(r.right(), r.top(), 1, r.height()), kBlack);
         } else {
             p.fillRect(QRect(r.left(), r.bottom(), r.width(), 1), kBlack);
         }
+        // Labels: black on the panel-grey active chip, white on the blue
+        // inactive ones - a white label on the active chip would be white-on-
+        // white once the frame is black.
         p.setPen(!isTabEnabled(i) ? kInkDim : (active ? kBlack : kInk));
         p.drawText(r, Qt::AlignCenter, m_tabs.at(i));
     }

@@ -39,7 +39,10 @@ Window {
         id: crtLoader
         objectName: "crtEffectChainLoader"
         anchors.fill: parent
-        active: bridge.effectsEnabled
+        // The env var is the build-time opt-in; the settings checkbox is the
+        // user's master bypass. Off unloads the chain (the raw frame shows),
+        // and every effect value is kept for the turn back on.
+        active: bridge.effectsEnabled && crtSettings.effectsEnabled
         sourceComponent: crtChainComponent
     }
 
@@ -50,7 +53,7 @@ Window {
             anchors.fill: parent
             sourceItem: bridge.sourceItem
             settings: crtSettings
-            fragmentShaderUrl: "qrc:/crt-kate/shaders/crt_effect.frag.qsb"
+            shaderBaseUrl: "qrc:/crt-kate/shaders/"
             sweepTime: clockTime
             // Phase clock (fixed 16 ms per tick), exposed for the sweepTime
             // binding - the internal EffectChain `time` is scope-hidden here.

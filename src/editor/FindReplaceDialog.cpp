@@ -22,11 +22,12 @@
 
 namespace {
 
-// Row labels: the dialog's yellow ink on the gray panel.
+// Row labels: BLACK ink on the gray panel (2026-11-26, user request: yellow
+// labels were hard to read with the CRT effects on).
 QLabel* tvLabel(const QString& text)
 {
     auto* label = new QLabel(text);
-    label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+    label->setStyleSheet(QStringLiteral("color: #000000; background: transparent;"));
     return label;
 }
 
@@ -121,10 +122,10 @@ FindReplaceDialog::FindReplaceDialog(EditorTabManager* tabs, QWidget* parent)
     grid->addWidget(tvLabel(tr("Search in:")), 3, 0);
     grid->addWidget(m_scopeBar, 3, 1);
 
-    // Status: yellow ink, one line, blank until something happens.
+    // Status: black ink, one line, blank until something happens.
     m_status = new QLabel(body);
     m_status->setObjectName(QStringLiteral("findStatus"));
-    m_status->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+    m_status->setStyleSheet(QStringLiteral("color: #000000; background: transparent;"));
     grid->addWidget(m_status, 4, 0, 1, 2);
 
     setBody(body);

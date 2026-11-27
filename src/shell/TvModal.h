@@ -7,7 +7,7 @@
 
 class QPushButton;
 
-// The house-style Turbo Vision modal: gray panel, white double-line frame with
+// The house-style Turbo Vision modal: gray panel, black double-line frame with
 // the title in the top row, a hard black drop shadow offset down-right, and a
 // row of green plates with their own block shadows along the bottom-right.
 //

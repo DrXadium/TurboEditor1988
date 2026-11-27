@@ -26,7 +26,8 @@ GoToLineDialog::GoToLineDialog(int lineCount, QWidget* parent)
     grid->setColumnStretch(1, 1);
 
     auto* label = new QLabel(tr("Line:"), body);
-    label->setStyleSheet(QStringLiteral("color: #FFFF55; background: transparent;"));
+    // Black label ink on the gray panel (2026-11-26, user request).
+    label->setStyleSheet(QStringLiteral("color: #000000; background: transparent;"));
 
     m_cell = new FieldCell(body);
     // TvLineEdit: the shell is never an active window, so a plain QLineEdit

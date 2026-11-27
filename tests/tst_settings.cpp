@@ -17,8 +17,15 @@
 #include <QLabel>
 #include <QSpinBox>
 #include "src/settings/SettingsDialog.h"
+#include "src/shell/ColorPickerModal.h"
+#include "src/shell/ColorPickerPanel.h"
 #include "src/shell/TvCheckBox.h"
+#include "src/shell/TvColorSwatch.h"
+#include "src/shell/TvPlate.h"
+#include "src/shell/TvSelect.h"
 #include "src/shell/TvSpinBox.h"
+#include "src/shell/TvLineEdit.h"
+#include <QPushButton>
 
 class TstSettings : public QObject
 {
@@ -58,6 +65,30 @@ private slots:
         QCOMPARE(s.staticNoise(), 0.12);
         QCOMPARE(s.bloom(), 0.55);
         QCOMPARE(s.fontColor(), QColor("#ff8100"));
+    }
+
+    // 2026-11-26: the last chosen effect set must still be there on the next
+    // launch even when the exit never reaches aboutToQuit (SIGTERM from the
+    // relaunch script, a killed dev instance). An effect change therefore
+    // schedules its own coalesced write; no explicit save() call is needed.
+    void effect_changes_autosave_without_an_explicit_save() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            s.setContrast(1.23);
+            s.setSweep(0.77);
+            QTest::qWait(400);   // let the 250 ms coalescing timer fire
+        }
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            QVERIFY2(s.load(), "load() returned false after an autosave");
+            QCOMPARE(s.contrast(), 1.23);
+            QCOMPARE(s.sweep(), 0.77);
+        }
     }
 
     // Task 12: Turbo Vision default editor font is 16px and persists.
@@ -240,11 +271,8 @@ private slots:
         s.setScreenCurvature(0.0);
         SettingsDialog dlg(&s);
         auto* bright = dlg.findChild<TvSpinBox*>(QStringLiteral("brightnessSpin"));
-        auto* curv = dlg.findChild<TvCheckBox*>(QStringLiteral("curvatureCheck"));
         QVERIFY2(bright, "brightnessSpin not found in dialog");
-        QVERIFY2(curv, "curvatureCheck not found in dialog");
         QCOMPARE(bright->value(), 0.7);
-        QVERIFY(!curv->isChecked());   // curvature 0.0 => disabled
     }
 
     void dialog_edits_write_to_settings_live() {
@@ -265,21 +293,6 @@ private slots:
         QVERIFY(!s.scanlinesEnabled());
         scan->setChecked(true);
         QVERIFY(s.scanlinesEnabled());
-    }
-
-    void dialog_curvature_checkbox_roundtrip() {
-        CrtSettings s;
-        SettingsDialog dlg(&s);
-        auto* curv = dlg.findChild<TvCheckBox*>(QStringLiteral("curvatureCheck"));
-        auto* curvSpin = dlg.findChild<TvSpinBox*>(QStringLiteral("curvatureSpin"));
-        QVERIFY(curv && curvSpin);
-
-        curv->setChecked(true);
-        QCOMPARE(s.screenCurvature(), 0.3);   // enabled => default curvature
-        QVERIFY(curvSpin->isEnabled());
-        curv->setChecked(false);
-        QCOMPARE(s.screenCurvature(), 0.0);   // disabled => flat
-        QVERIFY(!curvSpin->isEnabled());
     }
 
     // Autosave round (approach A): a user-configurable autosave interval in
@@ -373,6 +386,607 @@ private slots:
 
         spin->setValue(30);
         QCOMPARE(s.autosaveIntervalSeconds(), 30);
+    }
+
+    // --- 2026-11-26 four-stage pipeline settings --------------------------
+
+    void pipeline_defaults_match_the_spec() {
+        CrtSettings s;
+        QCOMPARE(s.chromaColor(), 0.0);       // UI colours preserved by default
+        QCOMPARE(s.saturationColor(), 0.0);
+        QCOMPARE(s.screenCurvature(), 0.0);
+        QCOMPARE(s.phosphorEnabled(), false);
+        QCOMPARE(s.scanlinePitch(), 2);
+        QCOMPARE(s.glassSheen(), 0.0);
+        QCOMPARE(s.screenRadius(), 0.0);
+        QCOMPARE(s.screenInset(), 0.0);
+        QCOMPARE(s.bloomQuality(), 0.5);
+        QCOMPARE(s.burnInQuality(), 0.5);
+        QCOMPARE(s.contrast(), 0.80);
+        QCOMPARE(s.brightness(), 0.50);
+        QCOMPARE(s.ambientLight(), 0.20);
+        QCOMPARE(s.staticNoise(), 0.12);
+        QCOMPARE(s.glowingLine(), 0.20);
+        QCOMPARE(s.burnIn(), 0.25);
+        QCOMPARE(s.bloom(), 0.55);
+        QCOMPARE(s.jitter(), 0.20);
+        QCOMPARE(s.horizontalSync(), 0.08);
+        QCOMPARE(s.flickering(), 0.10);
+        QCOMPARE(s.rgbShift(), 0.0);
+        QCOMPARE(s.rasterization(), CrtSettings::ScanlineRasterization);
+        QCOMPARE(s.rasterizationIntensity(), 0.22);
+        QCOMPARE(s.effectsEnabled(), true);
+    }
+
+    void new_effect_setters_emit_notify_only_on_change() {
+        CrtSettings s;
+
+        QSignalSpy phosphor(&s, &CrtSettings::phosphorEnabledChanged);
+        s.setPhosphorEnabled(false);           // unchanged
+        QCOMPARE(phosphor.count(), 0);
+        s.setPhosphorEnabled(true);
+        QCOMPARE(phosphor.count(), 1);
+
+        QSignalSpy pitch(&s, &CrtSettings::scanlinePitchChanged);
+        s.setScanlinePitch(2);                 // unchanged
+        QCOMPARE(pitch.count(), 0);
+        s.setScanlinePitch(3);
+        QCOMPARE(pitch.count(), 1);
+
+        QSignalSpy sheen(&s, &CrtSettings::glassSheenChanged);
+        s.setGlassSheen(0.0);
+        QCOMPARE(sheen.count(), 0);
+        s.setGlassSheen(0.4);
+        QCOMPARE(sheen.count(), 1);
+
+        QSignalSpy radius(&s, &CrtSettings::screenRadiusChanged);
+        s.setScreenRadius(0.0);
+        QCOMPARE(radius.count(), 0);
+        s.setScreenRadius(0.5);
+        QCOMPARE(radius.count(), 1);
+
+        QSignalSpy inset(&s, &CrtSettings::screenInsetChanged);
+        s.setScreenInset(0.0);
+        QCOMPARE(inset.count(), 0);
+        s.setScreenInset(0.5);
+        QCOMPARE(inset.count(), 1);
+
+        QSignalSpy bloomQuality(&s, &CrtSettings::bloomQualityChanged);
+        s.setBloomQuality(0.5);
+        QCOMPARE(bloomQuality.count(), 0);
+        s.setBloomQuality(0.8);
+        QCOMPARE(bloomQuality.count(), 1);
+
+        QSignalSpy burnQuality(&s, &CrtSettings::burnInQualityChanged);
+        s.setBurnInQuality(0.5);
+        QCOMPARE(burnQuality.count(), 0);
+        s.setBurnInQuality(0.8);
+        QCOMPARE(burnQuality.count(), 1);
+    }
+
+    void new_effect_values_are_bounded() {
+        CrtSettings s;
+        s.setScanlinePitch(0);
+        QCOMPARE(s.scanlinePitch(), 1);
+        s.setScanlinePitch(99);
+        QCOMPARE(s.scanlinePitch(), 4);
+        s.setBloomQuality(0.0);
+        QCOMPARE(s.bloomQuality(), 0.1);
+        s.setBurnInQuality(9.0);
+        QCOMPARE(s.burnInQuality(), 1.0);
+        s.setScreenRadius(-1.0);
+        QCOMPARE(s.screenRadius(), 0.0);
+        s.setScreenInset(2.0);
+        QCOMPARE(s.screenInset(), 1.0);
+    }
+
+    void new_effect_values_roundtrip() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            s.setContrast(1.20);
+            s.setBrightness(0.70);
+            s.setAmbientLight(0.45);
+            s.setStaticNoise(0.33);
+            s.setScreenCurvature(0.55);
+            s.setGlowingLine(0.66);
+            s.setBurnIn(0.77);
+            s.setBloom(0.88);
+            s.setChromaColor(0.44);
+            s.setSaturationColor(0.22);
+            s.setJitter(0.11);
+            s.setHorizontalSync(0.19);
+            s.setFlickering(0.09);
+            s.setRgbShift(0.31);
+            s.setSweep(0.42);
+            s.setRasterization(CrtSettings::SubpixelRasterization);
+            s.setRasterizationIntensity(0.61);
+            s.setPhosphorEnabled(true);
+            s.setScanlinePitch(3);
+            s.setGlassSheen(0.37);
+            s.setScreenRadius(0.48);
+            s.setScreenInset(0.59);
+            s.setBloomQuality(0.62);
+            s.setBurnInQuality(0.73);
+            s.setEffectsEnabled(false);
+            QVERIFY2(s.save(), "save() returned false");
+        }
+
+        CrtSettings loaded;
+        loaded.setStorePath(store);
+        QVERIFY2(loaded.load(), "load() returned false");
+        QCOMPARE(loaded.contrast(), 1.20);
+        QCOMPARE(loaded.brightness(), 0.70);
+        QCOMPARE(loaded.ambientLight(), 0.45);
+        QCOMPARE(loaded.staticNoise(), 0.33);
+        QCOMPARE(loaded.screenCurvature(), 0.55);
+        QCOMPARE(loaded.glowingLine(), 0.66);
+        QCOMPARE(loaded.burnIn(), 0.77);
+        QCOMPARE(loaded.bloom(), 0.88);
+        QCOMPARE(loaded.chromaColor(), 0.44);
+        QCOMPARE(loaded.saturationColor(), 0.22);
+        QCOMPARE(loaded.jitter(), 0.11);
+        QCOMPARE(loaded.horizontalSync(), 0.19);
+        QCOMPARE(loaded.flickering(), 0.09);
+        QCOMPARE(loaded.rgbShift(), 0.31);
+        QCOMPARE(loaded.sweep(), 0.42);
+        QCOMPARE(loaded.rasterization(), CrtSettings::SubpixelRasterization);
+        QCOMPARE(loaded.rasterizationIntensity(), 0.61);
+        QCOMPARE(loaded.phosphorEnabled(), true);
+        QCOMPARE(loaded.scanlinePitch(), 3);
+        QCOMPARE(loaded.glassSheen(), 0.37);
+        QCOMPARE(loaded.screenRadius(), 0.48);
+        QCOMPARE(loaded.screenInset(), 0.59);
+        QCOMPARE(loaded.bloomQuality(), 0.62);
+        QCOMPARE(loaded.burnInQuality(), 0.73);
+        QCOMPARE(loaded.effectsEnabled(), false);
+    }
+
+    void master_bypass_keeps_every_effect_value() {
+        CrtSettings s;
+        s.setBloom(0.66);
+        s.setScanlinePitch(4);
+        s.setPhosphorEnabled(true);
+        s.setEffectsEnabled(false);
+        QCOMPARE(s.effectsEnabled(), false);
+        // The bypass is not a reset: the selected look is still there.
+        QCOMPARE(s.bloom(), 0.66);
+        QCOMPARE(s.scanlinePitch(), 4);
+        QCOMPARE(s.phosphorEnabled(), true);
+        s.setEffectsEnabled(true);
+        QCOMPARE(s.effectsEnabled(), true);
+        QCOMPARE(s.bloom(), 0.66);
+    }
+
+    // --- Named effect profiles --------------------------------------------
+
+    void profiles_save_multiple_select_and_persist() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+
+            s.setBloom(0.10);
+            s.setScanlinePitch(1);
+            s.setEffectsEnabled(false);
+            QVERIFY(s.saveProfile(QStringLiteral("Amber")));
+
+            s.setBloom(0.90);
+            s.setScanlinePitch(4);
+            QVERIFY(s.saveProfile(QStringLiteral("Green")));
+
+            s.setBloom(0.40);
+            s.setScanlinePitch(2);
+            QVERIFY(s.saveProfile(QStringLiteral("VGA")));
+
+            QCOMPARE(s.profileNames(),
+                     QStringList({QStringLiteral("Amber"), QStringLiteral("Green"),
+                                  QStringLiteral("VGA")}));
+            QCOMPARE(s.currentProfile(), QStringLiteral("VGA"));
+
+            // Selecting a profile applies its values.
+            s.setEffectsEnabled(true);
+            QVERIFY(s.applyProfile(QStringLiteral("Amber")));
+            QCOMPARE(s.bloom(), 0.10);
+            QCOMPARE(s.scanlinePitch(), 1);
+            QCOMPARE(s.currentProfile(), QStringLiteral("Amber"));
+            // The master bypass is global, not part of a profile.
+            QCOMPARE(s.effectsEnabled(), true);
+
+            QVERIFY(s.applyProfile(QStringLiteral("Green")));
+            QCOMPARE(s.bloom(), 0.90);
+            QCOMPARE(s.scanlinePitch(), 4);
+        }
+
+        // Profiles survive a restart, including the selected one.
+        CrtSettings loaded;
+        loaded.setStorePath(store);
+        QVERIFY(loaded.load());
+        QCOMPARE(loaded.profileNames(),
+                 QStringList({QStringLiteral("Amber"), QStringLiteral("Green"),
+                              QStringLiteral("VGA")}));
+        QCOMPARE(loaded.currentProfile(), QStringLiteral("Green"));
+        QVERIFY(loaded.applyProfile(QStringLiteral("VGA")));
+        QCOMPARE(loaded.bloom(), 0.40);
+        QCOMPARE(loaded.scanlinePitch(), 2);
+
+        QVERIFY(loaded.deleteProfile(QStringLiteral("Amber")));
+        QCOMPARE(loaded.profileNames(),
+                 QStringList({QStringLiteral("Green"), QStringLiteral("VGA")}));
+        QVERIFY(!loaded.deleteProfile(QStringLiteral("Amber")));
+
+        CrtSettings reloaded;
+        reloaded.setStorePath(store);
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.profileNames(),
+                 QStringList({QStringLiteral("Green"), QStringLiteral("VGA")}));
+    }
+
+    void profiles_reject_empty_names_and_missing_lookups() {
+        CrtSettings s;
+        QVERIFY(!s.saveProfile(QString()));
+        QVERIFY(!s.saveProfile(QStringLiteral("   ")));
+        QVERIFY(!s.profileExists(QStringLiteral("nope")));
+        QVERIFY(!s.applyProfile(QStringLiteral("nope")));
+        QVERIFY(!s.deleteProfile(QStringLiteral("nope")));
+    }
+
+    void a_stale_settings_instance_does_not_erase_a_new_profile() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+
+        CrtSettings writer;
+        writer.setStorePath(store);
+        writer.load();
+        writer.setBloom(0.1);
+        QVERIFY(writer.saveProfile(QStringLiteral("Amber")));
+
+        // A second instance (second window, dev probe) loads Amber here. The
+        // writer then saves a new profile; the stale save must not drop it.
+        CrtSettings stale;
+        stale.setStorePath(store);
+        QVERIFY(stale.load());
+        QVERIFY(stale.profileExists(QStringLiteral("Amber")));
+
+        writer.setBloom(0.2);
+        QVERIFY(writer.saveProfile(QStringLiteral("Xadium")));
+        stale.setBloom(0.9);
+        QVERIFY(stale.save());
+
+        CrtSettings check;
+        check.setStorePath(store);
+        QVERIFY(check.load());
+        QVERIFY(check.profileExists(QStringLiteral("Amber")));
+        QVERIFY(check.profileExists(QStringLiteral("Xadium")));
+
+        // A deliberate delete is still honoured.
+        QVERIFY(stale.deleteProfile(QStringLiteral("Amber")));
+        CrtSettings afterDelete;
+        afterDelete.setStorePath(store);
+        QVERIFY(afterDelete.load());
+        QVERIFY(!afterDelete.profileExists(QStringLiteral("Amber")));
+        QVERIFY(afterDelete.profileExists(QStringLiteral("Xadium")));
+    }
+
+    void deleting_the_selected_profile_clears_the_selection() {
+        CrtSettings s;
+        QVERIFY(s.saveProfile(QStringLiteral("Amber")));
+        QCOMPARE(s.currentProfile(), QStringLiteral("Amber"));
+        QVERIFY(s.deleteProfile(QStringLiteral("Amber")));
+        QCOMPARE(s.currentProfile(), QString());
+    }
+
+    // --- Dialog controls ---------------------------------------------------
+
+    void dialog_exposes_every_pipeline_control() {
+        CrtSettings s;
+        SettingsDialog dlg(&s);
+        const char* spins[] = {
+            "scanlinePitchSpin", "rasterIntensitySpin", "glowSpin", "burnInSpin",
+            "glowLineSpin", "noiseSpin", "brightnessSpin", "contrastSpin",
+            "ambientSpin", "flickerSpin", "hSyncSpin", "motionSpin", "rgbShiftSpin",
+            "glassSheenSpin", "chromaSpin", "saturationSpin", "bloomQualitySpin",
+            "burnInQualitySpin",
+        };
+        for (const char* name : spins) {
+            QVERIFY2(dlg.findChild<TvSpinBox*>(QString::fromLatin1(name)),
+                     qPrintable(QStringLiteral("missing %1").arg(name)));
+        }
+        const char* checks[] = {
+            "effectsEnabledCheck", "scanlinesCheck", "glowCheck", "burnInCheck",
+            "flickerCheck", "motionCheck", "phosphorCheck",
+        };
+        for (const char* name : checks) {
+            QVERIFY2(dlg.findChild<TvCheckBox*>(QString::fromLatin1(name)),
+                     qPrintable(QStringLiteral("missing %1").arg(name)));
+        }
+        QVERIFY(dlg.findChild<TvSelect*>(QStringLiteral("rasterizationSelect")));
+        QVERIFY(dlg.findChild<TvSelect*>(QStringLiteral("profileSelect")));
+        QVERIFY(dlg.findChild<TvLineEdit*>(QStringLiteral("profileNameEdit")));
+        QVERIFY(dlg.findChild<QPushButton*>(QStringLiteral("profileSaveButton")));
+        QVERIFY(dlg.findChild<QPushButton*>(QStringLiteral("profileDeleteButton")));
+        QVERIFY(dlg.findChild<TvColorSwatch*>(QStringLiteral("fontSwatch")));
+        QVERIFY(dlg.findChild<TvColorSwatch*>(QStringLiteral("bgSwatch")));
+        // The three screen-shape controls were removed on request 2026-11-26.
+        QVERIFY(!dlg.findChild<TvCheckBox*>(QStringLiteral("curvatureCheck")));
+        QVERIFY(!dlg.findChild<TvSpinBox*>(QStringLiteral("curvatureSpin")));
+        QVERIFY(!dlg.findChild<TvSpinBox*>(QStringLiteral("screenRadiusSpin")));
+        QVERIFY(!dlg.findChild<TvSpinBox*>(QStringLiteral("screenInsetSpin")));
+    }
+
+    void tvselect_changes_rasterization() {
+        CrtSettings s;
+        SettingsDialog dlg(&s);
+        auto* raster = dlg.findChild<TvSelect*>(QStringLiteral("rasterizationSelect"));
+        QVERIFY(raster);
+        QCOMPARE(raster->currentValue(), QStringLiteral("1"));
+
+        raster->setCurrentValue(QStringLiteral("2"));
+        QCOMPARE(s.rasterization(), CrtSettings::PixelRasterization);
+        raster->setCurrentValue(QStringLiteral("0"));
+        QCOMPARE(s.rasterization(), CrtSettings::NoRasterization);
+        QVERIFY(!s.scanlinesEnabled());
+    }
+
+    // Reported live: the Scanlines box was checked but Intensity still showed
+    // 0.00. The toggle raises the model's intensity; the field must follow.
+    void scanlines_toggle_refreshes_the_intensity_field() {
+        CrtSettings s;
+        s.setScanlinesEnabled(false);
+        SettingsDialog dlg(&s);
+        auto* check = dlg.findChild<TvCheckBox*>(QStringLiteral("scanlinesCheck"));
+        auto* spin = dlg.findChild<TvSpinBox*>(QStringLiteral("rasterIntensitySpin"));
+        QVERIFY(check && spin);
+        QCOMPARE(spin->value(), 0.0);
+
+        check->setChecked(true);
+        QVERIFY(s.scanlinesEnabled());
+        QCOMPARE(spin->value(), s.rasterizationIntensity());
+        QVERIFY(spin->value() > 0.0);
+
+        check->setChecked(false);
+        QVERIFY(!s.scanlinesEnabled());
+        QCOMPARE(spin->value(), 0.0);
+    }
+
+    void master_toggle_bypasses_without_losing_the_look() {
+        CrtSettings s;
+        s.setBloom(0.66);
+        s.setScanlinePitch(4);
+        SettingsDialog dlg(&s);
+        auto* check = dlg.findChild<TvCheckBox*>(QStringLiteral("effectsEnabledCheck"));
+        QVERIFY(check);
+        QVERIFY(check->isChecked());
+
+        check->setChecked(false);
+        QVERIFY(!s.effectsEnabled());
+        QCOMPARE(s.bloom(), 0.66);
+        QCOMPARE(s.scanlinePitch(), 4);
+
+        check->setChecked(true);
+        QVERIFY(s.effectsEnabled());
+        QCOMPARE(s.bloom(), 0.66);
+    }
+
+    void settings_modal_buttons_use_black_ink() {
+        CrtSettings s;
+        SettingsDialog dlg(&s);
+        const auto plates = dlg.findChildren<TvPlate*>(QStringLiteral("tvModalButton"));
+        QCOMPARE(plates.size(), 2);
+        for (auto* plate : plates)
+            QCOMPARE(plate->ink(), QColor(Qt::black));
+
+        // The profile plates sit on the TV blue and must use the same face,
+        // black ink and 4 px block shadow as OK/Cancel.
+        auto* save = dlg.findChild<TvPlate*>(QStringLiteral("profileSaveButton"));
+        auto* remove = dlg.findChild<TvPlate*>(QStringLiteral("profileDeleteButton"));
+        QVERIFY(save && remove);
+        for (auto* plate : { save, remove }) {
+            QCOMPARE(plate->ink(), QColor(Qt::black));
+            QCOMPARE(plate->backdrop(), QColor(0x00, 0x00, 0xAA));
+            QCOMPARE(plate->shadowOffset(), 4);
+            QCOMPARE(plate->sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
+            QCOMPARE(plate->sizePolicy().verticalPolicy(), QSizePolicy::Fixed);
+            QCOMPARE(plate->minimumSize(), QSize(96, 26));
+            QCOMPARE(plate->maximumSize(), QSize(96, 26));
+        }
+    }
+
+    void colour_swatches_show_and_pick_the_phosphor_colours() {
+        CrtSettings s;
+        s.setFontColor(QColor(0x12, 0x34, 0x56));
+        s.setBackgroundColor(QColor(0x01, 0x02, 0x03));
+        SettingsDialog dlg(&s);
+        dlg.resize(dlg.sizeHint());
+        dlg.show();
+
+        auto* fontSwatch = dlg.findChild<TvColorSwatch*>(QStringLiteral("fontSwatch"));
+        auto* bgSwatch = dlg.findChild<TvColorSwatch*>(QStringLiteral("bgSwatch"));
+        QVERIFY(fontSwatch && bgSwatch);
+        QCOMPARE(fontSwatch->color(), QColor(0x12, 0x34, 0x56));
+        QCOMPARE(bgSwatch->color(), QColor(0x01, 0x02, 0x03));
+
+        // The click opens the in-window picker; this timer answers it with a
+        // new colour as soon as the nested round loop starts.
+        QTimer::singleShot(0, &dlg, [&dlg] {
+            auto* picker = dlg.findChild<ColorPickerModal*>();
+            QVERIFY2(picker, "clicking the swatch did not open ColorPickerModal");
+            picker->panel()->setColor(QColor(0xab, 0xcd, 0xef));
+            picker->accept();
+        });
+        fontSwatch->click();
+
+        QCOMPARE(s.fontColor(), QColor(0xab, 0xcd, 0xef));
+        QCOMPARE(fontSwatch->color(), QColor(0xab, 0xcd, 0xef));
+    }
+
+    void profile_select_refreshes_the_effect_fields() {
+        CrtSettings s;
+        s.setBloom(0.2);
+        s.setContrast(1.4);
+        QVERIFY(s.saveProfile(QStringLiteral("Amber")));
+        s.setBloom(0.9);
+        s.setContrast(0.9);
+
+        SettingsDialog dlg(&s);
+        auto* select = dlg.findChild<TvSelect*>(QStringLiteral("profileSelect"));
+        auto* bloomSpin = dlg.findChild<TvSpinBox*>(QStringLiteral("glowSpin"));
+        auto* contrastSpin = dlg.findChild<TvSpinBox*>(QStringLiteral("contrastSpin"));
+        QVERIFY(select && bloomSpin && contrastSpin);
+        QCOMPARE(bloomSpin->value(), 0.9);
+
+        // Saving left "Amber" selected; move to Custom so re-picking it fires.
+        select->setCurrentValue(QString());
+        select->setCurrentValue(QStringLiteral("Amber"));
+        QCOMPARE(s.bloom(), 0.2);
+        QCOMPARE(bloomSpin->value(), 0.2);
+        QCOMPARE(contrastSpin->value(), 1.4);
+    }
+
+    void dialog_cancel_restores_every_effect_value() {
+        CrtSettings s;
+        s.setContrast(0.9);
+        s.setBrightness(0.6);
+        s.setAmbientLight(0.3);
+        s.setStaticNoise(0.2);
+        s.setScreenCurvature(0.1);
+        s.setGlowingLine(0.15);
+        s.setBurnIn(0.2);
+        s.setBloom(0.3);
+        s.setChromaColor(0.1);
+        s.setSaturationColor(0.2);
+        s.setJitter(0.25);
+        s.setHorizontalSync(0.05);
+        s.setFlickering(0.07);
+        s.setRgbShift(0.04);
+        s.setSweep(0.08);
+        s.setRasterizationIntensity(0.33);
+        s.setGlassSheen(0.12);
+        s.setScreenRadius(0.14);
+        s.setScreenInset(0.16);
+        s.setBloomQuality(0.44);
+        s.setBurnInQuality(0.55);
+        s.setRasterization(CrtSettings::SubpixelRasterization);
+        s.setScanlinePitch(3);
+        s.setPhosphorEnabled(true);
+        s.setEffectsEnabled(true);
+
+        SettingsDialog dlg(&s);
+
+        // Live edits a user could make through the open dialog.
+        s.setContrast(1.9);
+        s.setBrightness(0.9);
+        s.setAmbientLight(0.9);
+        s.setStaticNoise(0.9);
+        s.setScreenCurvature(0.9);
+        s.setGlowingLine(0.9);
+        s.setBurnIn(0.9);
+        s.setBloom(0.9);
+        s.setChromaColor(0.9);
+        s.setSaturationColor(0.9);
+        s.setJitter(0.9);
+        s.setHorizontalSync(0.9);
+        s.setFlickering(0.9);
+        s.setRgbShift(0.9);
+        s.setSweep(0.9);
+        s.setRasterizationIntensity(0.9);
+        s.setGlassSheen(0.9);
+        s.setScreenRadius(0.9);
+        s.setScreenInset(0.9);
+        s.setBloomQuality(0.9);
+        s.setBurnInQuality(0.9);
+        s.setRasterization(CrtSettings::NoRasterization);
+        s.setScanlinePitch(4);
+        s.setPhosphorEnabled(false);
+        s.setEffectsEnabled(false);
+
+        dlg.reject();
+
+        QCOMPARE(s.contrast(), 0.9);
+        QCOMPARE(s.brightness(), 0.6);
+        QCOMPARE(s.ambientLight(), 0.3);
+        QCOMPARE(s.staticNoise(), 0.2);
+        QCOMPARE(s.screenCurvature(), 0.1);
+        QCOMPARE(s.glowingLine(), 0.15);
+        QCOMPARE(s.burnIn(), 0.2);
+        QCOMPARE(s.bloom(), 0.3);
+        QCOMPARE(s.chromaColor(), 0.1);
+        QCOMPARE(s.saturationColor(), 0.2);
+        QCOMPARE(s.jitter(), 0.25);
+        QCOMPARE(s.horizontalSync(), 0.05);
+        QCOMPARE(s.flickering(), 0.07);
+        QCOMPARE(s.rgbShift(), 0.04);
+        QCOMPARE(s.sweep(), 0.08);
+        QCOMPARE(s.rasterizationIntensity(), 0.33);
+        QCOMPARE(s.glassSheen(), 0.12);
+        QCOMPARE(s.screenRadius(), 0.14);
+        QCOMPARE(s.screenInset(), 0.16);
+        QCOMPARE(s.bloomQuality(), 0.44);
+        QCOMPARE(s.burnInQuality(), 0.55);
+        QCOMPARE(s.rasterization(), CrtSettings::SubpixelRasterization);
+        QCOMPARE(s.scanlinePitch(), 3);
+        QCOMPARE(s.phosphorEnabled(), true);
+        QCOMPARE(s.effectsEnabled(), true);
+    }
+
+    void profile_dialog_saves_and_applies_profiles() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        CrtSettings s;
+        s.setStorePath(dir.filePath("crt-kate.ini"));
+
+        SettingsDialog dlg(&s);
+        auto* select = dlg.findChild<TvSelect*>(QStringLiteral("profileSelect"));
+        auto* edit = dlg.findChild<TvLineEdit*>(QStringLiteral("profileNameEdit"));
+        auto* save = dlg.findChild<QPushButton*>(QStringLiteral("profileSaveButton"));
+        auto* remove = dlg.findChild<QPushButton*>(QStringLiteral("profileDeleteButton"));
+        QVERIFY(select && edit && save && remove);
+
+        s.setBloom(0.2);
+        s.setScanlinePitch(1);
+        edit->setText(QStringLiteral("Amber"));
+        save->click();
+        QVERIFY(s.profileExists(QStringLiteral("Amber")));
+
+        s.setBloom(0.9);
+        s.setScanlinePitch(4);
+        edit->setText(QStringLiteral("Green"));
+        save->click();
+        QVERIFY(s.profileExists(QStringLiteral("Green")));
+
+        // Both profiles are offered in the selector.
+        QVERIFY(select->count() >= 3);   // Custom + Amber + Green
+
+        // Picking a profile from the selector applies it live.
+        select->setCurrentValue(QStringLiteral("Amber"));
+        QCOMPARE(s.bloom(), 0.2);
+        QCOMPARE(s.scanlinePitch(), 1);
+        select->setCurrentValue(QStringLiteral("Green"));
+        QCOMPARE(s.bloom(), 0.9);
+        QCOMPARE(s.scanlinePitch(), 4);
+
+        // Delete removes it from the selector and from the store.
+        select->setCurrentValue(QStringLiteral("Amber"));
+        remove->click();
+        QVERIFY(!s.profileExists(QStringLiteral("Amber")));
+        QVERIFY(select->count() >= 2);
+    }
+
+    // The CRT tab must fit an 800 px-tall window without clipping.
+    void crt_tab_fits_an_800px_window() {
+        CrtSettings s;
+        SettingsDialog dlg(&s);
+        QVERIFY2(dlg.sizeHint().height() <= 800,
+                 qPrintable(QStringLiteral("settings dialog wants %1 px")
+                                .arg(dlg.sizeHint().height())));
     }
 };
 

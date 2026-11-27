@@ -13,17 +13,16 @@ mkdir -p "$OUT"
 
 # Compile CRT shaders (idempotent) — EffectChain needs .qsb variants.
 # NOTE: qsb -o takes an explicit FILENAME (a directory path fails to open).
-if ! ls "$OUT/shaders/"crt_*.qsb >/dev/null 2>&1; then
-  echo "[qsb] compiling CRT shaders..."
-  mkdir -p "$OUT/shaders"
-  for f in third_party/crt/app/shaders/crt_*.frag; do
-    [ -e "$f" ] || continue
-    base=$(basename "$f")
-    qsb --glsl "100 es,120,150" --hlsl 50 --msl 12 \
-      -o "$OUT/shaders/$base.qsb" "$f" \
-      || { echo "qsb failed on $f"; exit 3; }
-  done
-fi
+echo "[qsb] compiling CRT shaders..."
+mkdir -p "$OUT/shaders"
+for f in third_party/crt/app/shaders/crt_*.frag third_party/crt/app/shaders/burn_in.frag; do
+  [ -e "$f" ] || continue
+  base=$(basename "$f")
+  [ -e "$OUT/shaders/$base.qsb" ] && continue
+  qsb --glsl "100 es,120,150" --hlsl 50 --msl 12 \
+    -o "$OUT/shaders/$base.qsb" "$f" \
+    || { echo "qsb failed on $f"; exit 3; }
+done
 
 echo "[qmltestrunner] $NAME"
 # Import the PARENT of the module dir so "import src" finds src/qmldir.
@@ -44,6 +43,8 @@ if [ "$NAME" = "tst_effectchain" ] && [ "$QML_RC" -eq 0 ]; then
   # curvature: corner pixel (0,0) must be dark/masked
   CORNER=$(python3 spike/px.py /tmp/crt_curvature.png 2 2 2>/dev/null || echo "n/a")
   echo "  curvature corner rgb=$CORNER"
+  echo "[pixels] asserting every shader behaviour"
+  python3 scripts/check_fx_pixels.py || exit 1
   echo "PIXELS OK"
 fi
 

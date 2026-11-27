@@ -337,6 +337,18 @@ private slots:
         QVERIFY(start.field()->isEnabled());
     }
 
+    // 2026-11-26 (user request): these two labels sit on the GREY modal panel
+    // (unlike Find/Replace's blue option strip), so they are black, like the
+    // dialog's "Text:" label.
+    void line_affix_options_use_black_ink() {
+        LineAffixDialog end(LineAffixDialog::Mode::End);
+        LineAffixDialog start(LineAffixDialog::Mode::Start);
+        QVERIFY(end.lineBreakBox());
+        QCOMPARE(end.lineBreakBox()->ink(), QColor(Qt::black));
+        QCOMPARE(end.removeBox()->ink(), QColor(Qt::black));
+        QCOMPARE(start.removeBox()->ink(), QColor(Qt::black));
+    }
+
     void remove_checkbox_disables_the_field_and_clears_line_break() {
         LineAffixDialog d(LineAffixDialog::Mode::End);
         d.resize(d.sizeHint());

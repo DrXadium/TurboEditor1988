@@ -11,7 +11,6 @@
 #include <QResizeEvent>
 
 namespace {
-const QColor kInk(Qt::white);
 // The control reads [ ] when empty and [square] when checked: the BRACKETS are
 // black, the filled square inside them is the TV green.
 const QColor kBracket(Qt::black);
@@ -36,6 +35,14 @@ void TvCheckBox::setChecked(bool on)
     m_checked = on;
     update();
     emit toggled(m_checked);
+}
+
+void TvCheckBox::setInk(const QColor& ink)
+{
+    if (m_ink == ink)
+        return;
+    m_ink = ink;
+    update();
 }
 
 QSize TvCheckBox::sizeHint() const
@@ -76,7 +83,7 @@ void TvCheckBox::paintEvent(QPaintEvent*)
     QFont f = font();
     f.setStyleStrategy(QFont::NoAntialias);
     p.setFont(f);
-    p.setPen(kInk);
+    p.setPen(m_ink);
     p.drawText(QRect(m_boxRect.right() + kGap, 0, width() - m_boxRect.right() - kGap, height()),
                Qt::AlignLeft | Qt::AlignVCenter, m_text);
 }

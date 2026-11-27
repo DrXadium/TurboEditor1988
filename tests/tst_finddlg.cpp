@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Task 3 (2026-11-18 Find and Replace): the dialog's chrome and controls.
 //
-// The dialog must wear the house style - the same grey panel, white double
+// The dialog must wear the house style - the same grey panel, black double
 // frame, black offset shadow and green plates as Help > About and Settings -
 // and it must lay out on the character grid without a control escaping the
 // frame or a field growing the white border the user already reported once.
@@ -107,6 +107,7 @@ private slots:
     void initTestCase();
 
     void the_dialog_is_house_style();
+    void field_labels_are_black_and_options_are_yellow();
     void every_control_exists_with_a_usable_geometry();
     void the_fields_are_tv_blue_with_no_border();
     void clicking_a_field_marks_it_active();
@@ -185,17 +186,18 @@ void TstFindDlg::the_dialog_is_house_style()
     QVERIFY2(isPanelGrey(panel),
              qPrintable(QStringLiteral("panel is %1, not the TV grey").arg(rgb(panel))));
 
-    // White double frame on all four sides.
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20, QRect(f.left(), f.top(), f.width(), ch)) > 100,
-             "the top row carries no white frame ink");
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+    // Black double frame on all four sides (2026-11-26: white trim was
+    // illegible with the CRT effects on).
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20, QRect(f.left(), f.top(), f.width(), ch)) > 100,
+             "the top row carries no black frame ink");
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                           QRect(f.left(), f.bottom() - ch + 1, f.width(), ch)) > 100,
-             "the bottom row carries no white frame ink");
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20, QRect(f.left(), f.top(), cw, f.height())) > 100,
-             "the left column carries no white frame ink");
-    QVERIFY2(countColorIn(img, QColor(Qt::white), 20,
+             "the bottom row carries no black frame ink");
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20, QRect(f.left(), f.top(), cw, f.height())) > 100,
+             "the left column carries no black frame ink");
+    QVERIFY2(countColorIn(img, QColor(Qt::black), 20,
                           QRect(f.right() - cw + 1, f.top(), cw, f.height())) > 100,
-             "the right column carries no white frame ink");
+             "the right column carries no black frame ink");
 
     // Hard black shadow down-right, and a clear gutter above it.
     const QColor right = img.pixelColor(f.right() + 3, f.center().y());
@@ -205,6 +207,62 @@ void TstFindDlg::the_dialog_is_house_style()
     const QColor gutter = img.pixelColor(f.right() + 3, f.top() + 2);
     QVERIFY2(!isPanelGrey(gutter),
              qPrintable(QStringLiteral("the gutter above the shadow is panel grey (%1)").arg(rgb(gutter))));
+}
+
+// 2026-11-26 (user request): the row labels ("Find what:", "Replace with:",
+// "Search in:") are BLACK on the grey panel; the option labels ("Case
+// sensitive", ...) are editor yellow. Yellow labels on grey were hard to read
+// with the CRT effects on, and black options read as ordinary body text.
+void TstFindDlg::field_labels_are_black_and_options_are_yellow()
+{
+    EditorTabManager tabs;
+    FindReplaceDialog dlg(&tabs);
+    dlg.resize(dlg.sizeHint());
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+
+    const QImage img = grabWidget(&dlg);
+    const QColor black(0x00, 0x00, 0x00);
+    const QColor yellow(0xFF, 0xFF, 0x55);
+    auto countIn = [&img](const QRect& r, const QColor& want) {
+        int n = 0;
+        for (int y = r.top(); y <= r.bottom(); ++y)
+            for (int x = r.left(); x <= r.right(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (qAbs(c.red() - want.red()) <= 20 &&
+                    qAbs(c.green() - want.green()) <= 20 &&
+                    qAbs(c.blue() - want.blue()) <= 20)
+                    ++n;
+            }
+        return n;
+    };
+
+    // Every non-empty QLabel in the body is a row label.
+    const QList<QLabel*> labels = dlg.findChildren<QLabel*>();
+    int checkedLabels = 0;
+    for (QLabel* label : labels) {
+        if (label->text().isEmpty())
+            continue;
+        const QRect r(label->mapTo(&dlg, QPoint(0, 0)), label->size());
+        const int blackPx = countIn(r, black);
+        const int yellowPx = countIn(r, yellow);
+        QVERIFY2(blackPx > 8,
+                 qPrintable(QStringLiteral("label '%1' has only %2 black px")
+                                .arg(label->text()).arg(blackPx)));
+        QVERIFY2(yellowPx < 4,
+                 qPrintable(QStringLiteral("label '%1' still paints %2 yellow px")
+                                .arg(label->text()).arg(yellowPx)));
+        ++checkedLabels;
+    }
+    QVERIFY2(checkedLabels >= 3, "expected at least the three row labels");
+
+    for (TvCheckBox* box : {dlg.caseBox(), dlg.wholeWordsBox(), dlg.regexBox()}) {
+        const QRect r(box->mapTo(&dlg, QPoint(0, 0)), box->size());
+        const int yellowPx = countIn(r, yellow);
+        QVERIFY2(yellowPx > 8,
+                 qPrintable(QStringLiteral("option '%1' has only %2 yellow px")
+                                .arg(box->text()).arg(yellowPx)));
+    }
 }
 
 void TstFindDlg::every_control_exists_with_a_usable_geometry()

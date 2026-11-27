@@ -71,6 +71,8 @@ add_library(crt-shell STATIC
   src/shell/TvCheckBox.h
   src/shell/TvSpinBox.cpp
   src/shell/TvSpinBox.h
+  src/shell/TvSelect.cpp
+  src/shell/TvSelect.h
   src/shell/TvTabBar.cpp
   src/shell/TvTabBar.h
   src/shell/TvPlate.cpp
@@ -80,6 +82,8 @@ add_library(crt-shell STATIC
   src/shell/ColorPickerPanel.h
   src/shell/ColorPickerModal.cpp
   src/shell/ColorPickerModal.h
+  src/shell/TvColorSwatch.cpp
+  src/shell/TvColorSwatch.h
   src/shell/HexColorScan.cpp
   src/shell/HexColorScan.h
   src/shell/AboutModal.h
@@ -453,22 +457,35 @@ target_compile_definitions(turbo-kate PRIVATE
 # (.superpowers/qmlbuild) that EffectChain.qml's default resolves against in
 # dev runs; main.qml points EffectChain at the qrc copy (tests keep the default).
 set(CRT_QSB_DIR ${CMAKE_CURRENT_BINARY_DIR}/qml/shaders)
-set(CRT_QSB_OUT ${CRT_QSB_DIR}/crt_effect.frag.qsb)
-add_custom_command(
-  OUTPUT ${CRT_QSB_OUT}
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CRT_QSB_DIR}
-  COMMAND Qt6::qsb --glsl "100 es,120,150" --hlsl 50 --msl 12
-          -o ${CRT_QSB_OUT}
-          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/crt/app/shaders/crt_effect.frag
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/crt/app/shaders/crt_effect.frag
-  COMMENT "qsb: compiling crt_effect.frag"
-)
-add_custom_target(crt_shaders DEPENDS ${CRT_QSB_OUT})
+set(CRT_SHADER_NAMES crt_dynamic crt_static burn_in)
+set(CRT_QSB_OUTS)
+foreach(shader ${CRT_SHADER_NAMES})
+  set(shader_src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/crt/app/shaders/${shader}.frag)
+  set(shader_out ${CRT_QSB_DIR}/${shader}.frag.qsb)
+  add_custom_command(
+    OUTPUT ${shader_out}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CRT_QSB_DIR}
+    COMMAND Qt6::qsb --glsl "100 es,120,150" --hlsl 50 --msl 12
+            -o ${shader_out} ${shader_src}
+    DEPENDS ${shader_src}
+    COMMENT "qsb: compiling ${shader}.frag"
+  )
+  list(APPEND CRT_QSB_OUTS ${shader_out})
+endforeach()
+add_custom_target(crt_shaders DEPENDS ${CRT_QSB_OUTS})
 add_dependencies(turbo-kate crt_shaders)
 qt_add_resources(turbo-kate "crt_qsb_res"
   PREFIX "/crt-kate"
   BASE ${CMAKE_CURRENT_BINARY_DIR}/qml
-  FILES ${CRT_QSB_OUT}
+  FILES ${CRT_QSB_OUTS}
+)
+
+# The same 256x256 PNG the .desktop file points at is embedded so the running
+# window (taskbar / alt-tab) wears the app icon too, not a generic Qt one.
+qt_add_resources(turbo-kate "app_icon"
+  PREFIX "/"
+  BASE ${CMAKE_CURRENT_SOURCE_DIR}
+  FILES packaging/turbo-kate.png
 )
 
 # Task 11: install targets (DESTDIR=staging cmake --install build).
@@ -480,6 +497,9 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/turbo-kate.desktop
         DESTINATION share/applications)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/turbo-kate.png
         DESTINATION share/icons/hicolor/256x256/apps)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/turbo-kate-512.png
+        DESTINATION share/icons/hicolor/512x512/apps
+        RENAME turbo-kate.png)
 # AppImage: bundle the TV typeface where fontconfig scans (AppRun points
 # XDG_DATA_DIRS at $APPDIR/usr/share), so "PxPlus IBM VGA8" resolves as a
 # real family, not just via the embedded :/ copy.

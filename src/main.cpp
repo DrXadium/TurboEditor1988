@@ -3,6 +3,7 @@
 // into the QML CRT scene (EffectChain), which is the visible window —
 // CRT effects cover the entire display per the design spec.
 #include <QApplication>
+#include <QIcon>
 #include <QMessageBox>
 #include <QMenu>
 #include <QMenuBar>
@@ -68,6 +69,9 @@ int main(int argc, char** argv)
     // by the rename - see SessionManager and CrtSettings.
     app.setApplicationName(AppIdentity::displayName());
     app.setApplicationDisplayName(AppIdentity::displayName());
+    // Window/taskbar icon: the same 256x256 PNG the .desktop file installs,
+    // embedded by CMake so a raw ./build/turbo-kate run wears it too.
+    app.setWindowIcon(QIcon(QStringLiteral(":/packaging/turbo-kate.png")));
 
     // The Borland chrome, rendered offscreen (never mapped to a real window).
     ShellWindow shell;
@@ -814,6 +818,9 @@ int main(int argc, char** argv)
                 refreshRecents();
             }
         });
+        // File > Exit: quit through the normal path so aboutToQuit persists the
+        // session and the CRT settings before the process ends.
+        on(act("actionFileExit"), [] { QCoreApplication::quit(); });
 
         // Edit: undo / redo. They are enabled from the manager's history signal
         // so a fresh buffer offers them greyed out.

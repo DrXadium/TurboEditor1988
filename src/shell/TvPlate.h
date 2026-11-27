@@ -23,9 +23,11 @@ public:
 
     // White ink on the modal plates, black on the file dock's.
     void setInk(const QColor& ink);
+    QColor ink() const { return m_ink; }
     // The panel the plate sits on - the band the plate vacates when pressed
     // has to be erased with it.
     void setBackdrop(const QColor& colour);
+    QColor backdrop() const { return m_backdrop; }
     // How far the plate travels onto its shadow. Default 4.
     void setShadowOffset(int offset);
     int shadowOffset() const { return m_offset; }

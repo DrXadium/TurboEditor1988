@@ -3,6 +3,11 @@
 #include <QObject>
 #include <QColor>
 #include <QString>
+#include <QStringList>
+#include <QVariantMap>
+#include <QMap>
+#include <QSet>
+#include <QTimer>
 
 // C++ mirror of cool-retro-term's ApplicationSettings effect model (Task 2's
 // QML CrtSettings), with QSettings persistence and NOTIFY signals so a QML
@@ -37,9 +42,29 @@ public:
     Q_PROPERTY(double horizontalSync READ horizontalSync WRITE setHorizontalSync NOTIFY horizontalSyncChanged)
     Q_PROPERTY(double flickering READ flickering WRITE setFlickering NOTIFY flickeringChanged)
     Q_PROPERTY(double rgbShift READ rgbShift WRITE setRgbShift NOTIFY rgbShiftChanged)
+    Q_PROPERTY(double sweep READ sweep WRITE setSweep NOTIFY sweepChanged)
+
+    // Master bypass (user request 2026-11-26): off unloads the whole effect
+    // chain; the values below are untouched, so turning it back on restores
+    // exactly the look that was selected. Not part of a named profile.
+    Q_PROPERTY(bool effectsEnabled READ effectsEnabled WRITE setEffectsEnabled
+                   NOTIFY effectsEnabledChanged)
 
     Q_PROPERTY(Rasterization rasterization READ rasterization WRITE setRasterization NOTIFY rasterizationChanged)
     Q_PROPERTY(double rasterizationIntensity READ rasterizationIntensity WRITE setRasterizationIntensity NOTIFY rasterizationIntensityChanged)
+
+    // --- Four-stage pipeline knobs (2026-11-26 spec) -----------------------
+    Q_PROPERTY(bool phosphorEnabled READ phosphorEnabled WRITE setPhosphorEnabled NOTIFY phosphorEnabledChanged)
+    Q_PROPERTY(int scanlinePitch READ scanlinePitch WRITE setScanlinePitch NOTIFY scanlinePitchChanged)
+    Q_PROPERTY(double glassSheen READ glassSheen WRITE setGlassSheen NOTIFY glassSheenChanged)
+    Q_PROPERTY(double screenRadius READ screenRadius WRITE setScreenRadius NOTIFY screenRadiusChanged)
+    Q_PROPERTY(double screenInset READ screenInset WRITE setScreenInset NOTIFY screenInsetChanged)
+    Q_PROPERTY(double bloomQuality READ bloomQuality WRITE setBloomQuality NOTIFY bloomQualityChanged)
+    Q_PROPERTY(double burnInQuality READ burnInQuality WRITE setBurnInQuality NOTIFY burnInQualityChanged)
+
+    // --- Named effect profiles ---------------------------------------------
+    Q_PROPERTY(QStringList profileNames READ profileNames NOTIFY profilesChanged)
+    Q_PROPERTY(QString currentProfile READ currentProfile WRITE setCurrentProfile NOTIFY currentProfileChanged)
 
     Q_PROPERTY(QColor fontColor READ fontColor WRITE setFontColor NOTIFY fontColorChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontSizeChanged)
@@ -60,6 +85,10 @@ public:
     Q_PROPERTY(bool glowEnabled READ glowEnabled NOTIFY bloomChanged)
     Q_PROPERTY(bool flickerEnabled READ flickerEnabled NOTIFY flickeringChanged)
     Q_PROPERTY(bool motionEnabled READ motionEnabled NOTIFY jitterChanged)
+    Q_PROPERTY(bool burnInEnabled READ burnInEnabled NOTIFY burnInChanged)
+    Q_PROPERTY(bool horizontalSyncEnabled READ horizontalSyncEnabled NOTIFY horizontalSyncChanged)
+    Q_PROPERTY(bool rgbShiftEnabled READ rgbShiftEnabled NOTIFY rgbShiftChanged)
+    Q_PROPERTY(bool sheenEnabled READ sheenEnabled NOTIFY glassSheenChanged)
 
     // Getters
     double contrast() const { return m_contrast; }
@@ -76,8 +105,17 @@ public:
     double horizontalSync() const { return m_horizontalSync; }
     double flickering() const { return m_flickering; }
     double rgbShift() const { return m_rgbShift; }
+    double sweep() const { return m_sweep; }
+    bool effectsEnabled() const { return m_effectsEnabled; }
     Rasterization rasterization() const { return m_rasterization; }
     double rasterizationIntensity() const { return m_rasterizationIntensity; }
+    bool phosphorEnabled() const { return m_phosphorEnabled; }
+    int scanlinePitch() const { return m_scanlinePitch; }
+    double glassSheen() const { return m_glassSheen; }
+    double screenRadius() const { return m_screenRadius; }
+    double screenInset() const { return m_screenInset; }
+    double bloomQuality() const { return m_bloomQuality; }
+    double burnInQuality() const { return m_burnInQuality; }
     QColor fontColor() const { return m_fontColor; }
     int fontSize() const { return m_fontSize; }
     int autosaveIntervalSeconds() const { return m_autosaveIntervalSeconds; }
@@ -92,6 +130,19 @@ public:
     bool glowEnabled() const { return m_bloom > 0 || m_glowingLine > 0; }
     bool flickerEnabled() const { return m_flickering > 0; }
     bool motionEnabled() const { return m_jitter > 0 || m_horizontalSync > 0; }
+    bool burnInEnabled() const { return m_burnIn > 0; }
+    bool horizontalSyncEnabled() const { return m_horizontalSync > 0; }
+    bool rgbShiftEnabled() const { return m_rgbShift > 0; }
+    bool sheenEnabled() const { return m_glassSheen > 0; }
+
+    // --- Named effect profiles ---------------------------------------------
+    QStringList profileNames() const;
+    QString currentProfile() const { return m_currentProfile; }
+    void setCurrentProfile(const QString& name);   // selection only, no apply
+    Q_INVOKABLE bool profileExists(const QString& name) const;
+    Q_INVOKABLE bool saveProfile(const QString& name);
+    Q_INVOKABLE bool applyProfile(const QString& name);
+    Q_INVOKABLE bool deleteProfile(const QString& name);
 
 public slots:
     // Setters (each emits only on real change).
@@ -109,8 +160,17 @@ public slots:
     void setHorizontalSync(double v);
     void setFlickering(double v);
     void setRgbShift(double v);
+    void setSweep(double v);
+    void setEffectsEnabled(bool on);
     void setRasterization(Rasterization v);
     void setRasterizationIntensity(double v);
+    void setPhosphorEnabled(bool on);
+    void setScanlinePitch(int v);
+    void setGlassSheen(double v);
+    void setScreenRadius(double v);
+    void setScreenInset(double v);
+    void setBloomQuality(double v);
+    void setBurnInQuality(double v);
     void setFontColor(QColor v);
     void setFontSize(int v);
     void setAutosaveIntervalSeconds(int v);
@@ -148,8 +208,19 @@ signals:
     void horizontalSyncChanged();
     void flickeringChanged();
     void rgbShiftChanged();
+    void sweepChanged();
+    void effectsEnabledChanged();
     void rasterizationChanged();
     void rasterizationIntensityChanged();
+    void phosphorEnabledChanged();
+    void scanlinePitchChanged();
+    void glassSheenChanged();
+    void screenRadiusChanged();
+    void screenInsetChanged();
+    void bloomQualityChanged();
+    void burnInQualityChanged();
+    void profilesChanged();
+    void currentProfileChanged();
     void fontColorChanged();
     void fontSizeChanged();
     void autosaveIntervalSecondsChanged();
@@ -160,6 +231,12 @@ signals:
 
 private:
     void resetToDefaults();
+    QVariantMap effectValues() const;
+    void applyEffectValues(const QVariantMap& values);
+    // Coalesced write of the live values (250 ms) so the last chosen effect set
+    // survives an exit that never reaches aboutToQuit (SIGTERM, a crash, a
+    // killed test instance).
+    void scheduleSave();
 
     double m_contrast;
     double m_brightness;
@@ -175,14 +252,31 @@ private:
     double m_horizontalSync;
     double m_flickering;
     double m_rgbShift;
+    double m_sweep;
+    bool m_effectsEnabled;
     Rasterization m_rasterization;
     double m_rasterizationIntensity;
+    bool m_phosphorEnabled;
+    int m_scanlinePitch;
+    double m_glassSheen;
+    double m_screenRadius;
+    double m_screenInset;
+    double m_bloomQuality;
+    double m_burnInQuality;
     QColor m_fontColor;
     int m_fontSize;
     int m_autosaveIntervalSeconds;
     QColor m_backgroundColor;
     bool m_minimapVisible = false;   // off unless the user turned it on
     bool m_showRecentFiles = true;   // the File menu's Recent Files submenu
+    QMap<QString, QVariantMap> m_profiles;   // name -> effect values
+    // Names deleted in THIS instance; a stale instance must not resurrect
+    // them when save() merges profiles written since it loaded.
+    QSet<QString> m_deletedProfiles;
+    QString m_currentProfile;
     QString m_storePath;   // empty => default QSettings location
     double m_savedBrightness = -1.0;   // brightness before applyDevBrightness (>=0 when active)
+
+    QTimer m_saveTimer;
+    bool m_loading = false;
 };

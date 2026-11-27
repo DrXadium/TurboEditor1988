@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QPalette>
 #include <QColor>
+#include <QKeySequence>
 #include <QPainter>
 
 namespace {
@@ -68,6 +69,13 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     m_recentEntry->setObjectName(QStringLiteral("actionFileRecentFiles"));
     m_recentEntry->setText(QStringLiteral("Recent &Files"));
     m_recentEntry->setVisible(false);
+    // Graceful exit (2026-11-26, user request): the File menu's last row.
+    // QCoreApplication::quit() runs the aboutToQuit handlers, which is where
+    // the session snapshot and the CRT settings are persisted.
+    file->addSeparator();
+    QAction* exitAct = added(file, QStringLiteral("E&xit"),
+                             QStringLiteral("actionFileExit"));
+    exitAct->setShortcut(QKeySequence(QKeySequence::Quit));
 
     QMenu* edit = addMenu(QStringLiteral("Edit"));
     // Undo / redo head the menu, as in Kate and Turbo Vision. Both start

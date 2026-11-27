@@ -318,6 +318,22 @@ private slots:
         }
     }
 
+    // 2026-11-26 (user request): File > Exit is the menu's LAST row and quits
+    // through the normal path (aboutToQuit then persists session + settings).
+    void file_menu_offers_exit_as_its_last_row() {
+        ShellWindow w;
+        auto* bar = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(bar, "shell menu bar is not a MenuBar");
+        QMenu* file = bar->menu(QStringLiteral("File"));
+        QVERIFY2(file, "no File menu");
+
+        QAction* exit = bar->findChild<QAction*>(QStringLiteral("actionFileExit"));
+        QVERIFY2(exit, "File menu has no Exit action");
+        QVERIFY2(exit->text().remove(QLatin1Char('&')).startsWith(QLatin1String("Exit")),
+                 qPrintable(QStringLiteral("Exit action text is '%1'").arg(exit->text())));
+        QCOMPARE(file->actions().last(), exit);
+    }
+
     // Undo / Redo belong in the Edit menu above the clipboard block, with the
     // conventional shortcuts, and start DISABLED - a fresh buffer has no
     // history, so offering an enabled Undo would be a lie.

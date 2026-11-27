@@ -144,18 +144,22 @@ inline void tileV(QPainter& p, const QRect& band, int cellH, QChar ch, const QCo
 }
 
 // The whole TV modal frame: \u2554 \u2550 title \u2550 \u2557 across the top,
-// \u2551 down both sides, \u255a \u2550 \u255d along the bottom, all in white.
+// \u2551 down both sides, \u255a \u2550 \u255d along the bottom.
 // The title is centred on a cell boundary and clamped so the corner cells are
 // never eaten; it is drawn in the painter's current font.
+//
+// `ink` defaults to white, which is the editor host's spec-3 chrome. DIALOGS
+// pass black (2026-11-26, Xadium: white trim and titles went illegible once
+// the CRT effects were on - see the TvModal and TvFileDock call sites).
 //
 // Returns false and draws NOTHING when `f` cannot hold a 4x3-cell box: a
 // partial box reads as a broken border, which is worse than none.
 inline bool drawDoubleFrame(QPainter& p, const QRect& f, const QString& title,
-                            int cellW, int cellH)
+                            int cellW, int cellH,
+                            const QColor& ink = QColor(Qt::white))
 {
     if (cellW <= 0 || cellH <= 0 || f.width() < 4 * cellW || f.height() < 3 * cellH)
         return false;
-    const QColor ink(Qt::white);
     const QFontMetrics fm(p.font());
 
     // Top row: \u2554 \u2550 title \u2550 \u2557

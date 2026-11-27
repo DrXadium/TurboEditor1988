@@ -3,6 +3,8 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <algorithm>
 #include "src/AppIdentity.h"
 
@@ -18,13 +20,24 @@ constexpr double kScreenCurvature = 0.0;   // flat viewport by default (user:
 constexpr double kGlowingLine = 0.2;
 constexpr double kBurnIn = 0.25;
 constexpr double kBloom = 0.55;
-constexpr double kChromaColor = 0.25;
-constexpr double kSaturationColor = 0.25;
+// User decision 2026-11-26: keep the UI's own colours by default. Phosphor
+// conversion is opt-in, so chroma and saturation start at 0.
+constexpr double kChromaColor = 0.0;
+constexpr double kSaturationColor = 0.0;
 constexpr double kJitter = 0.2;
 constexpr double kHorizontalSync = 0.08;
 constexpr double kFlickering = 0.1;
 constexpr double kRgbShift = 0.0;
+constexpr double kSweep = 0.0;
 constexpr double kRasterIntensity = 0.22;
+// Four-stage pipeline defaults (2026-11-26 spec).
+constexpr bool kPhosphorEnabled = false;
+constexpr int kScanlinePitch = 2;
+constexpr double kGlassSheen = 0.0;
+constexpr double kScreenRadius = 0.0;
+constexpr double kScreenInset = 0.0;
+constexpr double kBloomQuality = 0.5;
+constexpr double kBurnInQuality = 0.5;
 const auto kFontColor = QColor(QStringLiteral("#ff8100"));
 // TV default editor font (spec: 16px DOS-cell proportions).
 const int kFontSize = 16;
@@ -40,6 +53,50 @@ constexpr auto kScanlineRasterOn = CrtSettings::ScanlineRasterization;
 CrtSettings::CrtSettings(QObject* parent) : QObject(parent)
 {
     resetToDefaults();
+
+    // Persist the live values shortly after any change. The app used to save
+    // only in aboutToQuit, so a SIGTERM (the relaunch script, a killed test
+    // instance) threw the user's last chosen effect set away. Coalescing keeps
+    // a spinner drag to one write, not one per pixel step.
+    m_saveTimer.setSingleShot(true);
+    m_saveTimer.setInterval(250);
+    connect(&m_saveTimer, &QTimer::timeout, this, [this] {
+        if (!m_loading)
+            save();
+    });
+    using Signal = void (CrtSettings::*)();
+    const Signal changed[] = {
+        &CrtSettings::contrastChanged, &CrtSettings::brightnessChanged,
+        &CrtSettings::ambientLightChanged, &CrtSettings::staticNoiseChanged,
+        &CrtSettings::screenCurvatureChanged, &CrtSettings::glowingLineChanged,
+        &CrtSettings::burnInChanged, &CrtSettings::bloomChanged,
+        &CrtSettings::chromaColorChanged, &CrtSettings::saturationColorChanged,
+        &CrtSettings::jitterChanged, &CrtSettings::horizontalSyncChanged,
+        &CrtSettings::flickeringChanged, &CrtSettings::rgbShiftChanged,
+        &CrtSettings::sweepChanged, &CrtSettings::effectsEnabledChanged,
+        &CrtSettings::rasterizationChanged,
+        &CrtSettings::rasterizationIntensityChanged,
+        &CrtSettings::phosphorEnabledChanged, &CrtSettings::scanlinePitchChanged,
+        &CrtSettings::glassSheenChanged, &CrtSettings::screenRadiusChanged,
+        &CrtSettings::screenInsetChanged, &CrtSettings::bloomQualityChanged,
+        &CrtSettings::burnInQualityChanged, &CrtSettings::fontColorChanged,
+        &CrtSettings::fontSizeChanged,
+        &CrtSettings::autosaveIntervalSecondsChanged,
+        &CrtSettings::backgroundColorChanged,
+        &CrtSettings::minimapVisibleChanged, &CrtSettings::showRecentFilesChanged,
+        &CrtSettings::scanlinesEnabledChanged,
+    };
+    for (Signal signal : changed)
+        connect(this, signal, this, &CrtSettings::scheduleSave);
+}
+
+void CrtSettings::scheduleSave()
+{
+    // Dev brightness override is deliberately not persisted; load() also emits
+    // every NOTIFY, and those must not trigger a write.
+    if (m_loading || m_savedBrightness >= 0.0)
+        return;
+    m_saveTimer.start();
 }
 
 void CrtSettings::resetToDefaults()
@@ -58,8 +115,17 @@ void CrtSettings::resetToDefaults()
     m_horizontalSync = kHorizontalSync;
     m_flickering = kFlickering;
     m_rgbShift = kRgbShift;
+    m_sweep = kSweep;
+    m_effectsEnabled = true;
     m_rasterization = ScanlineRasterization;
     m_rasterizationIntensity = kRasterIntensity;
+    m_phosphorEnabled = kPhosphorEnabled;
+    m_scanlinePitch = kScanlinePitch;
+    m_glassSheen = kGlassSheen;
+    m_screenRadius = kScreenRadius;
+    m_screenInset = kScreenInset;
+    m_bloomQuality = kBloomQuality;
+    m_burnInQuality = kBurnInQuality;
     m_fontColor = kFontColor;
     m_fontSize = kFontSize;
     m_autosaveIntervalSeconds = kAutosaveIntervalSeconds;
@@ -96,6 +162,9 @@ CRT_SET(double, Jitter, m_jitter, jitterChanged)
 CRT_SET(double, HorizontalSync, m_horizontalSync, horizontalSyncChanged)
 CRT_SET(double, Flickering, m_flickering, flickeringChanged)
 CRT_SET(double, RgbShift, m_rgbShift, rgbShiftChanged)
+CRT_SET(double, Sweep, m_sweep, sweepChanged)
+CRT_SET(bool, EffectsEnabled, m_effectsEnabled, effectsEnabledChanged)
+CRT_SET(bool, PhosphorEnabled, m_phosphorEnabled, phosphorEnabledChanged)
 CRT_SET(Rasterization, Rasterization, m_rasterization, rasterizationChanged)
 CRT_SET(double, RasterizationIntensity, m_rasterizationIntensity, rasterizationIntensityChanged)
 CRT_SET(QColor, FontColor, m_fontColor, fontColorChanged)
@@ -113,6 +182,60 @@ void CrtSettings::setAutosaveIntervalSeconds(int v)
     emit autosaveIntervalSecondsChanged();
 }
 #undef CRT_SET
+
+void CrtSettings::setScanlinePitch(int v)
+{
+    v = std::clamp(v, 1, 4);
+    if (m_scanlinePitch == v)
+        return;
+    m_scanlinePitch = v;
+    emit scanlinePitchChanged();
+}
+
+void CrtSettings::setGlassSheen(double v)
+{
+    v = std::clamp(v, 0.0, 1.0);
+    if (m_glassSheen == v)
+        return;
+    m_glassSheen = v;
+    emit glassSheenChanged();
+}
+
+void CrtSettings::setScreenRadius(double v)
+{
+    v = std::clamp(v, 0.0, 1.0);
+    if (m_screenRadius == v)
+        return;
+    m_screenRadius = v;
+    emit screenRadiusChanged();
+}
+
+void CrtSettings::setScreenInset(double v)
+{
+    v = std::clamp(v, 0.0, 1.0);
+    if (m_screenInset == v)
+        return;
+    m_screenInset = v;
+    emit screenInsetChanged();
+}
+
+void CrtSettings::setBloomQuality(double v)
+{
+    v = std::clamp(v, 0.1, 1.0);
+    if (m_bloomQuality == v)
+        return;
+    m_bloomQuality = v;
+    emit bloomQualityChanged();
+}
+
+void CrtSettings::setBurnInQuality(double v)
+{
+    v = std::clamp(v, 0.1, 1.0);
+    if (m_burnInQuality == v)
+        return;
+    m_burnInQuality = v;
+    emit burnInQualityChanged();
+}
 
 void CrtSettings::setScanlinesEnabled(bool on)
 {
@@ -155,12 +278,14 @@ QString CrtSettings::storePath() const
 
 bool CrtSettings::load()
 {
+    m_loading = true;
     QSettings s(storePath(), QSettings::IniFormat);
     // Unreadable/corrupt store: report the failure BEFORE touching any member
     // so current values (defaults on a fresh instance) survive intact — and the
     // caller can decide to warn instead of silently dropping saved settings.
     if (s.status() != QSettings::NoError) {
         s.clear();   // clear the sticky error so later saves still work
+        m_loading = false;
         return false;
     }
     s.beginGroup(QStringLiteral("crt"));
@@ -178,9 +303,25 @@ bool CrtSettings::load()
     m_horizontalSync = s.value(QStringLiteral("horizontalSync"), kHorizontalSync).toDouble();
     m_flickering = s.value(QStringLiteral("flickering"), kFlickering).toDouble();
     m_rgbShift = s.value(QStringLiteral("rgbShift"), kRgbShift).toDouble();
+    m_sweep = s.value(QStringLiteral("sweep"), kSweep).toDouble();
+    m_effectsEnabled = s.value(QStringLiteral("effectsEnabled"), true).toBool();
     m_rasterization = static_cast<Rasterization>(
-        s.value(QStringLiteral("rasterization"), ScanlineRasterization).toInt());
+        std::clamp(s.value(QStringLiteral("rasterization"),
+                           int(ScanlineRasterization)).toInt(), 0, 4));
     m_rasterizationIntensity = s.value(QStringLiteral("rasterizationIntensity"), kRasterIntensity).toDouble();
+    m_phosphorEnabled = s.value(QStringLiteral("phosphorEnabled"), kPhosphorEnabled).toBool();
+    m_scanlinePitch = std::clamp(
+        s.value(QStringLiteral("scanlinePitch"), kScanlinePitch).toInt(), 1, 4);
+    m_glassSheen = std::clamp(
+        s.value(QStringLiteral("glassSheen"), kGlassSheen).toDouble(), 0.0, 1.0);
+    m_screenRadius = std::clamp(
+        s.value(QStringLiteral("screenRadius"), kScreenRadius).toDouble(), 0.0, 1.0);
+    m_screenInset = std::clamp(
+        s.value(QStringLiteral("screenInset"), kScreenInset).toDouble(), 0.0, 1.0);
+    m_bloomQuality = std::clamp(
+        s.value(QStringLiteral("bloomQuality"), kBloomQuality).toDouble(), 0.1, 1.0);
+    m_burnInQuality = std::clamp(
+        s.value(QStringLiteral("burnInQuality"), kBurnInQuality).toDouble(), 0.1, 1.0);
     m_fontColor = s.value(QStringLiteral("fontColor"), kFontColor).value<QColor>();
     m_fontSize = s.value(QStringLiteral("fontSize"), kFontSize).toInt();
     m_autosaveIntervalSeconds = std::clamp(
@@ -190,6 +331,27 @@ bool CrtSettings::load()
     m_backgroundColor = s.value(QStringLiteral("backgroundColor"), kBackgroundColor).value<QColor>();
     m_minimapVisible = s.value(QStringLiteral("minimapVisible"), false).toBool();
     m_showRecentFiles = s.value(QStringLiteral("showRecentFiles"), true).toBool();
+
+    // Named profiles are one JSON object so arbitrary (slash-containing) names
+    // never collide with QSettings' hierarchical key syntax.
+    m_profiles.clear();
+    m_deletedProfiles.clear();
+    const QString profilesJson = s.value(QStringLiteral("profiles")).toString();
+    if (!profilesJson.isEmpty()) {
+        QJsonParseError err {};
+        const QJsonDocument doc =
+            QJsonDocument::fromJson(profilesJson.toUtf8(), &err);
+        if (err.error == QJsonParseError::NoError && doc.isObject()) {
+            const QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                if (it.value().isObject())
+                    m_profiles.insert(it.key(), it.value().toObject().toVariantMap());
+            }
+        }
+    }
+    m_currentProfile = s.value(QStringLiteral("currentProfile")).toString();
+    if (!m_profiles.contains(m_currentProfile))
+        m_currentProfile.clear();
     s.endGroup();
 
     // Notify all listeners of the bulk reload (values likely changed).
@@ -207,14 +369,26 @@ bool CrtSettings::load()
     emit horizontalSyncChanged();
     emit flickeringChanged();
     emit rgbShiftChanged();
+    emit sweepChanged();
+    emit effectsEnabledChanged();
     emit rasterizationChanged();
     emit rasterizationIntensityChanged();
+    emit phosphorEnabledChanged();
+    emit scanlinePitchChanged();
+    emit glassSheenChanged();
+    emit screenRadiusChanged();
+    emit screenInsetChanged();
+    emit bloomQualityChanged();
+    emit burnInQualityChanged();
+    emit profilesChanged();
+    emit currentProfileChanged();
     emit fontColorChanged();
     emit fontSizeChanged();
     emit autosaveIntervalSecondsChanged();
     emit backgroundColorChanged();
     emit minimapVisibleChanged();
     emit scanlinesEnabledChanged();
+    m_loading = false;
     return true;
 }
 
@@ -251,15 +425,212 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("horizontalSync"), m_horizontalSync);
     s.setValue(QStringLiteral("flickering"), m_flickering);
     s.setValue(QStringLiteral("rgbShift"), m_rgbShift);
+    s.setValue(QStringLiteral("sweep"), m_sweep);
+    s.setValue(QStringLiteral("effectsEnabled"), m_effectsEnabled);
     s.setValue(QStringLiteral("rasterization"), static_cast<int>(m_rasterization));
     s.setValue(QStringLiteral("rasterizationIntensity"), m_rasterizationIntensity);
+    s.setValue(QStringLiteral("phosphorEnabled"), m_phosphorEnabled);
+    s.setValue(QStringLiteral("scanlinePitch"), m_scanlinePitch);
+    s.setValue(QStringLiteral("glassSheen"), m_glassSheen);
+    s.setValue(QStringLiteral("screenRadius"), m_screenRadius);
+    s.setValue(QStringLiteral("screenInset"), m_screenInset);
+    s.setValue(QStringLiteral("bloomQuality"), m_bloomQuality);
+    s.setValue(QStringLiteral("burnInQuality"), m_burnInQuality);
     s.setValue(QStringLiteral("fontColor"), m_fontColor);
     s.setValue(QStringLiteral("fontSize"), m_fontSize);
     s.setValue(QStringLiteral("autosaveIntervalSeconds"), m_autosaveIntervalSeconds);
     s.setValue(QStringLiteral("backgroundColor"), m_backgroundColor);
     s.setValue(QStringLiteral("minimapVisible"), m_minimapVisible);
     s.setValue(QStringLiteral("showRecentFiles"), m_showRecentFiles);
+
+    // Merge profiles written by another instance since this one loaded: a
+    // stale instance (a second window, a dev probe, a slow quit) must not
+    // erase a profile the user just saved elsewhere. Names deleted in this
+    // instance are honoured and stay gone.
+    const QString onDiskJson = s.value(QStringLiteral("profiles")).toString();
+    if (!onDiskJson.isEmpty()) {
+        QJsonParseError err {};
+        const QJsonDocument doc = QJsonDocument::fromJson(onDiskJson.toUtf8(), &err);
+        if (err.error == QJsonParseError::NoError && doc.isObject()) {
+            const QJsonObject onDisk = doc.object();
+            for (auto it = onDisk.begin(); it != onDisk.end(); ++it) {
+                if (!it.value().isObject())
+                    continue;
+                if (m_profiles.contains(it.key()) || m_deletedProfiles.contains(it.key()))
+                    continue;
+                m_profiles.insert(it.key(), it.value().toObject().toVariantMap());
+            }
+        }
+    }
+
+    QJsonObject profilesObj;
+    for (auto it = m_profiles.cbegin(); it != m_profiles.cend(); ++it)
+        profilesObj.insert(it.key(), QJsonObject::fromVariantMap(it.value()));
+    s.setValue(QStringLiteral("profiles"),
+               QString::fromUtf8(QJsonDocument(profilesObj).toJson(QJsonDocument::Compact)));
+    s.setValue(QStringLiteral("currentProfile"), m_currentProfile);
     s.endGroup();
     s.sync();
     return s.status() == QSettings::NoError;
+}
+
+// --- Named effect profiles ---------------------------------------------------
+
+QVariantMap CrtSettings::effectValues() const
+{
+    QVariantMap values;
+    values.insert(QStringLiteral("contrast"), m_contrast);
+    values.insert(QStringLiteral("brightness"), m_brightness);
+    values.insert(QStringLiteral("ambientLight"), m_ambientLight);
+    values.insert(QStringLiteral("staticNoise"), m_staticNoise);
+    values.insert(QStringLiteral("screenCurvature"), m_screenCurvature);
+    values.insert(QStringLiteral("glowingLine"), m_glowingLine);
+    values.insert(QStringLiteral("burnIn"), m_burnIn);
+    values.insert(QStringLiteral("bloom"), m_bloom);
+    values.insert(QStringLiteral("chromaColor"), m_chromaColor);
+    values.insert(QStringLiteral("saturationColor"), m_saturationColor);
+    values.insert(QStringLiteral("jitter"), m_jitter);
+    values.insert(QStringLiteral("horizontalSync"), m_horizontalSync);
+    values.insert(QStringLiteral("flickering"), m_flickering);
+    values.insert(QStringLiteral("rgbShift"), m_rgbShift);
+    values.insert(QStringLiteral("sweep"), m_sweep);
+    values.insert(QStringLiteral("rasterization"), static_cast<int>(m_rasterization));
+    values.insert(QStringLiteral("rasterizationIntensity"), m_rasterizationIntensity);
+    values.insert(QStringLiteral("phosphorEnabled"), m_phosphorEnabled);
+    values.insert(QStringLiteral("scanlinePitch"), m_scanlinePitch);
+    values.insert(QStringLiteral("glassSheen"), m_glassSheen);
+    values.insert(QStringLiteral("screenRadius"), m_screenRadius);
+    values.insert(QStringLiteral("screenInset"), m_screenInset);
+    values.insert(QStringLiteral("bloomQuality"), m_bloomQuality);
+    values.insert(QStringLiteral("burnInQuality"), m_burnInQuality);
+    values.insert(QStringLiteral("fontColor"), m_fontColor.name(QColor::HexArgb));
+    values.insert(QStringLiteral("backgroundColor"),
+                  m_backgroundColor.name(QColor::HexArgb));
+    return values;
+}
+
+void CrtSettings::applyEffectValues(const QVariantMap& values)
+{
+    const auto dbl = [&values](const QString& key, double current) {
+        return values.contains(key) ? values.value(key).toDouble() : current;
+    };
+    const auto integer = [&values](const QString& key, int current) {
+        return values.contains(key) ? values.value(key).toInt() : current;
+    };
+    const auto flag = [&values](const QString& key, bool current) {
+        return values.contains(key) ? values.value(key).toBool() : current;
+    };
+
+    setContrast(dbl(QStringLiteral("contrast"), m_contrast));
+    setBrightness(dbl(QStringLiteral("brightness"), m_brightness));
+    setAmbientLight(dbl(QStringLiteral("ambientLight"), m_ambientLight));
+    setStaticNoise(dbl(QStringLiteral("staticNoise"), m_staticNoise));
+    setScreenCurvature(dbl(QStringLiteral("screenCurvature"), m_screenCurvature));
+    setGlowingLine(dbl(QStringLiteral("glowingLine"), m_glowingLine));
+    setBurnIn(dbl(QStringLiteral("burnIn"), m_burnIn));
+    setBloom(dbl(QStringLiteral("bloom"), m_bloom));
+    setChromaColor(dbl(QStringLiteral("chromaColor"), m_chromaColor));
+    setSaturationColor(dbl(QStringLiteral("saturationColor"), m_saturationColor));
+    setJitter(dbl(QStringLiteral("jitter"), m_jitter));
+    setHorizontalSync(dbl(QStringLiteral("horizontalSync"), m_horizontalSync));
+    setFlickering(dbl(QStringLiteral("flickering"), m_flickering));
+    setRgbShift(dbl(QStringLiteral("rgbShift"), m_rgbShift));
+    setSweep(dbl(QStringLiteral("sweep"), m_sweep));
+    setRasterization(static_cast<Rasterization>(
+        std::clamp(integer(QStringLiteral("rasterization"),
+                           static_cast<int>(m_rasterization)), 0, 4)));
+    setRasterizationIntensity(
+        dbl(QStringLiteral("rasterizationIntensity"), m_rasterizationIntensity));
+    setPhosphorEnabled(flag(QStringLiteral("phosphorEnabled"), m_phosphorEnabled));
+    setScanlinePitch(integer(QStringLiteral("scanlinePitch"), m_scanlinePitch));
+    setGlassSheen(dbl(QStringLiteral("glassSheen"), m_glassSheen));
+    setScreenRadius(dbl(QStringLiteral("screenRadius"), m_screenRadius));
+    setScreenInset(dbl(QStringLiteral("screenInset"), m_screenInset));
+    setBloomQuality(dbl(QStringLiteral("bloomQuality"), m_bloomQuality));
+    setBurnInQuality(dbl(QStringLiteral("burnInQuality"), m_burnInQuality));
+    if (values.contains(QStringLiteral("fontColor"))) {
+        const QColor colour(values.value(QStringLiteral("fontColor")).toString());
+        if (colour.isValid())
+            setFontColor(colour);
+    }
+    if (values.contains(QStringLiteral("backgroundColor"))) {
+        const QColor colour(values.value(QStringLiteral("backgroundColor")).toString());
+        if (colour.isValid())
+            setBackgroundColor(colour);
+    }
+}
+
+QStringList CrtSettings::profileNames() const
+{
+    QStringList names = m_profiles.keys();
+    std::sort(names.begin(), names.end(), [](const QString& a, const QString& b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return names;
+}
+
+bool CrtSettings::profileExists(const QString& name) const
+{
+    return m_profiles.contains(name.trimmed());
+}
+
+void CrtSettings::setCurrentProfile(const QString& name)
+{
+    const QString trimmed = name.trimmed();
+    if (!trimmed.isEmpty() && !m_profiles.contains(trimmed))
+        return;
+    if (m_currentProfile == trimmed)
+        return;
+    m_currentProfile = trimmed;
+    emit currentProfileChanged();
+}
+
+bool CrtSettings::saveProfile(const QString& name)
+{
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    m_profiles.insert(trimmed, effectValues());
+    m_deletedProfiles.remove(trimmed);
+    const bool selectionChanged = m_currentProfile != trimmed;
+    m_currentProfile = trimmed;
+    emit profilesChanged();
+    if (selectionChanged)
+        emit currentProfileChanged();
+    save();   // an explicit profile action persists immediately
+    return true;
+}
+
+bool CrtSettings::applyProfile(const QString& name)
+{
+    const QString trimmed = name.trimmed();
+    const auto it = m_profiles.constFind(trimmed);
+    if (it == m_profiles.constEnd())
+        return false;
+
+    applyEffectValues(it.value());
+    const bool selectionChanged = m_currentProfile != trimmed;
+    m_currentProfile = trimmed;
+    if (selectionChanged)
+        emit currentProfileChanged();
+    save();   // remember which profile the user selected
+    return true;
+}
+
+bool CrtSettings::deleteProfile(const QString& name)
+{
+    const QString trimmed = name.trimmed();
+    if (m_profiles.remove(trimmed) == 0)
+        return false;
+    m_deletedProfiles.insert(trimmed);
+
+    const bool selectionCleared = m_currentProfile == trimmed;
+    if (selectionCleared)
+        m_currentProfile.clear();
+    emit profilesChanged();
+    if (selectionCleared)
+        emit currentProfileChanged();
+    save();
+    return true;
 }

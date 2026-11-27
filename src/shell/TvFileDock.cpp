@@ -975,19 +975,21 @@ void TvFileDock::paintEvent(QPaintEvent*)
 
     // The OK / Cancel plates own their block shadows and their press
     // travel (TvPlate paints both), so this pass draws none of them.
-    // White double-line frame with the title in the top row (shared with
-    // every other TV modal - see TvFrame::drawDoubleFrame).
+    // Double-line frame with the title in the top row (shared with every
+    // other TV modal - see TvFrame::drawDoubleFrame). Black ink: 2026-11-26,
+    // Xadium - white trim was illegible with the CRT effects on.
     if (!TvFrame::drawDoubleFrame(p, m_frameRect,
                                   m_title.isEmpty() ? QStringLiteral("File") : m_title,
-                                  cw, ch))
+                                  cw, ch, kBlack))
         return;
 
-    // Yellow labels.
+    // Section labels, black on the grey panel (was yellow: illegible with
+    // the effects on).
     QFont inkFont = font();
     inkFont.setStyleStrategy(QFont::NoAntialias);
     p.save();
     p.setFont(inkFont);
-    p.setPen(kYellow);
+    p.setPen(kBlack);
     p.drawText(m_pathLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Path"));
     p.drawText(m_placesLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Places"));
     p.drawText(m_filesLabelRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Files"));

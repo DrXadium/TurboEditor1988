@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QString>
 #include <QRect>
+#include <QColor>
 
 // A Turbo Vision checkbox: a bracketed box followed by the label, drawn the way
 // the style engine cannot - the box is the frame's own double rule and the
@@ -17,6 +18,10 @@ public:
     bool isChecked() const { return m_checked; }
     void setChecked(bool on);
     QString text() const { return m_text; }
+    // Label ink. Default yellow: most option rows sit on the TV-blue field.
+    // On a grey modal panel (Modify Start/End of Line) the caller sets black.
+    QColor ink() const { return m_ink; }
+    void setInk(const QColor& ink);
 
     QRect boxRect() const { return m_boxRect; }
     QSize sizeHint() const override;
@@ -36,4 +41,5 @@ private:
     QString m_text;
     bool m_checked = false;
     QRect m_boxRect;
+    QColor m_ink{0xFF, 0xFF, 0x55};
 };
