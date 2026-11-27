@@ -26,9 +26,9 @@ echo "== [1/4] configure + build + install (prefix /usr, DESTDIR staging)"
 # machine (home directory, project path) is left in the shipped ELF.
 BLD="$ROOT/build-release"
 PREFIX_FLAGS=(
-  -ffile-prefix-map:"$ROOT"=.
-  -fdebug-prefix-map:"$ROOT"=.
-  -gno-record-gcc-switches
+  "-ffile-prefix-map=$ROOT=."
+  "-fdebug-prefix-map=$ROOT=."
+  "-gno-record-gcc-switches"
 )
 cmake -B "$BLD" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="${PREFIX_FLAGS[*]}" \
