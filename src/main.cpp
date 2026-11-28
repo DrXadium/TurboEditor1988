@@ -21,6 +21,8 @@
 #include <QQuickItem>
 #include <QtQuick/qquickitemgrabresult.h>
 #include <QTimer>
+#include <QProcess>
+#include <QUrl>
 #include <QFile>
 #include <KTextEditor/View>
 #include <memory>
@@ -45,6 +47,8 @@
 #include "src/settings/CrtSettings.h"
 #include "src/settings/SettingsDialog.h"
 #include "src/shell/AboutModal.h"
+#include "src/update/UpdateChecker.h"
+#include "src/update/UpdateRunner.h"
 #include "src/shell/ColorPickerModal.h"
 #include "src/editor/SwatchApply.h"
 #include "src/shell/HexColorScan.h"
@@ -707,6 +711,27 @@ int main(int argc, char** argv)
     auto* registrar = new PopupRegistrar(&bridge, &app);
     app.installEventFilter(registrar);
 
+    // Auto-update (2026-11-27): check GitHub for a newer release once, ~1s
+    // after launch, without blocking startup. If one exists it is stashed so
+    // Help > About can offer the one-click swap (only from an AppImage run).
+    UpdateChecker updateChecker;
+    struct AvailableUpdate {
+        bool present = false;
+        QString version;
+        QUrl appImage;
+        QUrl sha256;
+    };
+    auto availableUpdate = std::make_shared<AvailableUpdate>();
+    QTimer::singleShot(1000, &app, [&updateChecker]() { updateChecker.check(); });
+    QObject::connect(&updateChecker, &UpdateChecker::updateAvailable, &app,
+                     [availableUpdate](const QString& v, const QUrl& img,
+                                       const QUrl& sha, const QString&) {
+                         availableUpdate->present = true;
+                         availableUpdate->version = v;
+                         availableUpdate->appImage = img;
+                         availableUpdate->sha256 = sha;
+                     });
+
     // CRT settings (QSettings-backed single source of truth for effect knobs).
     // Loaded at startup; persisted on quit so the dialog's changes survive restart.
     CrtSettings crtSettings;
@@ -1046,8 +1071,29 @@ int main(int argc, char** argv)
 
         // Help. About is a house-style modal child of the shell, not a
         // QMessageBox: a native window would land outside the CRT pass.
-        on(act("actionHelpAbout"), [&shell] {
+        on(act("actionHelpAbout"), [&shell, &app, availableUpdate] {
             AboutModal about;
+            if (availableUpdate->present)
+                about.setAvailableUpdate(availableUpdate->version,
+                                         availableUpdate->appImage,
+                                         availableUpdate->sha256);
+            // One-click update: download + verify + swap via the detached
+            // helper, then quit so the helper can replace the running file.
+            about.setUpdateTrigger([&app](const QString& img, const QString& sha) {
+                auto* runner = new UpdateRunner(&app);
+                QObject::connect(runner, &UpdateRunner::failed, runner,
+                                 [runner](const QString& why) {
+                                     qWarning("update failed: %s", qPrintable(why));
+                                     runner->deleteLater();
+                                 });
+                QObject::connect(runner, &UpdateRunner::swapAndRestart, &app,
+                                 [&app](const QString& helper, const QStringList& args) {
+                                     if (!QProcess::startDetached(helper, args))
+                                         qWarning("update: could not launch helper");
+                                     QCoreApplication::quit();
+                                 });
+                runner->start(QUrl(img), QUrl(sha));
+            });
             TvModal::exec(&shell, &about);
         });
 

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "AboutModal.h"
 #include "src/AppIdentity.h"
+#include "src/update/UpdateRunner.h"
 
 #include <QLabel>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 AboutModal::AboutModal(QWidget* parent)
@@ -39,4 +41,43 @@ AboutModal::AboutModal(QWidget* parent)
 
     setBody(body);
     addButton(tr("OK"), Accept);
+}
+
+void AboutModal::setAvailableUpdate(const QString& version, const QUrl& appImageUrl,
+                                    const QUrl& sha256Url)
+{
+    m_appImageUrl = appImageUrl;
+    m_sha256Url = sha256Url;
+
+    auto* body = this->body();
+    auto* layout = qobject_cast<QVBoxLayout*>(body->layout());
+    if (!layout)
+        return;
+
+    if (!m_updateLine) {
+        m_updateLine = new QLabel(body);
+        m_updateLine->setObjectName(QStringLiteral("tvAboutUpdateLine"));
+        m_updateLine->setTextFormat(Qt::PlainText);
+        m_updateLine->setWordWrap(true);
+        // BLACK ink on the grey panel, like the About body text.
+        m_updateLine->setStyleSheet(
+            QStringLiteral("color: #000000; background: transparent; font-weight: bold;"));
+        // Insert above the trailing stretch so it sits under the body text.
+        layout->insertWidget(layout->count() - 1, m_updateLine);
+    }
+    m_updateLine->setText(tr("A new version, %1, is available.").arg(version));
+
+    // The swap plate only exists when there is a file to swap (AppImage run).
+    if (!m_updateButton && UpdateRunner::isAppImageRun()) {
+        m_updateButton = addActionButton(tr("Update now"));
+        connect(m_updateButton, &QPushButton::clicked, this, [this]() {
+            if (m_updateTrigger)
+                m_updateTrigger(m_appImageUrl.toString(), m_sha256Url.toString());
+        });
+    }
+}
+
+void AboutModal::setUpdateTrigger(UpdateTrigger trigger)
+{
+    m_updateTrigger = std::move(trigger);
 }

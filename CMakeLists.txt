@@ -68,6 +68,13 @@ add_library(crt-shell STATIC
   src/shell/BorlandStyle.h
   src/shell/MenuBar.cpp
   src/shell/MenuBar.h
+  # Auto-update (2026-11-27): AboutModal gates its "Update now" plate on
+  # UpdateRunner::isAppImageRun(), so crt-shell owns the update runner + its
+  # checksum dependency (every crt-shell consumer resolves the symbol).
+  src/update/UpdateRunner.cpp
+  src/update/UpdateRunner.h
+  src/update/Checksum.cpp
+  src/update/Checksum.h
   src/shell/TabStrip.cpp
   src/shell/TabStrip.h
   src/shell/TabListMenu.cpp
@@ -117,7 +124,7 @@ add_library(crt-shell STATIC
   fonts/fonts.qrc
 )
 target_include_directories(crt-shell PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(crt-shell PUBLIC Qt6::Gui Qt6::Widgets)
+target_link_libraries(crt-shell PUBLIC Qt6::Gui Qt6::Widgets Qt6::Network)
 target_link_libraries(crt-shell PUBLIC KF6::SonnetCore)
 qt_add_resources(crt-shell "shell_qss"
     PREFIX "/"
@@ -474,6 +481,18 @@ qt_add_resources(tst_updaterunner "update_helper_res"
 )
 add_test(NAME tst_updaterunner COMMAND tst_updaterunner)
 
+# Auto-update (2026-11-27): About box update affordance. UpdateRunner/Checksum
+# come from crt-shell (AboutModal's dependency); no direct compilation here.
+add_executable(tst_aboutupdate tests/tst_aboutupdate.cpp)
+target_include_directories(tst_aboutupdate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_aboutupdate PRIVATE crt-shell Qt6::Test Qt6::Widgets Qt6::Network)
+qt_add_resources(tst_aboutupdate "update_helper_res2"
+  PREFIX "/update"
+  BASE ${CMAKE_CURRENT_SOURCE_DIR}/src/update
+  FILES src/update/turbo-kate-update.sh
+)
+add_test(NAME tst_aboutupdate COMMAND tst_aboutupdate)
+
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the
 # recents dropdown. ctest -R tst_recents
 add_executable(tst_recents tests/tst_recents.cpp)
@@ -509,9 +528,22 @@ add_test(NAME tst_syntax COMMAND tst_syntax)
 # Task 6: the app entry point (ShellWindow + ContentBridge + EffectChain QML).
 # Renamed crt-kate -> turbo-kate (user-facing name is TURBO Kate). The installed
 # QML layout stays share/crt-kate so the runtime lookup is untouched.
-add_executable(turbo-kate src/main.cpp)
+add_executable(turbo-kate src/main.cpp
+  src/update/UpdateChecker.cpp
+  src/update/VersionCompare.cpp
+)
+# UpdateRunner/Checksum come from crt-shell (AboutModal depends on them);
+# only the checker + version-compare are app-level here.
 target_link_libraries(turbo-kate PRIVATE
-  crt-bridge crt-editor crt-settings crt-session crt-autosave Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools
+  crt-bridge crt-editor crt-settings crt-session crt-autosave Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick Qt6::OpenGL Qt6::ShaderTools Qt6::Network
+)
+# The swap helper ships inside the binary as a qrc resource; UpdateRunner
+# extracts it to a temp dir at update time (it cannot live inside the AppImage
+# it is replacing).
+qt_add_resources(turbo-kate "update_helper"
+  PREFIX "/update"
+  BASE ${CMAKE_CURRENT_SOURCE_DIR}/src/update
+  FILES src/update/turbo-kate-update.sh
 )
 target_compile_definitions(turbo-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
