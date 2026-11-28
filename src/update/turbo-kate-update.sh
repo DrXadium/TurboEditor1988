@@ -48,4 +48,10 @@ fi
 chmod +x "$target" 2>/dev/null
 rm -f "$bak"
 
+# Test seam: skip the relaunch so a fixture (a fake AppImage that isn't a real
+# executable) isn't exec'd; production always relaunches.
+if [ "${CRT_KATE_UPDATE_NO_RELAUNCH:-0}" = "1" ]; then
+    exit 0
+fi
+
 exec "$target"

@@ -469,6 +469,12 @@ target_include_directories(tst_checksum PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tst_checksum PRIVATE Qt6::Test Qt6::Core)
 add_test(NAME tst_checksum COMMAND tst_checksum)
 
+# Auto-update (2026-11-27): the real swap helper driven against scratch files.
+add_executable(tst_updatehelper tests/tst_updatehelper.cpp src/update/Checksum.cpp)
+target_include_directories(tst_updatehelper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_updatehelper PRIVATE Qt6::Test Qt6::Core)
+add_test(NAME tst_updatehelper COMMAND tst_updatehelper)
+
 # Auto-update (2026-11-27): verified download + deferred swap helper.
 add_executable(tst_updaterunner tests/tst_updaterunner.cpp
   src/update/UpdateRunner.cpp src/update/Checksum.cpp)
