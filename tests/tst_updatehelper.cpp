@@ -76,6 +76,8 @@ private slots:
         QCOMPARE(readFile(target), QByteArrayLiteral("NEW"));
         QVERIFY2(!QFile::exists(target + QStringLiteral(".bak")),
                  ".bak left behind after a successful swap");
+        QVERIFY2(!QFile::exists(target + QStringLiteral(".new")),
+                 "staging file left behind after a successful swap");
         QVERIFY2(!QFile::exists(newimg), "new image not consumed");
     }
 

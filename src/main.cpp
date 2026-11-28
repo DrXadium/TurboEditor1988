@@ -23,6 +23,7 @@
 #include <QTimer>
 #include <QProcess>
 #include <QUrl>
+#include <QPointer>
 #include <QFile>
 #include <KTextEditor/View>
 #include <memory>
@@ -1078,18 +1079,32 @@ int main(int argc, char** argv)
                                          availableUpdate->appImage,
                                          availableUpdate->sha256);
             // One-click update: download + verify + swap via the detached
-            // helper, then quit so the helper can replace the running file.
-            about.setUpdateTrigger([&app](const QString& img, const QString& sha) {
+            // helper, then close this modal and quit so the helper can replace
+            // the running file. The trigger outlives the modal if the user
+            // dismisses it mid-download, so guard every callback with QPointer.
+            QPointer<AboutModal> guard(&about);
+            about.setUpdateTrigger([&app, guard](const QString& img, const QString& sha) {
                 auto* runner = new UpdateRunner(&app);
-                QObject::connect(runner, &UpdateRunner::failed, runner,
-                                 [runner](const QString& why) {
-                                     qWarning("update failed: %s", qPrintable(why));
+                QObject::connect(runner, &UpdateRunner::failed, &app,
+                                 [runner, guard](const QString& why) {
+                                     if (guard)
+                                         guard->setUpdateError(why);
                                      runner->deleteLater();
                                  });
                 QObject::connect(runner, &UpdateRunner::swapAndRestart, &app,
-                                 [&app](const QString& helper, const QStringList& args) {
-                                     if (!QProcess::startDetached(helper, args))
-                                         qWarning("update: could not launch helper");
+                                 [&app, guard](const QString& helper, const QStringList& args) {
+                                     if (!QProcess::startDetached(helper, args)) {
+                                         if (guard)
+                                             guard->setUpdateError(
+                                                 QObject::tr("could not launch the updater"));
+                                         return;
+                                     }
+                                     // TvModal::exec runs a nested QEventLoop, so
+                                     // quit() alone would leave the box up and
+                                     // the helper waiting on a live PID: close
+                                     // the modal first, then quit the app.
+                                     if (guard)
+                                         guard->accept();
                                      QCoreApplication::quit();
                                  });
                 runner->start(QUrl(img), QUrl(sha));

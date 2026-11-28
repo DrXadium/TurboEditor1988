@@ -27,8 +27,15 @@ public:
                                              const QString& sha256Url)>;
     void setUpdateTrigger(UpdateTrigger trigger);
 
+    // Spec §136-138: the plate is disabled while a download/verify runs (a
+    // second click must not start a second download), and re-enabled with a
+    // visible error line when the update fails.
+    void setUpdateBusy(bool busy);
+    void setUpdateError(const QString& message);
+
 private:
     QLabel* m_updateLine = nullptr;
+    QLabel* m_updateError = nullptr;
     QPushButton* m_updateButton = nullptr;
     UpdateTrigger m_updateTrigger;
     QUrl m_appImageUrl;

@@ -27,6 +27,14 @@ QLabel* findUpdateLine(AboutModal& m)
     }
     return nullptr;
 }
+QLabel* findErrorLabel(AboutModal& m)
+{
+    for (QLabel* l : m.findChildren<QLabel*>()) {
+        if (l->objectName() == QLatin1String("tvAboutUpdateError"))
+            return l;
+    }
+    return nullptr;
+}
 } // namespace
 
 class TstAboutupdate : public QObject
@@ -73,6 +81,62 @@ private slots:
         QPushButton* b = findUpdateButton(m);
         QVERIFY2(b, "Update now button missing in an AppImage run");
         QVERIFY(b->isEnabled());
+    }
+
+    // Spec §136-138: disable while running; re-enable + show an error line on
+    // failure. A double click must not start two downloads either.
+    void clicking_update_disables_the_button()
+    {
+        const QByteArray saved = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", QByteArrayLiteral("/tmp/fake.AppImage"));
+        auto restore = qScopeGuard([saved]() {
+            if (saved.isEmpty())
+                qunsetenv("APPIMAGE");
+            else
+                qputenv("APPIMAGE", saved);
+        });
+
+        AboutModal m;
+        m.setAvailableUpdate(QStringLiteral("9.9.9"), QUrl(QStringLiteral("http://x/a")),
+                             QUrl(QStringLiteral("http://x/s")));
+        int fired = 0;
+        m.setUpdateTrigger([&fired](const QString&, const QString&) { ++fired; });
+
+        QPushButton* b = findUpdateButton(m);
+        QVERIFY(b);
+        QVERIFY(b->isEnabled());
+        b->click();
+        QCOMPARE(fired, 1);
+        QVERIFY2(!b->isEnabled(), "button stayed enabled during the update");
+        b->click();                       // second click must be a no-op
+        QCOMPARE(fired, 1);
+    }
+
+    void update_error_reenables_and_shows_message()
+    {
+        const QByteArray saved = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", QByteArrayLiteral("/tmp/fake.AppImage"));
+        auto restore = qScopeGuard([saved]() {
+            if (saved.isEmpty())
+                qunsetenv("APPIMAGE");
+            else
+                qputenv("APPIMAGE", saved);
+        });
+
+        AboutModal m;
+        m.setAvailableUpdate(QStringLiteral("9.9.9"), QUrl(QStringLiteral("http://x/a")),
+                             QUrl(QStringLiteral("http://x/s")));
+        QPushButton* b = findUpdateButton(m);
+        QVERIFY(b);
+        b->click();
+        QVERIFY(!b->isEnabled());
+
+        m.setUpdateError(QStringLiteral("checksum mismatch"));
+        QVERIFY2(b->isEnabled(), "button not re-enabled after a failure");
+        QLabel* err = findErrorLabel(m);
+        QVERIFY2(err, "no error line shown");
+        QVERIFY2(err->text().contains(QLatin1String("checksum mismatch")),
+                 qPrintable(err->text()));
     }
 };
 

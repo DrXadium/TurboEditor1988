@@ -32,16 +32,38 @@ if [ -z "$gotsha" ] || [ "$gotsha" != "$wantsha" ]; then
     exit 2
 fi
 
+# Stage the new image NEXT TO the target. $newimg lives in $TMPDIR, usually a
+# different filesystem: `mv` from there is a non-atomic copy+unlink that could
+# leave a half-written target if it fails. A copy into the target's own
+# directory makes the final swap a same-directory rename (atomic).
+staged="$target.new"
+rm -f "$staged"
+if ! cp "$newimg" "$staged" 2>/dev/null; then
+    rm -f "$staged"
+    echo "update: could not stage the new AppImage" >&2
+    rm -f "$newimg"
+    exit 5
+fi
+# Verify the STAGED copy: guards a truncated or failed copy.
+stagedsha="$(sha256sum "$staged" 2>/dev/null | awk '{print $1}')"
+if [ -z "$stagedsha" ] || [ "$stagedsha" != "$wantsha" ]; then
+    rm -f "$staged" "$newimg"
+    echo "update: staged copy failed verification" >&2
+    exit 6
+fi
+rm -f "$newimg"
+
 bak="$target.bak"
 rm -f "$bak"
 if ! mv "$target" "$bak"; then
     echo "update: could not move old AppImage aside" >&2
-    rm -f "$newimg"
+    rm -f "$staged"
     exit 3
 fi
-if ! mv "$newimg" "$target"; then
+if ! mv "$staged" "$target"; then
     # Roll back: put the old app exactly where it was.
     mv "$bak" "$target" 2>/dev/null
+    rm -f "$staged"
     echo "update: could not move new AppImage into place" >&2
     exit 4
 fi
