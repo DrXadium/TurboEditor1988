@@ -15,6 +15,8 @@
 #include <QFile>
 #include <QSignalSpy>
 #include <QDebug>
+#include <QClipboard>
+#include <QMenu>
 #include "src/shell/ShellWindow.h"
 #include "src/shell/TvFileDock.h"
 #include "src/shell/TvLineEdit.h"
@@ -1446,6 +1448,115 @@ private slots:
         QVERIFY(dock.files().contains(QStringLiteral("in-c.txt")));
 
         dock.reject();
+    }
+
+    // --- Crash: pasting a full path into the name field (2026-11-27) --------
+    //
+    // Reported live: paste "/var/home/.../WWW/backrooms/irc.html" into the
+    // File name box and the app dies. The field is a TvLineEdit (custom caret,
+    // synthetic key routing from the CRT bridge), so this pins the whole
+    // paste-then-accept path.
+    void pasting_an_absolute_path_into_the_name_field_does_not_crash()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString file = dir.filePath(QStringLiteral("irc.html"));
+        {
+            QFile f(file);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("<html></html>");
+        }
+
+        TvFileDock dock;
+        dock.setDirectory(QDir::tempPath());
+        dock.resize(700, 500);
+        dock.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dock));
+        QCoreApplication::processEvents();
+
+        auto* edit = dock.findChild<TvLineEdit*>(QStringLiteral("tvFileDockEdit"));
+        QVERIFY2(edit, "the name field is missing");
+        edit->setFocus();
+
+        QGuiApplication::clipboard()->setText(file);
+        QTest::keyClick(edit, Qt::Key_V, Qt::ControlModifier);
+        QCoreApplication::processEvents();
+        QCOMPARE(edit->text(), file);
+
+        // The accept path must survive an absolute path too.
+        QTest::keyClick(edit, Qt::Key_Return);
+        QCoreApplication::processEvents();
+        QVERIFY2(!dock.isVisible(), "the dock did not close on an absolute path");
+
+        dock.reject();
+    }
+
+    // --- Right-click a dialog field -> paste menu (2026-11-27) ---------------
+    //
+    // Reported live: Ctrl+V pastes now, but right-clicking in the name field
+    // shows no way to paste from the clipboard. The shell is never mapped, so
+    // Qt's native QContextMenuEvent never fires; the bridge only opens a menu
+    // for the editor area. Pasting into a TvLineEdit field by mouse must work.
+    void right_clicking_the_name_field_offers_paste()
+    {
+        ShellWindow shell;
+        shell.resize(800, 600);
+        shell.show();
+        QCoreApplication::processEvents();
+
+        ContentBridge bridge;
+        bridge.setShellWindow(&shell);
+        TvFileDock* dock = TvFileDock::openOn(&shell, TvFileDock::Open,
+                                              QStringLiteral("Open File"),
+                                              QStringLiteral("/tmp"));
+        QVERIFY(dock);
+        QCoreApplication::processEvents();
+
+        auto* edit = dock->findChild<TvLineEdit*>(QStringLiteral("tvFileDockEdit"));
+        QVERIFY2(edit, "the name field is missing");
+        edit->clear();
+
+        QGuiApplication::clipboard()->setText(QStringLiteral("/var/tmp/pasted.txt"));
+
+        // Right-click through the bridge, exactly as QML delivers it.
+        const QPoint shellPt = edit->mapTo(&shell, edit->rect().center());
+        QWidget* hit = shell.childAt(shellPt);
+        QVERIFY2(hit == edit,
+                 qPrintable(QStringLiteral("childAt resolved %1, not the name field")
+                                .arg(hit ? hit->objectName() : QStringLiteral("<null>"))));
+        bridge.forwardMouseEvent(QEvent::MouseButtonPress, Qt::RightButton,
+                                 Qt::RightButton, Qt::NoModifier,
+                                 shellPt.x(), shellPt.y());
+        QCoreApplication::processEvents();
+
+        // A context menu must now be up, offering Paste.
+        QMenu* menu = nullptr;
+        const auto menus = dock->findChildren<QMenu*>();
+        for (QMenu* m : menus) {
+            if (m->isVisible()) { menu = m; break; }
+        }
+        QVERIFY2(menu, "right-clicking the name field raised no context menu");
+
+        QAction* paste = nullptr;
+        for (QAction* a : menu->actions()) {
+            if (a->text().remove(QLatin1Char('&'))
+                    .compare(QStringLiteral("Paste"), Qt::CaseInsensitive) == 0) {
+                paste = a;
+                break;
+            }
+        }
+        QVERIFY2(paste, "the context menu has no Paste entry");
+        QVERIFY2(paste->isEnabled(), "Paste is enabled-disabled with clipboard text");
+
+        // Activate Paste the way a user would: a release on the menu row.
+        menu->setEnabled(true);
+        paste->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(edit->text(), QStringLiteral("/var/tmp/pasted.txt"));
+
+        // The menu must be gone (or at least not still showing after paste).
+        dock->reject();
+        QCoreApplication::processEvents();
     }
 
     // The default list is what Kate shows: the user's own bookmarks from

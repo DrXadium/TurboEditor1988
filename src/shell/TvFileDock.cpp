@@ -8,6 +8,7 @@
 #include "ShellWindow.h"
 #include <QAction>
 #include <QMenu>
+#include <QClipboard>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QPainter>
@@ -504,6 +505,54 @@ void TvFileDock::showTypeMenu()
     const QRect shellRect(top->mapToGlobal(QPoint(0, 0)), top->size());
     const QRect cellGlobal(mapToGlobal(m_typeDropRect.topLeft()), m_typeDropRect.size());
     menu->popup(TabListMenu::anchoredPos(cellGlobal, menu->sizeHint(), shellRect));
+}
+
+// Right-click context menu on an entry field (name / path / type).
+//
+// The shell is never mapped and every event is synthesized, so Qt's native
+// context-menu path (QContextMenuEvent) never runs - a right-press is just a
+// mouse press. ContentBridge routes that press here when it lands on a field;
+// the menu is the standard Cut / Copy / Paste trio acting on the CLICKED field,
+// raised with popup() + anchoredPos() exactly like the recents and type menus
+// (never exec(), which would nest a loop this shell does not survive).
+void TvFileDock::showFieldContextMenu(QWidget* field, const QPoint& globalPos)
+{
+    auto* edit = qobject_cast<QLineEdit*>(field);
+    if (!edit || (edit != m_edit && edit != m_pathEdit && edit != m_typeEdit))
+        return;
+
+    // Rebuild every time: the enabled state (selection present? clipboard
+    // non-empty?) must describe THIS field at THIS moment. NO WA_DeleteOnClose
+    // (unlike a plain dialog box): a popup QMenu that never maps natively gets a
+    // Close synthesized in this shell, and WA_DeleteOnClose would destroy it the
+    // instant it opens. Cleanup rides aboutToHide -> deleteLater, exactly like
+    // the recents and type menus (which stay usable).
+    QMenu* menu = new QMenu(this);
+    QAction* cut = menu->addAction(QStringLiteral("Cut"));
+    QAction* copy = menu->addAction(QStringLiteral("Copy"));
+    QAction* paste = menu->addAction(QStringLiteral("Paste"));
+
+    const bool hasSel = edit->hasSelectedText();
+    const bool hasClip = !QGuiApplication::clipboard()->text().isEmpty();
+    cut->setEnabled(hasSel);
+    copy->setEnabled(hasSel);
+    paste->setEnabled(hasClip);
+
+    connect(cut, &QAction::triggered, this, [edit] { edit->cut(); });
+    connect(copy, &QAction::triggered, this, [edit] { edit->copy(); });
+    connect(paste, &QAction::triggered, this, [edit] { edit->paste(); });
+    connect(menu, &QMenu::aboutToHide, this, [this, menu] {
+        if (m_activeField)
+            m_activeField->setFocus(Qt::OtherFocusReason);
+        menu->deleteLater();
+    });
+
+    // Anchor at the pointer, clamped inside the window so it never hangs off
+    // the edge. The cell passed to anchoredPos is the click point itself.
+    QWidget* top = window();
+    const QRect shellRect(top->mapToGlobal(QPoint(0, 0)), top->size());
+    const QRect clickCell(globalPos, QSize(1, 1));
+    menu->popup(TabListMenu::anchoredPos(clickCell, menu->sizeHint(), shellRect));
 }
 
 void TvFileDock::syncSelectionFromEdit()
@@ -1383,6 +1432,16 @@ bool TvFileDock::eventFilter(QObject* watched, QEvent* ev)
                 other->deselect();
         m_activeField = static_cast<QWidget*>(watched);
         update();
+        // Right-press on a field is a paste-menu request, not a caret move.
+        // There is no native QContextMenuEvent in this shell, so raise it right
+        // here and swallow the press (the normal branch would place a caret).
+        auto* mev = static_cast<QMouseEvent*>(ev);
+        if (mev->button() == Qt::RightButton) {
+            QWidget* field = static_cast<QWidget*>(watched);
+            field->setFocus(Qt::OtherFocusReason);
+            showFieldContextMenu(field, mev->globalPosition().toPoint());
+            return true;
+        }
         return false;               // the field still places its own caret
     }
     // 2026-11-20: the release is NOT consumed any more. It used to call

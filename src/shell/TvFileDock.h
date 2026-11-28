@@ -109,6 +109,13 @@ public:
     void showRecentsMenu();
     void showTypeMenu();
 
+    // Right-click context menu for the entry fields (name / path / type). The
+    // shell is never mapped, so Qt never synthesizes a QContextMenuEvent; the
+    // bridge calls this when a right-press lands on one of the fields. Offers
+    // Cut / Copy / Paste acting on the clicked field, anchored at `globalPos`.
+    // `field` must be one of the three TvLineEdits; any other widget is ignored.
+    void showFieldContextMenu(QWidget* field, const QPoint& globalPos);
+
     // Finish: accept() emits the resolved absolute path, reject() emits an
     // empty one. Both hide the dock.
     void accept();
