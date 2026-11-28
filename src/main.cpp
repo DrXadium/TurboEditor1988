@@ -788,13 +788,22 @@ int main(int argc, char** argv)
 
         // File > Recent Files (2026-11-24): the bar owns the "last five" and the
         // Settings switch; this root feeds it and opens what the user picks.
+        //
+        // Captured BY VALUE wherever it is handed to a handler: this lambda is
+        // declared inside the `if (auto* menuBar = ...)` block, which closes
+        // long before `app.exec()`. A `&refreshRecents` capture therefore
+        // pointed at a dead stack slot and every caller read garbage through it
+        // — SEGV in File > Open as soon as the dialog's deep call stack
+        // overwrote that memory (2026-11-28, three cores at 0x41e65b). Copying
+        // the closure is safe: menuBar is a heap widget, and recentFiles /
+        // crtSettings live in main() for the process lifetime.
         auto refreshRecents = [menuBar, &recentFiles, &crtSettings] {
             menuBar->setRecentFiles(recentFiles.entries());
             menuBar->setRecentFilesVisible(crtSettings.showRecentFiles());
         };
         refreshRecents();
         QObject::connect(menuBar, &MenuBar::recentFileRequested, menuBar,
-                         [&tabs, &recentFiles, &refreshRecents](const QString& path) {
+                         [&tabs, &recentFiles, refreshRecents](const QString& path) {
                              if (path.isEmpty() || !QFileInfo::exists(path))
                                  return;   // a file that moved: nothing to open
                              tabs.openFile(QUrl::fromLocalFile(path));
@@ -812,7 +821,7 @@ int main(int argc, char** argv)
         // child of the shell so it lands inside the CRT texture. A native
         // QFileDialog opens a host-themed top-level window above the CRT scene,
         // which is exactly what the user asked to get rid of.
-        on(act("actionFileOpen"), [&shell, &tabs, &recentFiles, &refreshRecents] {
+        on(act("actionFileOpen"), [&shell, &tabs, &recentFiles, refreshRecents] {
             const QString f = TvFileDock::getOpenFileName(
                 &shell, QObject::tr("Open File"),
                 QDir::currentPath(), QStringLiteral("All files (*)"),
@@ -827,7 +836,7 @@ int main(int argc, char** argv)
         // in the RIGHT pane of a new split (max one split; the file also opens
         // as its own tab, so closing the split never closes the document).
         on(act("actionFileOpenAsSplit"),
-           [&shell, &tabs, &recentFiles, &refreshRecents] {
+           [&shell, &tabs, &recentFiles, refreshRecents] {
             const QString f = TvFileDock::getOpenFileName(
                 &shell, QObject::tr("Open File as Split"),
                 QDir::currentPath(), QStringLiteral("All files (*)"),
@@ -842,7 +851,7 @@ int main(int argc, char** argv)
             }
         });
         on(act("actionFileSave"), [&tabs] { tabs.saveActive(); });
-        on(act("actionFileSaveAs"), [&shell, &tabs, &recentFiles, &refreshRecents] {
+        on(act("actionFileSaveAs"), [&shell, &tabs, &recentFiles, refreshRecents] {
             QString start = QDir::currentPath();
             if (auto* d = tabs.activeDocument())
                 if (!d->url().isEmpty())
