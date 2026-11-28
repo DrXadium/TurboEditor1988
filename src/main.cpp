@@ -25,6 +25,9 @@
 #include <QUrl>
 #include <QPointer>
 #include <QFile>
+#include <QDesktopServices>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <KTextEditor/View>
 #include <memory>
 #include <functional>
@@ -772,6 +775,31 @@ int main(int argc, char** argv)
     // already-open documents once now that the real value is known.
     tabs.backupOpenFiles();
 
+    // --- Window title + File Operations (user request 2026-11-28) -----------
+    // Declared at main() scope ON PURPOSE: menu handlers capture these by
+    // reference, and anything declared inside the `if (menuBar)` block below is
+    // dead by the time app.exec() runs. That is exactly the bug that crashed
+    // File > Open (refreshRecents); do not move these inside the block.
+    auto activeFilePath = [&tabs]() -> QString {
+        auto* doc = tabs.activeDocument();
+        if (!doc || doc->url().isEmpty())
+            return {};
+        return doc->url().toLocalFile();
+    };
+
+    auto updateWindowTitle = [&shell, &crtSettings, activeFilePath] {
+        if (!crtSettings.showFullPathInTitle()) {
+            shell.setWindowTitle(AppIdentity::displayName());
+            return;
+        }
+        const QString path = activeFilePath();
+        shell.setWindowTitle(path.isEmpty() ? AppIdentity::displayName()
+                                           : QDir::toNativeSeparators(path));
+    };
+    updateWindowTitle();
+    QObject::connect(&tabs, &EditorTabManager::activeViewChanged, &shell,
+                     [updateWindowTitle](KTextEditor::View*) { updateWindowTitle(); });
+
     // Task 10: wire Kate-option menus (MenuBar builds the structure and the
     // Borland palette; here the actions get their real features). The session
     // collect/restore helpers above are reused so menu, quit and launch paths
@@ -865,6 +893,39 @@ int main(int argc, char** argv)
                 refreshRecents();
             }
         });
+        // File > File Operations (user request 2026-11-28): copy the active
+        // file's location, or reveal it in the system file manager. Both rows
+        // are disabled while there is no file on disk (see syncFileOps).
+        on(act("actionFileCopyLocation"), [activeFilePath] {
+            const QString path = activeFilePath();
+            if (path.isEmpty())
+                return;
+            QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(path));
+        });
+        on(act("actionFileOpenContainingFolder"), [activeFilePath] {
+            const QString path = activeFilePath();
+            if (path.isEmpty())
+                return;
+            const QString dir = QFileInfo(path).absolutePath();
+            if (!dir.isEmpty())
+                QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+        });
+        auto syncFileOps = [menuBar, activeFilePath] {
+            menuBar->setFileOperationsEnabled(!activeFilePath().isEmpty());
+        };
+        syncFileOps();
+        QObject::connect(&tabs, &EditorTabManager::activeViewChanged, menuBar,
+                         [syncFileOps](KTextEditor::View*) { syncFileOps(); });
+        QObject::connect(&tabs, &EditorTabManager::tabsChanged, menuBar,
+                         [syncFileOps](const QStringList&, int) { syncFileOps(); });
+        // The title follows both the setting and the active document.
+        QObject::connect(&crtSettings, &CrtSettings::showFullPathInTitleChanged,
+                         &shell, [updateWindowTitle] { updateWindowTitle(); });
+        QObject::connect(&tabs, &EditorTabManager::tabsChanged, &shell,
+                         [updateWindowTitle](const QStringList&, int) {
+                             updateWindowTitle();
+                         });
+
         // File > Exit: quit through the normal path so aboutToQuit persists the
         // session and the CRT settings before the process ends.
         on(act("actionFileExit"), [] { QCoreApplication::quit(); });

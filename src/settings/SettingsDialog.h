@@ -71,6 +71,7 @@ private:
         int autosaveSeconds = 120;
         bool showRecentFiles = true;
         bool backupOnOpen = true;
+        bool showFullPathInTitle = false;
     };
     Snapshot m_snapshot;
 };

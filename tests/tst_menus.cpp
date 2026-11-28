@@ -320,6 +320,47 @@ private slots:
 
     // 2026-11-26 (user request): File > Exit is the menu's LAST row and quits
     // through the normal path (aboutToQuit then persists session + settings).
+    // User request 2026-11-28: File gains a "File Operations" submenu holding
+    // Copy file location / Open containing folder, fenced off from the other
+    // entries by separators, with Exit still the last row of File.
+    void file_menu_offers_a_file_operations_submenu_before_exit() {
+        ShellWindow w;
+        auto* bar = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(bar, "shell menu bar is not a MenuBar");
+        QMenu* file = bar->menu(QStringLiteral("File"));
+        QVERIFY2(file, "no File menu");
+
+        QAction* entry = bar->findChild<QAction*>(QStringLiteral("actionFileOperations"));
+        QVERIFY2(entry, "File menu has no File Operations submenu");
+        QVERIFY2(entry->text().remove(QLatin1Char('&')).startsWith(QLatin1String("File Operations")),
+                 qPrintable(QStringLiteral("submenu text is '%1'").arg(entry->text())));
+
+        QMenu* ops = entry->menu();
+        QVERIFY2(ops, "File Operations carries no menu");
+
+        QAction* copy = ops->findChild<QAction*>(QStringLiteral("actionFileCopyLocation"));
+        QVERIFY2(copy, "no Copy file location action");
+        QAction* folder = ops->findChild<QAction*>(QStringLiteral("actionFileOpenContainingFolder"));
+        QVERIFY2(folder, "no Open containing folder action");
+        QVERIFY2(ops->actions().contains(copy) && ops->actions().contains(folder),
+                 "the two operations are not inside the submenu");
+
+        // Fenced off from the rows above, and Exit still closes the menu.
+        const QList<QAction*> rows = file->actions();
+        const int at = rows.indexOf(entry);
+        QVERIFY(at > 0);
+        QVERIFY2(rows.at(at - 1)->isSeparator(),
+                 "File Operations is not preceded by a separator");
+        QAction* exit = bar->findChild<QAction*>(QStringLiteral("actionFileExit"));
+        QVERIFY(exit);
+        QCOMPARE(rows.last(), exit);
+        QVERIFY(at < rows.indexOf(exit));
+
+        // Nothing is open in a fresh shell, so both rows start disabled.
+        QVERIFY2(!copy->isEnabled(), "Copy file location should start disabled");
+        QVERIFY2(!folder->isEnabled(), "Open containing folder should start disabled");
+    }
+
     void file_menu_offers_exit_as_its_last_row() {
         ShellWindow w;
         auto* bar = qobject_cast<MenuBar*>(w.menuBar());

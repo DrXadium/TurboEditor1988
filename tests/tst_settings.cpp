@@ -91,6 +91,32 @@ private slots:
         }
     }
 
+    // User request 2026-11-28: an option to show the active file's FULL path in
+    // the window (taskbar) title. Off by default, so the title keeps the app
+    // name until the user asks for paths.
+    void full_path_in_title_defaults_off_and_roundtrips() {
+        {
+            CrtSettings s;
+            QVERIFY2(!s.showFullPathInTitle(),
+                     "full-path titles must default OFF");
+        }
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString store = dir.filePath("crt-kate.ini");
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            s.setShowFullPathInTitle(true);
+            s.save();
+        }
+        {
+            CrtSettings s;
+            s.setStorePath(store);
+            QVERIFY(s.load());
+            QVERIFY2(s.showFullPathInTitle(), "the setting did not persist");
+        }
+    }
+
     // Task 12: Turbo Vision default editor font is 16px and persists.
     void font_size_defaults_to_16_and_roundtrips() {
         QTemporaryDir dir;

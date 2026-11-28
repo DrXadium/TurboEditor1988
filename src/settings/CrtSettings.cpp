@@ -85,6 +85,7 @@ CrtSettings::CrtSettings(QObject* parent) : QObject(parent)
         &CrtSettings::backgroundColorChanged,
         &CrtSettings::minimapVisibleChanged, &CrtSettings::showRecentFilesChanged,
         &CrtSettings::backupOnOpenChanged,
+        &CrtSettings::showFullPathInTitleChanged,
         &CrtSettings::scanlinesEnabledChanged,
     };
     for (Signal signal : changed)
@@ -134,6 +135,7 @@ void CrtSettings::resetToDefaults()
     m_minimapVisible = false;
     m_showRecentFiles = true;
     m_backupOnOpen = true;
+    m_showFullPathInTitle = false;
 }
 
 bool CrtSettings::scanlinesEnabled() const
@@ -175,6 +177,7 @@ CRT_SET(QColor, BackgroundColor, m_backgroundColor, backgroundColorChanged)
 CRT_SET(bool, MinimapVisible, m_minimapVisible, minimapVisibleChanged)
 CRT_SET(bool, ShowRecentFiles, m_showRecentFiles, showRecentFilesChanged)
 CRT_SET(bool, BackupOnOpen, m_backupOnOpen, backupOnOpenChanged)
+CRT_SET(bool, ShowFullPathInTitle, m_showFullPathInTitle, showFullPathInTitleChanged)
 // Clamped to the spin box range: 0/negative would mean "never" or a hot loop.
 void CrtSettings::setAutosaveIntervalSeconds(int v)
 {
@@ -335,6 +338,8 @@ bool CrtSettings::load()
     m_minimapVisible = s.value(QStringLiteral("minimapVisible"), false).toBool();
     m_showRecentFiles = s.value(QStringLiteral("showRecentFiles"), true).toBool();
     m_backupOnOpen = s.value(QStringLiteral("backupOnOpen"), true).toBool();
+    m_showFullPathInTitle =
+        s.value(QStringLiteral("showFullPathInTitle"), false).toBool();
 
     // Named profiles are one JSON object so arbitrary (slash-containing) names
     // never collide with QSettings' hierarchical key syntax.
@@ -393,6 +398,7 @@ bool CrtSettings::load()
     emit minimapVisibleChanged();
     emit showRecentFilesChanged();
     emit backupOnOpenChanged();
+    emit showFullPathInTitleChanged();
     emit scanlinesEnabledChanged();
     m_loading = false;
     return true;
@@ -449,6 +455,7 @@ bool CrtSettings::save()
     s.setValue(QStringLiteral("minimapVisible"), m_minimapVisible);
     s.setValue(QStringLiteral("showRecentFiles"), m_showRecentFiles);
     s.setValue(QStringLiteral("backupOnOpen"), m_backupOnOpen);
+    s.setValue(QStringLiteral("showFullPathInTitle"), m_showFullPathInTitle);
 
     // Merge profiles written by another instance since this one loaded: a
     // stale instance (a second window, a dev probe, a slow quit) must not

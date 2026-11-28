@@ -69,6 +69,22 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     m_recentEntry->setObjectName(QStringLiteral("actionFileRecentFiles"));
     m_recentEntry->setText(QStringLiteral("Recent &Files"));
     m_recentEntry->setVisible(false);
+    // File Operations (user request 2026-11-28): copy the active file's
+    // location, or reveal it in the system file manager. Fenced off from the
+    // rows above by a separator; Exit stays the File menu's last row. Both
+    // start disabled - a fresh shell has no file to act on.
+    file->addSeparator();
+    m_fileOpsMenu = new BorlandMenu(file);
+    m_fileOpsMenu->setObjectName(QStringLiteral("menuFileOperations"));
+    m_fileOpsEntry = file->addMenu(m_fileOpsMenu);
+    m_fileOpsEntry->setObjectName(QStringLiteral("actionFileOperations"));
+    m_fileOpsEntry->setText(QStringLiteral("File &Operations"));
+    m_fileCopyLocation = added(m_fileOpsMenu, QStringLiteral("Copy File &Location"),
+                               QStringLiteral("actionFileCopyLocation"));
+    m_fileOpenContaining = added(m_fileOpsMenu, QStringLiteral("Open &Containing Folder"),
+                                 QStringLiteral("actionFileOpenContainingFolder"));
+    m_fileCopyLocation->setEnabled(false);
+    m_fileOpenContaining->setEnabled(false);
     // Graceful exit (2026-11-26, user request): the File menu's last row.
     // QCoreApplication::quit() runs the aboutToQuit handlers, which is where
     // the session snapshot and the CRT settings are persisted.
@@ -226,6 +242,14 @@ void MenuBar::setRecentFilesVisible(bool on)
 {
     m_recentsWanted = on;
     rebuildRecentFiles();
+}
+
+void MenuBar::setFileOperationsEnabled(bool on)
+{
+    if (m_fileCopyLocation)
+        m_fileCopyLocation->setEnabled(on);
+    if (m_fileOpenContaining)
+        m_fileOpenContaining->setEnabled(on);
 }
 
 void MenuBar::rebuildRecentFiles()

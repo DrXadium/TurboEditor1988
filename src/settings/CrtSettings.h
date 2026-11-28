@@ -82,6 +82,10 @@ public:
     // also drops a sibling `<name>.bak` beside it. ON unless turned off.
     Q_PROPERTY(bool backupOnOpen READ backupOnOpen WRITE setBackupOnOpen
                    NOTIFY backupOnOpenChanged)
+    // Show the active file's FULL path in the window (taskbar) title instead of
+    // the app name (user request 2026-11-28). OFF unless turned on.
+    Q_PROPERTY(bool showFullPathInTitle READ showFullPathInTitle
+                   WRITE setShowFullPathInTitle NOTIFY showFullPathInTitleChanged)
 
     // --- Per-effect on/off accessors (map to the float model) ---
     Q_PROPERTY(bool scanlinesEnabled READ scanlinesEnabled WRITE setScanlinesEnabled NOTIFY scanlinesEnabledChanged)
@@ -130,6 +134,8 @@ public:
     void setShowRecentFiles(bool on);
     bool backupOnOpen() const { return m_backupOnOpen; }
     void setBackupOnOpen(bool on);
+    bool showFullPathInTitle() const { return m_showFullPathInTitle; }
+    void setShowFullPathInTitle(bool on);
 
     bool scanlinesEnabled() const;
     bool curvatureEnabled() const { return m_screenCurvature > 0; }
@@ -234,6 +240,7 @@ signals:
     void minimapVisibleChanged();
     void showRecentFilesChanged();
     void backupOnOpenChanged();
+    void showFullPathInTitleChanged();
     void scanlinesEnabledChanged();
 
 private:
@@ -277,6 +284,7 @@ private:
     bool m_minimapVisible = false;   // off unless the user turned it on
     bool m_showRecentFiles = true;   // the File menu's Recent Files submenu
     bool m_backupOnOpen = true;      // write a sibling .bak when a file opens
+    bool m_showFullPathInTitle = false;  // window title shows the file's path
     QMap<QString, QVariantMap> m_profiles;   // name -> effect values
     // Names deleted in THIS instance; a stale instance must not resurrect
     // them when save() merges profiles written since it loaded.

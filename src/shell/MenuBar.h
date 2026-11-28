@@ -28,6 +28,10 @@ public:
     void setRecentFiles(const QStringList& paths);
     QStringList recentFiles() const { return m_recentPaths; }
     void setRecentFilesVisible(bool on);
+
+    // File > File Operations rows. Enabled only while the active document has
+    // a file on disk, so neither row can be clicked with nothing to act on.
+    void setFileOperationsEnabled(bool on);
     bool recentFilesVisible() const { return m_recentsWanted; }
 
     // Titles of the top-level menus, in order (hotkey markers stripped).
@@ -57,6 +61,10 @@ private:
     void rebuildRecentFiles();
     QMenu* m_recentMenu = nullptr;        // the "Recent Files" submenu
     QAction* m_recentEntry = nullptr;     // its entry on the File menu
+    QMenu* m_fileOpsMenu = nullptr;       // the "File Operations" submenu
+    QAction* m_fileOpsEntry = nullptr;    // its entry on the File menu
+    QAction* m_fileCopyLocation = nullptr;
+    QAction* m_fileOpenContaining = nullptr;
     QStringList m_recentPaths;
     bool m_recentsWanted = true;          // the Settings switch
 };

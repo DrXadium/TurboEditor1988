@@ -185,6 +185,7 @@ void SettingsDialog::snapshot()
     m_snapshot.autosaveSeconds = m_settings->autosaveIntervalSeconds();
     m_snapshot.showRecentFiles = m_settings->showRecentFiles();
     m_snapshot.backupOnOpen = m_settings->backupOnOpen();
+    m_snapshot.showFullPathInTitle = m_settings->showFullPathInTitle();
 }
 
 void SettingsDialog::restore()
@@ -225,6 +226,7 @@ void SettingsDialog::restore()
     m_settings->setAutosaveIntervalSeconds(m_snapshot.autosaveSeconds);
     m_settings->setShowRecentFiles(m_snapshot.showRecentFiles);
     m_settings->setBackupOnOpen(m_snapshot.backupOnOpen);
+    m_settings->setShowFullPathInTitle(m_snapshot.showFullPathInTitle);
 
     syncControls();
 }
@@ -290,6 +292,7 @@ void SettingsDialog::syncControls()
 
     setCheck("phosphorCheck", m_settings->phosphorEnabled());
     setCheck("backupOnOpenCheck", m_settings->backupOnOpen());
+    setCheck("showFullPathInTitleCheck", m_settings->showFullPathInTitle());
     setSpin("chromaSpin", m_settings->chromaColor());
     setSpin("saturationSpin", m_settings->saturationColor());
     setSpinEnabled("chromaSpin", m_settings->phosphorEnabled());
@@ -700,10 +703,18 @@ QWidget* SettingsDialog::buildAppearanceTab()
     connect(backup, &TvCheckBox::toggled, m_settings, &CrtSettings::setBackupOnOpen);
     grid->addWidget(backup, 3, 0, 1, 2);
 
+    // Full path in the window title (user request 2026-11-28). OFF by default.
+    auto* fullPath = new TvCheckBox(tr("Show the full file path in the window title"));
+    fullPath->setObjectName(QStringLiteral("showFullPathInTitleCheck"));
+    fullPath->setChecked(m_settings->showFullPathInTitle());
+    connect(fullPath, &TvCheckBox::toggled, m_settings,
+            &CrtSettings::setShowFullPathInTitle);
+    grid->addWidget(fullPath, 4, 0, 1, 2);
+
     auto* note = tvLabel(tr("Editor scheme, chrome theme and minimap options are "
                             "configured by the theme and editor settings."));
     note->setWordWrap(true);
-    grid->addWidget(note, 4, 0, 1, 2);
+    grid->addWidget(note, 5, 0, 1, 2);
     grid->setRowStretch(5, 1);
     return page;
 }
