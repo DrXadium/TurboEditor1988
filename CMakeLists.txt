@@ -442,6 +442,12 @@ target_link_libraries(tst_appidentity PRIVATE Qt6::Test Qt6::Core)
 target_compile_definitions(tst_appidentity PRIVATE CRT_KATE_VERSION="${CRT_KATE_VERSION}")
 add_test(NAME tst_appidentity COMMAND tst_appidentity)
 
+# Auto-update (2026-11-27): release-version comparison.
+add_executable(tst_versioncompare tests/tst_versioncompare.cpp src/update/VersionCompare.cpp)
+target_include_directories(tst_versioncompare PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_versioncompare PRIVATE Qt6::Test Qt6::Core)
+add_test(NAME tst_versioncompare COMMAND tst_versioncompare)
+
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the
 # recents dropdown. ctest -R tst_recents
 add_executable(tst_recents tests/tst_recents.cpp)
