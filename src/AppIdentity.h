@@ -25,4 +25,18 @@ inline QString storageDirName()
     return QStringLiteral("CRT-Kate");
 }
 
+// The build version as a bare X.Y.Z (e.g. "0.1.3"), baked from the git tag at
+// configure time (CRT_KATE_VERSION). The auto-update feature compares this to
+// the latest GitHub release tag to decide whether an update is available.
+// Targets that include this header but don't set the define (the crt-* libs)
+// fall back to the same default CMake uses when git is unavailable.
+inline QString version()
+{
+#ifdef CRT_KATE_VERSION
+    return QStringLiteral(CRT_KATE_VERSION);
+#else
+    return QStringLiteral("0.1.3");
+#endif
+}
+
 } // namespace AppIdentity

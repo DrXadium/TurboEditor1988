@@ -11,6 +11,27 @@
 cmake_minimum_required(VERSION 3.31)
 project(turbo-kate LANGUAGES CXX)
 
+# --- Build version (auto-update, 2026-11-27) -------------------------------
+# The app compares itself to GitHub release tags, so it must know its own
+# version. Prefer `git describe --tags` at configure time (the tag the build
+# came from), stripped to a bare X.Y.Z; fall back to a checked-in default when
+# git is absent (a tarball build) or describe yields nothing usable.
+set(CRT_KATE_FALLBACK_VERSION "0.1.3")
+set(CRT_KATE_VERSION "${CRT_KATE_FALLBACK_VERSION}")
+find_package(Git QUIET)
+if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" describe --tags --always
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE _git_desc
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(_git_desc MATCHES "^v?([0-9]+\\.[0-9]+\\.[0-9]+)")
+    set(CRT_KATE_VERSION "${CMAKE_MATCH_1}")
+  endif()
+endif()
+message(STATUS "TurboEditor1988 version: ${CRT_KATE_VERSION}")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -414,6 +435,13 @@ add_executable(tst_filedlg tests/tst_filedlg.cpp)
 target_link_libraries(tst_filedlg PRIVATE crt-shell crt-bridge Qt6::Test Qt6::Widgets)
 add_test(NAME tst_filedlg COMMAND tst_filedlg)
 
+# Auto-update (2026-11-27): AppIdentity::version() must be a bare semver.
+add_executable(tst_appidentity tests/tst_appidentity.cpp)
+target_include_directories(tst_appidentity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_appidentity PRIVATE Qt6::Test Qt6::Core)
+target_compile_definitions(tst_appidentity PRIVATE CRT_KATE_VERSION="${CRT_KATE_VERSION}")
+add_test(NAME tst_appidentity COMMAND tst_appidentity)
+
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the
 # recents dropdown. ctest -R tst_recents
 add_executable(tst_recents tests/tst_recents.cpp)
@@ -455,6 +483,7 @@ target_link_libraries(turbo-kate PRIVATE
 )
 target_compile_definitions(turbo-kate PRIVATE
   CRT_KATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+  CRT_KATE_VERSION="${CRT_KATE_VERSION}"
 )
 
 # Task 11: packaging - install layout + the CRT shader EMBEDDED in the binary.
