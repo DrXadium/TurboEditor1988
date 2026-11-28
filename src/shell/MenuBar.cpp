@@ -57,6 +57,11 @@ MenuBar::MenuBar(QWidget* parent) : QMenuBar(parent)
     // Split view (2026-11-21): open a file into the RIGHT pane of a new split.
     added(file, QStringLiteral("&Open as Split Document..."),
           QStringLiteral("actionFileOpenAsSplit"));
+    // Close the active tab (user request 2026-11-28). Sits with the Open rows,
+    // above the Save rule, like Borland's and Kate's File menus.
+    QAction* closeAct = added(file, QStringLiteral("&Close"),
+                              QStringLiteral("actionFileClose"));
+    closeAct->setShortcut(QKeySequence(QKeySequence::Close));
     file->addSeparator();
     added(file, QStringLiteral("&Save"), QStringLiteral("actionFileSave"));
     added(file, QStringLiteral("Save &As..."), QStringLiteral("actionFileSaveAs"));

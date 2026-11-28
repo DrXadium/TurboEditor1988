@@ -893,6 +893,11 @@ int main(int argc, char** argv)
                 refreshRecents();
             }
         });
+        // File > Close (user request 2026-11-28): close the active tab. The
+        // manager keeps a fresh empty tab when the last document goes, so the
+        // window never ends up with no document at all.
+        on(act("actionFileClose"), [&tabs] { tabs.closeTab(tabs.activeIndex()); });
+
         // File > File Operations (user request 2026-11-28): copy the active
         // file's location, or reveal it in the system file manager. Both rows
         // are disabled while there is no file on disk (see syncFileOps).

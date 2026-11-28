@@ -320,6 +320,34 @@ private slots:
 
     // 2026-11-26 (user request): File > Exit is the menu's LAST row and quits
     // through the normal path (aboutToQuit then persists session + settings).
+    // User request 2026-11-28: File > Close closes the active tab. Borland and
+    // Kate both put it straight after the Open rows, above Save.
+    void file_menu_offers_close_after_open_as_split() {
+        ShellWindow w;
+        auto* bar = qobject_cast<MenuBar*>(w.menuBar());
+        QVERIFY2(bar, "shell menu bar is not a MenuBar");
+        QMenu* file = bar->menu(QStringLiteral("File"));
+        QVERIFY2(file, "no File menu");
+
+        QAction* close = bar->findChild<QAction*>(QStringLiteral("actionFileClose"));
+        QVERIFY2(close, "File menu has no Close action");
+        QVERIFY2(close->text().remove(QLatin1Char('&')).startsWith(QLatin1String("Close")),
+                 qPrintable(QStringLiteral("Close action text is '%1'").arg(close->text())));
+        QCOMPARE(close->shortcut(), QKeySequence(QKeySequence::Close));
+
+        // Ordering: after Open as Split..., before Save (they are separated by a
+        // rule), and never after Exit.
+        const QList<QAction*> rows = file->actions();
+        QAction* split = bar->findChild<QAction*>(QStringLiteral("actionFileOpenAsSplit"));
+        QAction* save = bar->findChild<QAction*>(QStringLiteral("actionFileSave"));
+        QAction* exit = bar->findChild<QAction*>(QStringLiteral("actionFileExit"));
+        QVERIFY(split && save && exit);
+        const int at = rows.indexOf(close);
+        QVERIFY2(at > rows.indexOf(split), "Close is above Open as Split");
+        QVERIFY2(at < rows.indexOf(save), "Close is below Save");
+        QVERIFY2(at < rows.indexOf(exit), "Close is below Exit");
+    }
+
     // User request 2026-11-28: File gains a "File Operations" submenu holding
     // Copy file location / Open containing folder, fenced off from the other
     // entries by separators, with Exit still the last row of File.
