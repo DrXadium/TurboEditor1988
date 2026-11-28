@@ -456,6 +456,12 @@ target_link_libraries(tst_updatechecker PRIVATE Qt6::Test Qt6::Core Qt6::Network
 target_compile_definitions(tst_updatechecker PRIVATE CRT_KATE_VERSION="${CRT_KATE_VERSION}")
 add_test(NAME tst_updatechecker COMMAND tst_updatechecker)
 
+# Auto-update (2026-11-27): sha256 file verification.
+add_executable(tst_checksum tests/tst_checksum.cpp src/update/Checksum.cpp)
+target_include_directories(tst_checksum PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_checksum PRIVATE Qt6::Test Qt6::Core)
+add_test(NAME tst_checksum COMMAND tst_checksum)
+
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the
 # recents dropdown. ctest -R tst_recents
 add_executable(tst_recents tests/tst_recents.cpp)
