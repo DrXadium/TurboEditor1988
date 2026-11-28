@@ -469,6 +469,13 @@ target_include_directories(tst_checksum PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tst_checksum PRIVATE Qt6::Test Qt6::Core)
 add_test(NAME tst_checksum COMMAND tst_checksum)
 
+# Release pipeline: the published .sha256 must be accepted by the updater,
+# which is Checksum::verifyFile — so the test links the real verifier.
+add_executable(tst_sha256gen tests/tst_sha256gen.cpp src/update/Checksum.cpp)
+target_include_directories(tst_sha256gen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_sha256gen PRIVATE Qt6::Test Qt6::Core)
+add_test(NAME tst_sha256gen COMMAND tst_sha256gen)
+
 # Auto-update (2026-11-27): the real swap helper driven against scratch files.
 add_executable(tst_updatehelper tests/tst_updatehelper.cpp src/update/Checksum.cpp)
 target_include_directories(tst_updatehelper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

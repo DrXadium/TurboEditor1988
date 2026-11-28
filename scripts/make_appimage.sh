@@ -222,3 +222,9 @@ if ! env -u APPIMAGE_EXTRACT_AND_RUN \
 fi
 [ -s "$ROOT/TurboEditor1988-x86_64.AppImage" ] || { echo "ERROR: no AppImage produced"; exit 1; }
 echo "OK: $ROOT/TurboEditor1988-x86_64.AppImage ($(du -h TurboEditor1988-x86_64.AppImage | cut -f1))"
+
+# Stage 5: publishable checksum beside the AppImage. The auto-updater verifies
+# its download against this file, so a missing or stale digest silently disables
+# updates for every client. Generated here, on every build, so a manual release
+# cannot ship a mismatched pair (contract pinned by tests/tst_sha256gen.cpp).
+"$ROOT/scripts/gen_sha256.sh" "$ROOT/TurboEditor1988-x86_64.AppImage"
