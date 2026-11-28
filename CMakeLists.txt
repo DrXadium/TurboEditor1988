@@ -462,6 +462,18 @@ target_include_directories(tst_checksum PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tst_checksum PRIVATE Qt6::Test Qt6::Core)
 add_test(NAME tst_checksum COMMAND tst_checksum)
 
+# Auto-update (2026-11-27): verified download + deferred swap helper.
+add_executable(tst_updaterunner tests/tst_updaterunner.cpp
+  src/update/UpdateRunner.cpp src/update/Checksum.cpp)
+target_include_directories(tst_updaterunner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_updaterunner PRIVATE Qt6::Test Qt6::Core Qt6::Network)
+qt_add_resources(tst_updaterunner "update_helper_res"
+  PREFIX "/update"
+  BASE ${CMAKE_CURRENT_SOURCE_DIR}/src/update
+  FILES src/update/turbo-kate-update.sh
+)
+add_test(NAME tst_updaterunner COMMAND tst_updaterunner)
+
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the
 # recents dropdown. ctest -R tst_recents
 add_executable(tst_recents tests/tst_recents.cpp)
