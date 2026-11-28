@@ -37,6 +37,19 @@ AboutModal::AboutModal(QWidget* parent)
                      "Dr. Xadium")
                       .arg(AppIdentity::displayName()));
     layout->addWidget(text);
+
+    // The build's own version (user request 2026-11-28). Bare semver, baked at
+    // configure time from the git tag - the same string the updater compares
+    // against the release tag, so "why didn't it offer 0.1.4?" is answerable
+    // from this line alone.
+    auto* version = new QLabel;
+    version->setObjectName(QStringLiteral("tvAboutVersion"));
+    version->setTextFormat(Qt::PlainText);
+    version->setStyleSheet(
+        QStringLiteral("color: #000000; background: transparent; font-weight: bold;"));
+    version->setText(tr("Version %1").arg(AppIdentity::version()));
+    layout->addWidget(version);
+
     layout->addStretch();
 
     setBody(body);

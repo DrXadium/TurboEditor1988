@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include "src/shell/AboutModal.h"
+#include "src/AppIdentity.h"
 #include "src/update/UpdateRunner.h"
 
 namespace {
@@ -81,6 +82,24 @@ private slots:
         QPushButton* b = findUpdateButton(m);
         QVERIFY2(b, "Update now button missing in an AppImage run");
         QVERIFY(b->isEnabled());
+    }
+
+    // The About box must state which build this is; "is an update available?"
+    // is unanswerable without it (user request 2026-11-28).
+    void about_shows_the_app_version()
+    {
+        AboutModal m;
+        QLabel* v = nullptr;
+        for (QLabel* l : m.findChildren<QLabel*>()) {
+            if (l->objectName() == QLatin1String("tvAboutVersion"))
+                v = l;
+        }
+        QVERIFY2(v, "no version line in the About box");
+        QVERIFY2(v->text().contains(AppIdentity::version()),
+                 qPrintable(QStringLiteral("version line lacks the version: %1").arg(v->text())));
+        // A bare semver, never the git-describe suffix.
+        QVERIFY2(!v->text().contains(QLatin1Char('-')),
+                 qPrintable(QStringLiteral("version line is not a bare semver: %1").arg(v->text())));
     }
 
     // Spec §136-138: disable while running; re-enable + show an error line on
