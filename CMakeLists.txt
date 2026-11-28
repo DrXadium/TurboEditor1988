@@ -448,6 +448,14 @@ target_include_directories(tst_versioncompare PRIVATE ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(tst_versioncompare PRIVATE Qt6::Test Qt6::Core)
 add_test(NAME tst_versioncompare COMMAND tst_versioncompare)
 
+# Auto-update (2026-11-27): async GitHub release check (fake endpoint in tests).
+add_executable(tst_updatechecker tests/tst_updatechecker.cpp
+  src/update/UpdateChecker.cpp src/update/VersionCompare.cpp)
+target_include_directories(tst_updatechecker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_updatechecker PRIVATE Qt6::Test Qt6::Core Qt6::Network)
+target_compile_definitions(tst_updatechecker PRIVATE CRT_KATE_VERSION="${CRT_KATE_VERSION}")
+add_test(NAME tst_updatechecker COMMAND tst_updatechecker)
+
 # File dock modern layout (2026-11-18): the persisted MRU-10 behind the
 # recents dropdown. ctest -R tst_recents
 add_executable(tst_recents tests/tst_recents.cpp)
